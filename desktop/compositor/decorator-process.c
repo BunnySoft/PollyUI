@@ -16,7 +16,7 @@ struct PuDecoratorProcess {
     struct PuDesktop *desktop;
     struct wl_client *client;
     struct wl_listener destroy;
-    struct wl_event_source *exit, *restart, *terminate, *startup;
+    struct wl_event_source *restart, *terminate, *startup;
     char **command;
     pid_t pid;
     unsigned attempts;
@@ -115,6 +115,7 @@ static bool reap(struct PuDecoratorProcess *service, int options)
     if (result < 0 && errno != ECHILD) {
         wlr_log_errno(WLR_ERROR, "Cannot reap decorator"); return false;
     }
+    if (result < 0) wlr_log_errno(WLR_ERROR, "Decorator child no longer exists");
     if (result > 0 && WIFEXITED(result_status))
         wlr_log(WEXITSTATUS(result_status) ? WLR_ERROR : WLR_INFO, "Decorator exited with status %d",
             WEXITSTATUS(result_status));
@@ -122,12 +123,16 @@ static bool reap(struct PuDecoratorProcess *service, int options)
     service->terminating = true;
     wl_event_source_timer_update(service->terminate, 0);
     wl_event_source_timer_update(service->startup, 0);
+    struct PuDesktop *desktop = service->desktop;
+    uint64_t generation = desktop->private_processes[PU_PRIVATE_DECORATOR].generation;
     if (service->client) wl_client_destroy(service->client);
+    if (desktop->decorator != service ||
+        generation != desktop->private_processes[PU_PRIVATE_DECORATOR].generation) return true;
     schedule(service);
     return true;
 }
-static int exited(int signal_number, void *data)
-{ (void)signal_number; reap(data, WNOHANG); return 0; }
+static void exited(struct PuDesktop *desktop)
+{ if (desktop->decorator) reap(desktop->decorator, WNOHANG); }
 static int restart(void *data)
 {
     struct PuDecoratorProcess *service = data;
@@ -138,7 +143,7 @@ static int restart(void *data)
 }
 bool pu_decorator_spawn(struct PuDesktop *desktop, char *const argv[])
 {
-    if (!argv || !argv[0] || desktop->decorator || desktop->stopping) return false;
+    if (!argv || !argv[0] || !desktop->display || desktop->decorator || desktop->stopping) return false;
     struct PuDecoratorProcess *service = calloc(1, sizeof(*service));
     if (!service) return false;
     service->desktop = desktop;
@@ -146,21 +151,26 @@ bool pu_decorator_spawn(struct PuDesktop *desktop, char *const argv[])
     size_t count = 0;
     while (argv[count]) count++;
     service->command = calloc(count + 1, sizeof(*service->command));
-    if (!service->command) return false;
+    if (!service->command) goto failed;
     for (size_t i = 0; i < count; i++)
-        if (!(service->command[i] = strdup(argv[i]))) return false;
+        if (!(service->command[i] = strdup(argv[i]))) goto failed;
     struct wl_event_loop *loop = wl_display_get_event_loop(desktop->display);
-    service->exit = wl_event_loop_add_signal(loop, SIGCHLD, exited, service);
+    if (!pu_private_process_watch(desktop, PU_PRIVATE_DECORATOR, exited)) goto failed;
     service->restart = wl_event_loop_add_timer(loop, restart, service);
     service->terminate = wl_event_loop_add_timer(loop, force_exit, service);
     service->startup = wl_event_loop_add_timer(loop, startup_timeout, service);
-    return service->exit && service->restart && service->terminate && service->startup && spawn(service);
+    if (service->restart && service->terminate && service->startup && spawn(service)) return true;
+failed:
+    wlr_log(WLR_ERROR, "Cannot initialize decorator process supervision");
+    pu_decorator_stop(desktop);
+    return false;
 }
 void pu_decorator_stop(struct PuDesktop *desktop)
 {
     struct PuDecoratorProcess *service = desktop->decorator;
-    if (!service) return;
+    if (!service || service->stopping) return;
     service->stopping = true;
+    pu_private_process_unwatch(desktop, PU_PRIVATE_DECORATOR);
     if (service->restart) wl_event_source_remove(service->restart);
     service->restart = NULL;
     service->terminating = true;
@@ -174,7 +184,6 @@ void pu_decorator_stop(struct PuDesktop *desktop)
         if (service->pid) { force_exit(service); reap(service, 0); }
     }
     if (service->client) wl_client_destroy(service->client);
-    if (service->exit) wl_event_source_remove(service->exit);
     if (service->terminate) wl_event_source_remove(service->terminate);
     if (service->startup) wl_event_source_remove(service->startup);
     if (service->command) {

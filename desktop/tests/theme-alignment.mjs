@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 register('./root-loader.mjs', import.meta.url);
 const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import('../shared/ui/theme-schema.mjs');
-const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
+const { dockSurfaceWidth, dockBackdropMaterial, shellBackdropMaterial,
+  applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
 const { button } = await import('../shared/ui/button.mjs');
+const { preflightBodyFont } = await import('../shared/ui/body-font.mjs');
 const { surfacePaint, surfaceEvents, bevel, hasSurfacePaint } = await import('../shared/ui/surface-primitives.mjs');
 const { lunaVisualEvents } = await import('../shared/ui/luna-primitives.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
@@ -14,6 +16,83 @@ const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fal
 assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
+{
+  const packaged = catalog.themes.find(theme => theme.id === 'modern');
+  assert.equal(packaged.panel.startBackdrop, undefined, 'Standard-height Start stays solid by default');
+  assert.equal(packaged.panel.standardHeight, undefined);
+  const modern = { ...packaged, panel: { ...packaged.panel,
+    startBackdrop: { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 } } };
+  assert.deepEqual(shellBackdropMaterial(modern, 2, 1280, 48), [3, 2, 0, 8, 0xf3f3f3, 72]);
+  assert.equal(shellBackdropMaterial(modern, 3, 9, 7)[2], 3500);
+  const omitted = structuredClone(modern);
+  delete omitted.panel.taskbarBackdrop;
+  delete omitted.panel.startBackdrop;
+  const file = theme => JSON.stringify({ schemaVersion: 1, theme });
+  const standard = structuredClone(modern);
+  standard.panel.startBackdrop.standardHeight = true;
+  assert.equal(parseThemeFile(file(standard)).panel.startBackdrop.standardHeight, true);
+  for (const height of [640, 660])
+    assert.deepEqual(shellBackdropMaterial(standard, 3, 640, height), [4, 3, 8000, 12, 0xf3f3f3, 72]);
+  assert.deepEqual(shellBackdropMaterial(standard, 2, 1280, 48), [3, 2, 0, 8, 0xf3f3f3, 72]);
+  standard.panel.startBackdrop.standardHeight = false;
+  assert.equal(shellBackdropMaterial(parseThemeFile(file(standard)), 3, 640, 660)[0], 3);
+  for (const value of [null, 0, 1, 'true', {}, []]) {
+    standard.panel.startBackdrop.standardHeight = value;
+    assert.throws(() => parseThemeFile(file(standard)), /standardHeight/);
+  }
+  for (const key of ['taskbarBackdrop', 'regionalBackdrop']) {
+    const invalid = structuredClone(modern);
+    invalid.panel[key] = { sigma: 12, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+    assert.throws(() => parseThemeFile(file(invalid)), /standardHeight/);
+  }
+  const unknown = structuredClone(modern);
+  unknown.panel.startBackdrop.standardheight = true;
+  assert.throws(() => parseThemeFile(file(unknown)), /standardheight/);
+  assert.doesNotThrow(() => parseThemeFile(file(omitted)));
+  assert.equal(shellBackdropMaterial(omitted, 2, 1280, 48), null);
+  assert.equal(JSON.stringify(panelView(omitted, '10:31', action)),
+    JSON.stringify(panelView(modern, '10:31', action)), 'Opt-in data alone never clears solid view paint');
+  for (const key of ['taskbarBackdrop', 'startBackdrop'])
+    for (const material of [{ ...modern.panel[key], sigma: 0 }, { ...modern.panel[key], opacityPercent: 101 },
+      { ...modern.panel[key], tint: 'transparent' }, { ...modern.panel[key], role: 'Start' }]) {
+      const theme = structuredClone(modern);
+      theme.panel[key] = material;
+      assert.throws(() => parseThemeFile(file(theme)), /backdrop|Backdrop/);
+    }
+  const unpaired = structuredClone(modern);
+  unpaired.panel.startBackdrop.standardHeight = true;
+  delete unpaired.panel.taskbarBackdrop;
+  assert.throws(() => parseThemeFile(file(unpaired)), /requires its taskbar/);
+}
+{
+  const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1, themes: {
+    bigsur: { panel: { height: 28 }, layout: { dockIconSize: 16 } },
+  } })).themes.find(theme => theme.id === 'bigsur');
+  assert.equal(theme.panel.radius, 16, 'Legal existing theme data is not rewritten');
+  assert.equal(dockBackdropMaterial(theme, 300, 28)[2], 14000);
+  assert.equal(dockBackdropMaterial(theme, 15, 28)[2], 7500,
+    'Effective radius follows both actual footprint axes, including half pixels');
+  assert.equal(dockBackdropMaterial({ ...theme, panel: { ...theme.panel, kind: 'taskbar' } }, 300, 28), null,
+    'Retained inactive backdrop data does not activate a different panel role');
+  assert.equal(find(dockView(theme, action, action, action), 'shell-dock').props.style.borderRadius, 16);
+  assert.throws(() => dockBackdropMaterial(theme, 0, 28), /footprint/);
+}
+{
+  const theme = structuredClone(catalog.themes[0]);
+  assert.equal(theme.layout.fontFamily, undefined);
+  for (const family of ['Consolas', '\u5fae\u8f6f\u96c5\u9ed1', 'Noto Sans CJK SC']) {
+    theme.layout.fontFamily = family;
+    assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })).layout.fontFamily, family,
+      'Font schema is data-only even without a runtime provider');
+  }
+  for (const family of [null, 12, '', '/font.ttf', 'url(font)', 'Arial, serif', 'a'.repeat(129)]) {
+    theme.layout.fontFamily = family;
+    assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })), TypeError);
+  }
+  theme.layout.fontFamily = 'Consolas';
+  assert.throws(() => preflightBodyFont(theme), /font-family-aware/);
+  assert.doesNotThrow(() => preflightBodyFont(catalog.themes[0]));
+}
 {
   for (const base of catalog.themes) {
     assert.equal(base.panel.menuBarOpacityPercent, base.id === 'bigsur' ? 88 : undefined);
@@ -79,10 +158,27 @@ const action = () => {};
 {
   for (const theme of catalog.themes) assert.equal(theme.icons.dockHoverPercent,
     ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 120 : undefined);
+  for (const theme of catalog.themes) assert.equal(theme.icons.dockMagnificationRadius,
+    ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 2 : undefined);
   const base = catalog.themes.find(theme => theme.id === 'bigsur');
   const omitted = { ...base, icons: { ...base.icons } };
   delete omitted.icons.dockHoverPercent;
+  delete omitted.icons.dockMagnificationRadius;
   assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })).icons.dockHoverPercent, undefined);
+  assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })).icons.dockMagnificationRadius, undefined);
+  for (const value of [0, 1, 2, 3, -1, 4, 1.5, '2', null, true]) {
+    const theme = { ...base, icons: { ...base.icons, dockMagnificationRadius: value } };
+    for (const parse of [
+      () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+      () => parseThemeCatalog(JSON.stringify({ ...catalog,
+        themes: catalog.themes.map(item => item.id === base.id ? theme : item) })),
+      () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+        themes: { [base.id]: { icons: { dockMagnificationRadius: value } } } })),
+    ]) {
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3) assert.doesNotThrow(parse);
+      else assert.throws(parse, /dockMagnificationRadius/);
+    }
+  }
   for (const value of [100, 120, 125, 99, 126, 120.5, '120', null, true]) {
     const theme = { ...base, icons: { ...base.icons, dockHoverPercent: value } };
     for (const parse of [
@@ -296,12 +392,14 @@ for (const theme of catalog.themes) {
   const vnode = dockView(custom, action, action, action, Array.from({ length: 20 }, (_, id) => ({ id })));
   const viewport = { id: 'shell-dock-viewport', offsetLeft: 0, offsetWidth: 304, scrollLeft: 0,
     parentNode: {}, ownerDocument: {}, style: {} };
+  viewport.ownerDocument.body = viewport.parentNode;
   const surface = { id: 'shell-dock', offsetLeft: 0, offsetWidth: 391, parentNode: viewport };
   const strip = { id: 'shell-dock-windows', offsetLeft: 324, offsetWidth: 58, scrollLeft: 0,
     parentNode: surface };
-  const fixed = [9, 99, 189].map(offsetLeft => ({ offsetLeft, offsetWidth: 58, parentNode: surface }));
+  const fixed = [9, 99, 189].map(offsetLeft => ({ offsetLeft, offsetWidth: 58, parentNode: surface,
+    querySelector: () => null }));
   strip.childNodes = Array.from({ length: 20 }, (_, i) =>
-    ({ offsetLeft: 324 + 90 * i, offsetWidth: 58, parentNode: strip }));
+    ({ offsetLeft: 324 + 90 * i, offsetWidth: 58, parentNode: strip, querySelector: () => null }));
   surface.childNodes = [...fixed, strip];
   surface.querySelector = () => strip;
   viewport.childNodes = [surface];

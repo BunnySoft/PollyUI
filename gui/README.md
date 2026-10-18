@@ -180,6 +180,28 @@ closed-owner collection; it does not qualify a hardware/compositor backend.
 
 ## Input typography and selection foreground
 
+`measureText(text, size, weight, family)` and, where present,
+`layoutText(text, size, weight, family)` accept an optional fourth literal family
+name. Each supporting function exposes readonly/nonconfigurable
+`supportsFontFamily: true`. Omitted family keeps the original metric path;
+Linux complex text still uses the native full-string shaping/layout implementation.
+The SDK rejects an explicit family before mutation if either installed provider
+lacks that declaration; it never infers support from a function ignoring extra
+arguments. This is capability support, not proof that an arbitrary face is
+installed: use a locally installed family. Existing platform font fallback is
+unchanged, and no font resources are loaded or installed.
+
+`createTextInput({ fontFamily })`, `setAppearance({ fontFamily })`,
+`NInput({ fontFamily })` and selection-control `appearance.fontFamily` opt in per
+instance. Names use the same bounded 128-UTF-16-unit literal rule as captions:
+Unicode family names are permitted, but paths, URLs, resource syntax, fallback
+lists and controls are not. Geometry caches include family/weight; painting,
+click hit-testing, caret, preedit, selected ranges and full-string selected ink
+share the same family. A family update preserves the retained input/value and
+selection. Explicit `fontFamily: undefined` clears an earlier opt-in; other
+partial appearance updates leave the current family alone. Open Select portals
+consume the latest family without affecting another instance or global SDK theme.
+
 `NInput({ fontSize })` accepts a finite 8–64 logical-pixel size; omitting it keeps
 the existing `size` mapping. The same size feeds painting, measurement, caret,
 selection and composition geometry.
@@ -235,6 +257,7 @@ controller. Omit `appearance` for unchanged caller-owned styling, no decoration
 nodes or arrows, the 28px minimum thumb and the existing 42px keyboard step.
 The caller supplies the scrollbar role/label and updates the controller after
 layout, content or scroll changes; the controller starts no timer or frame loop.
+Composing keyboard events neither scroll nor cancel capture, and are not consumed.
 
 Optional `onScroll(value)` synchronously reports a changed, clamped numeric
 `viewport.scrollTop` after an update, including keyboard, capture and external
@@ -281,3 +304,34 @@ painting. Its end-arrow policy is not a claim of exact original-OS layouts.
 Its `full` (default) and `overlay` variants share that policy; `overlay` keeps
 Files' existing 10px footprint without shrinking its rows or metadata columns.
 Unknown variants reject explicitly.
+
+## Native event listener mutation
+
+Each node's dispatch phase visits its registrations in order, at most once.
+Listeners added during that phase wait for a later phase; registrations removed
+before their turn are skipped. Removing and readding the same function creates
+a new registration. Duplicate registrations remain distinct, and
+`removeEventListener` removes only the first matching type/function registration.
+Nested dispatch has its own boundary; an ancestor starts its phase only when
+the existing dynamic bubble walk reaches it.
+
+`stopPropagation` allows the remaining same-node listeners;
+`stopImmediatePropagation` also stops that phase. `preventDefault` remains visible
+without suppressing listeners. Exceptions are explicitly reported and do not
+silently suppress subsequent listeners. Registration allocation or identity
+exhaustion throws rather than claiming success while dropping a callback.
+
+## Native Wayland window contract
+
+`gui-wayland-window-contract` requires `PU_BUILD_DESKTOP`, `PU_BUILD_LAUNCHER`
+and `PU_DESKTOP_SERVICES`: the fixture starts the production `pollyui --decorator`
+as an independent windowless renderer. The playground remains a pure GUI client.
+Without the launcher/services this SSD input contract is explicitly not registered;
+bare compositor/CSD operation does not supply interactive server-side frames.
+
+The original normal, tooltip, no-dialog, native-lifetime and close-tree modes keep
+their assertions and deadlines. Resize and caption clicks wait on the existing
+decoration readiness fence and a presented button box. Resize coordinates come from
+the current client geometry and decoration inset, inside the real border rather
+than on its exclusive outer edge. No hit-test search, fixed sleep, fallback painter
+or global activation click-through is used.

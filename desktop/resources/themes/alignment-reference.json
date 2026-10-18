@@ -41,7 +41,7 @@
       "qualification": "Microsoft titlebar guidance specifies 32px height and state behavior; it is not a build-tagged 24H2 raw screenshot. Taskbar/Start values are reconstruction targets, not measured 24H2 pixels.",
       "geometry": { "captionContent": 32, "captionOuter": 33, "captionButton": [46, 32], "taskbar": 48, "taskSlot": 44, "taskIcon": 24, "start": [640, 660] },
       "fontReference": "Segoe UI Variable/Segoe UI, 12px caption, 14px controls; not bundled",
-      "gaps": ["build-tagged 24H2/100 percent raw crops", "Mica/Acrylic backdrop adoption; the existing wallpaper-derived opaque client material is not live Acrylic", "current-preset compositor revalidation: generic clipping/shadow is implemented and rounded radius 8 is selected, but the paired live run is blocked", "Segoe font pixels", "Snap layout flyout is not implemented"]
+      "gaps": ["build-tagged 24H2/100 percent raw crops", "DWM Mica/live Acrylic and Start/taskbar backdrop sampling; packaged Settings already consumes the opaque wallpaper-derived client material", "current-preset compositor revalidation: generic clipping/shadow is implemented and rounded radius 8 is selected, but the paired live run is blocked", "Segoe font pixels", "Snap layout flyout is not implemented"]
     },
     {
       "id": "aqua",
@@ -67,7 +67,7 @@
       "id": "bigsur",
       "system": "macOS 11 Big Sur, light",
       "sources": ["https://512pixels.net/projects/aqua-screenshot-library/macos-11-0-big-sur/"],
-      "qualification": "Reference describes wallpaper tint enabled. Opaque local material cannot reproduce its backdrop. Icons explicitly 48px, magnification off.",
+      "qualification": "Reference describes wallpaper tint enabled. Local Dock/menu-bar material now has genuine basic alpha, but alpha alone does not reproduce wallpaper-tinted vibrancy or behind-scene blur. Icons explicitly 48px, magnification off.",
       "geometry": { "dockIcon": 48, "dockSlot": 58, "dockHeight": 70, "dockInset": 9, "indicator": [4, 4], "menuBar": 24 },
       "treatment": "floating rounded rectangle, separated content slots, dark running dots",
       "fontReference": "San Francisco; not bundled",
@@ -75,7 +75,7 @@
     }
   ],
   "controls": {
-    "covered": ["shared button and desktopCommand states", "launcher app rows and real search input", "menu selection and category navigation", "disabled/default command and focus ring", "per-instance themed switch/checkbox/radio/tabs/select/menu factories with composing-key protection", "controlled Displays checkbox and scale radios plus Audio switch", "Files, Processes and long Shell-menu themed scrollbar controllers", "shared file/confirmation/authentication panel consumers"],
+    "covered": ["shared button and desktopCommand states", "launcher app rows and real search input", "menu selection, category navigation and verified registration source-folder hierarchy", "disabled/default command and focus ring", "per-instance themed switch/checkbox/radio/tabs/select/menu factories with composing-key protection", "controlled Displays checkbox and scale radios plus Audio switch", "Files, Processes, long Shell menus and Settings panes/navigation using the shared themed scrollbar", "shared file/confirmation/authentication panel consumers"],
     "notCertified": ["original-OS glyph and font pixels for all six systems", "third-party client widgets", "all remaining bespoke controls", "physical input and native accessibility-provider behavior", "all native compositor states and display scales"],
     "policy": "Do not claim every OS widget is covered; keep input focus, credentials and selection untouched."
   }

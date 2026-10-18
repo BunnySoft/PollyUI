@@ -19,8 +19,11 @@ classic presets. Modern now targets Windows 11 24H2 light geometry, not Windows
 unavailable configuration; saved classic choices and user overrides are not
 silently rewritten. It uses a solid 48px taskbar, centered icon tasks, a 32px
 caption content band with 46x32px controls, and original Polly artwork.
-No proprietary platform logos/assets are bundled. This preset does not
-automatically enable a material or blur; the separate
+No proprietary platform logos/assets are bundled. Modern explicitly selects
+`window.clientMaterial: "wallpaper"` for opt-in consumers. Packaged Settings
+uses the cached opaque base; direct app API calls and missing/`"solid"` policy
+retain the previous solid path. Other applications and compositor surfaces
+are not changed automatically. The
 [opt-in wallpaper-derived client helper](../gui/sdk/CANVAS.md#opt-in-wallpaper-derived-client-base)
 is not native DWM Mica or compositor Acrylic.
 `resources/themes/fallback.json` is a packaged recovery catalog.
@@ -137,6 +140,36 @@ a visible warning rather than claiming that the requested files were applied.
 - `colors`, `button`, `icons`, `panel`: shared palette and component treatments.
   Actions, focus policy, keyboard bindings and workspaces remain code-owned.
 
+### Optional UI font family
+
+`layout.fontFamily` selects one bounded literal installed family for first-party
+UI text and inputs, independently of `window.fontFamily` for captions. Omission
+preserves all existing defaults; none of the six packaged presets adds a family.
+The same 128-UTF-16-unit name rules reject font files, paths, URLs, fallback lists
+and control characters. No fonts are installed, bundled or globally aliased, and
+the provider's existing missing-face fallback does not prove a face is installed.
+
+Explicit themed text/input/selection projections use that family on each actual
+text part. Setting only an ancestor style is insufficient for this renderer.
+The native `measureText`/`layoutText` fourth family argument and read-only
+`supportsFontFamily` declarations pair drawing with geometry, hit testing,
+IME cursor, caret and full-string selected-text copies. Cache keys include family
+and weight. Unsupported active families are rejected before publication,
+delivery or input mutation; inactive catalog entries do not block other themes.
+Returning to missing tokens explicitly clears an earlier input family.
+Legacy `desktopText` and neutral, non-opt-in consumers keep their former behavior.
+
+For example, on a system where Consolas is installed:
+
+```json
+{"schemaVersion":1,"themes":{"modern":{"layout":{"fontFamily":"Consolas"}}}}
+```
+
+This is per-instance font support, not original Windows/macOS font distribution
+or pixel equivalence. Linux keeps the existing full shaping path with the family
+argument; the new branch has syntax coverage but no new live Linux/RTL/CJK result
+while the paired environment remains unavailable.
+
 ### Desktop shortcut labels
 
 Optional `icons.desktopLabelStyle` accepts only `capsule` or `shadow`. Omitting
@@ -196,7 +229,7 @@ scaling. This verifies the existing theme contract, not build-tagged Windows
 11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
-Private appearance protocol v6 uses bounded numeric geometry schema 6 and separates
+Private appearance protocol v7 uses bounded numeric geometry schema 7 and separates
 the publisher and renderer roles. Previous private Shell/WM/decorator combinations
 are explicitly rejected; public JSON schema 1 and the read-only application
 theme subscription remain unchanged. This paired
@@ -320,7 +353,7 @@ not certified SP3/DPI raw-pixel oracles. Existing colors and artwork are unchang
 | Taskbar and green launcher | Actual 30px bar, default 97px launcher, band/tint hover/held/cancel; `layout.launcherWidth` now controls actual launcher layout and hitbox (tested 123px) | Reference lacks certified launcher hover/held state crops; original Polly mark is not Windows art |
 | Active/inactive tasks and compact tools | Actual 26px tasks retain per-window activation/minimize; explicit XP Quick Launch now prepends saved catalog pins as compact icon-only launchers, independently of running windows. The same horizontal strip supports wheel and focus reveal | This is a real Polly launcher implementation, not an external XP profile/Quick Launch folder import or original system artwork |
 | Cyan notification area and clock | Actual 30px area and visible clock; existing tray/notification paths retained | No full SNI external-icon/state or original-font pixel certification |
-| Start header, left apps and Search/Pin | Actual 64px header, 380x480 preferred menu; left list scroll, disabled app, single launch/Pin and real text search retained. XP also reuses the guarded flat All Programs/metadata Categories menu and its shared scrollbar | Header remains original Polly identity, not a real account/profile; metadata categories are not installed-directory hierarchy or Recent history |
+| Start header, left apps and Search/Pin | Actual 64px header, 380x480 preferred menu; left list scroll, disabled app, single launch/Pin and real text search retained. XP also reuses guarded All Programs, metadata Categories and verified source folders. Production startup supplies a readonly local name/username/UID snapshot to the existing header | Local display metadata is not authentication, NSS or account management; original Polly avatar remains. Source folders are not imported Windows directories or Recent history |
 | Right links and column separator | Existing Settings/Refresh/Close rows and palette/border retained; XP right column now independently scrolls and locally reveals focused commands using existing unscrolled offset/scroll metrics | No invented categories/group dividers without backend groups or qualified state references; Classic and other preset paths unchanged |
 | Footer and low-height fit | Actual 42px footer stays fixed with header while either column scrolls; logout remains reachable at 360x260 local layout | Below the combined fixed header/footer/Search minimum, fitting all content requires a separate layout policy; this batch does not change menu preferred height or global insets |
 
@@ -331,6 +364,29 @@ viewport: Close previously extended below it, and now wheel/focus scroll 20px
 to reveal the full command. Header/footer rectangles do not move; reverse wheel
 clamps at zero and repeated focus does not jitter. This is actual component
 layout/input evidence, not a native compositor output resize or XP fidelity score.
+
+Classic and XP production headers now use one immutable startup snapshot from
+the real uid/euid and a bounded, root-owned, identity-checked `/etc/passwd` read.
+The existing 40px/64px header shows the full display name and username/UID with
+the shared body-font projection; clipping does not truncate the accessible name.
+Unavailable records show **User &lt;uid&gt;** or **User unavailable**, plus
+**Local name unavailable**. A sanitized diagnostic is reported once without
+overwriting service/action errors. No reread on clock/menu updates, environment
+name guess, credential operation or new account authority is added.
+
+Legacy callers with no explicit profile retain their original PollyDesktop
+header markup; single-column and zero-header layouts do not acquire a new area.
+The existing generic avatar, Search/input identity, Programs/source folders,
+both pin domains, Quick Launch and logout remain unchanged. The original XP
+software GUI entry verifies injected Unicode/success/unavailable snapshots in
+the real header and actual pointer launch. A later matching-current-runtime
+Linux check also reads the isolated container's actual uid/euid and trusted
+local passwd through the production adapter, validates the immutable snapshot,
+and renders its real name/username/UID in the same 380x64 XP header. The real
+privileged-session case retains UID 0, empty names and the explicit unavailable
+header without changing that geometry. Neither check is a Windows/host account,
+NSS, authentication, account-management, original-system-art or native compositor
+qualification; no account/password write or source-record content is logged.
 
 ### Fluent taskbar and Start surface coverage
 
@@ -401,8 +457,19 @@ catalog refresh and current membership; discovery failure reports an error and
 retains the previous visible catalog without authorizing an action from stale
 data. The submenu stays inside the existing input viewport; no native popup or
 new authority is added.
-See [the Shell contract](shell/README.md). Multi-level directory menus, true user
-account/profile art, and Win11 recommendation/account features are not reproduced.
+When exact desktop-entry ID/path mappings prove nested registration sources,
+Classic and XP also offer a merged Source folders tree from the category index.
+It shows real direct subfolders and registrations with bounded multilevel
+navigation, not folders guessed from hyphenated IDs. Directory command keys
+cannot collide with application keys; fresh reads and direct membership still
+guard entry and app actions. Back to an already-owned parent remains available
+during I/O failure without clearing the error or authorizing stale app actions.
+Unverifiable sources remain in All apps. This is neither arbitrary filesystem
+browsing, an imported Windows Programs directory nor an XDG menu XML tree.
+See [the Shell contract](shell/README.md). Readonly local display profiles are
+connected in the existing Classic/XP headers. OS-native multi-surface cascades,
+account photographs/management and Win11 recommendation/account features are not
+reproduced.
 Existing application launch, desktop shortcut, keyboard and logout actions remain
 connected. E22.15 therefore remains partial.
 
@@ -435,6 +502,13 @@ fills are tinted once rather than fading their parent: registered artwork,
 focus, badges, separators, running markers and input geometry remain unchanged.
 This does not provide compositor blur, reflection, wallpaper tint, full animated
 magnification or authentic OS icons.
+Big Sur's menu bar separately selects `panel.menuBarOpacityPercent: 88`.
+This optional integer 0..100 defaults to 100, leaving Tiger/Lion and older
+custom menus unchanged. Values below 100 request the existing transparent
+menu-bar surface, with alpha applied only to its passive gradient, not text,
+clock, tray, focus or hitboxes. Missing/100 keeps the exact opaque path; changing
+that surface option uses the existing replacement lifecycle. Fixed panel/Dock
+callbacks now reject closed, replaced or disconnected surfaces before dispatch.
 Tiger's four one-pixel triangle rows honor `layout.dockIndicatorSize` (2-12)
 with centered integer insets, retaining the default 7x4 geometry. Very narrow
 even widths degenerate to a symmetric bar rather than spilling outside the
@@ -465,7 +539,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded hover and genuine material alpha are now delivered separately; backdrop blur/reflection, Dock shadow and full neighboring-icon animation remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
+| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded neighboring-artwork magnification and genuine material alpha are delivered separately. Regional blur now has a shared Pixman mechanism and one Big Sur Dock consumer; Lion backdrop adoption, reflection, Dock shadow and original-system qualification remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -476,7 +550,7 @@ The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 | State/field consumption | Pass: active/inactive, each hovered control and valid held+hover pairs; group glyphs are hidden at rest, present in all three controls on hover. Recoloring glyphs and changing inactive opacity only affect their owning control rectangles; held changes stay in the pressed control. Custom always-visible glyphs use their configured ink. |
 | Text/scale/isolation | Pass: empty/long/narrow titles stay inside supplied text clips and do not alter edge strips; custom 1.25 backing dimensions are ceiled. Five other presets retain byte-identical before/after probe strips. This is not a full DPI/font or compositor-input matrix. |
 | Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
-| Mechanism/content gaps | Generic whole-window shadow is implemented and selected separately; this caption checkpoint does not qualify its current compositor/native Mac output. Vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance still need actual mechanisms or evidence. Dock material alpha is not vibrancy. |
+| Mechanism/content gaps | Generic whole-window shadow is implemented and selected separately; this caption checkpoint does not qualify its native Mac output. The production Big Sur Dock now has real opt-in regional Pixman blur, distinct from its legacy material alpha. Exact macOS vibrancy/tint policy, unified client toolbars, proprietary font/icon resources and native macOS acceptance remain unqualified. |
 
 Modern and all three Mac presets now explicitly select optional
 `panel.taskGrouping: "applications"`. One shared `windowTasks` model groups
@@ -527,8 +601,8 @@ without replacing the focused real-window command or changing its action.
 Modern and the three Mac presets also display independent persistent application
 pins. Apps menus distinguish taskbar/Dock pin controls from desktop shortcuts;
 the window chooser can pin or unpin the corresponding registered application.
-At most 32 ordered catalog IDs are saved in Shell configuration v3, with atomic
-v1/v2 migration preserving every existing preference domain. Unpinning never
+At most 32 ordered catalog IDs are saved in Shell configuration v4, with atomic
+v1/v2/v3 migration preserving every existing preference domain. Unpinning never
 removes a desktop shortcut. The older reader cannot read v3 automatically.
 
 An idle pin launches through the existing current-catalog policy, while a
@@ -547,17 +621,111 @@ These are Polly launcher semantics, not native MRU, drag sorting or Dock
 magnification. Classic retains its original mode; XP retains independent
 per-window tasks alongside its explicit Quick Launch prefix.
 
-Mac-style Docks now also provide bounded pointer-hover emphasis through optional
-`icons.dockHoverPercent` (integer 100-125, missing/100 disables; packaged presets
-use 120). Only the passive glyph/bitmap scales about its center, limited by the
-actual slot, clipping ancestors and client viewport. Slot/tile/hit geometry,
-counts and running marks stay fixed. Leave/cancel restores the art; existing
-weak control state and Dock settling handle retheme/scroll without a new frame
-loop. This is not neighboring-icon displacement, animated magnification or
-keyboard-focus enlargement.
+Basic half-screen placement is now a real native window operation, independent
+of the selected painter: configurable Super+Left/Right partitions the current
+work area and Super+Down restores the original floating geometry. The existing
+Keyboard page consumes the ten-action catalog for recording, disabling and
+resetting; the original seven numeric action IDs remain unchanged. Private
+shortcuts version 2 is strictly paired. Configuration v4 preserves old user
+chords, including native hexadecimal arrow aliases, and disables only a
+conflicting new default with a migration diagnostic.
 
-Long Programs/category and window-group management lists now opt into the same
-themed 10px overlay scrollbar used by existing desktop consumers. The shared
+Placement uses the original client configure/ACK and decoration frame fence,
+not a visual transform. Restore dimensions come from completed presentation,
+with actual scene positions retained after moves. Work-area reservations, odd
+partitions, size limits, delayed ACKs, max/fullscreen transitions, output changes,
+workspaces and lock/grab restrictions have actual native coverage. The complete
+Windows 11 Snap flyout, drag-to-edge/restore, overview and original-system pixel
+qualification are not supplied by these keyboard operations.
+
+The existing window-action menu now exposes **Left half**, **Right half** and
+**Restore floating** through the same native placement engine. Readonly
+placement, pending and feasibility bits come from a version-3 private workspace
+toplevel object; providers without that state keep the previous menu rather
+than showing unsupported actions. Menu registration binds an actual owned layer
+surface to the live target and workspace with a server-issued epoch. Admission
+requires that exact mapped, presented, enabled, exclusive overlay to hold input
+focus, plus the existing target-family, workspace, lock, grab, recording and
+geometry checks. Names or client-supplied roles do not authorize a request.
+
+An epoch admits at most one placement; lifecycle and workspace changes revoke
+it. Rejection keeps the menu and layout intact without first activating the
+target. Native `{ admitted: true }` means configure queued, not resized or
+presented: final state still follows the original client/decoration fence.
+Unknown transport results are explicit and are not replayed. The original
+keyboard guards and configuration v4 bytes remain unchanged. Real XP pointer
+and Classic Enter actions match the keyboard geometry; short-output Tab,
+Shift+Tab and the shared scrollbar retain access to new and existing commands.
+This is pointer-accessible basic placement, not a caption-hover Snap flyout.
+
+The two previously failing native test paths are now qualified through their
+original workflows. Settings clicks use the current owner and frame-settled
+geometry rather than coordinates sampled before Fluent layout repositioning.
+Each physical gesture is sent once; the real panels on both outputs open owned
+Settings processes. Independent-page sampling also retains PID/generation, page,
+appearance revision and enabled control identity; only the probe's exact
+target-specific not-yet-mounted error is transient.
+
+The native window contract starts the existing production windowless decorator,
+waits on its presented-frame fence and derives resize points from actual border
+metrics instead of an exclusive outer edge. The playground remains a pure GUI
+client, and all five original window modes retain their deadlines and behavioral
+assertions. Builds without the required launcher/services explicitly report that
+this SSD contract is unavailable rather than pretending to provide those frames.
+No WM, SDL host, bridge input policy or Shell action routing changed. The full
+Settings workflow also exposed and corrected a real strict-DTO mismatch: About
+now accepts and validates the already-published decoration-health state without
+inventing readiness or extending the UI.
+
+The original full window and workspace Shell workflows also pass through both
+initial and reconnect phases. Their assertions now follow the retained public
+search text/editing behavior and the real exact-app-ID task groups on both
+outputs, rather than private text-input child indexes or obsolete Dock window
+IDs. A single-window Mac group activates/restores; actual native minimize remains
+covered separately. Four frame-submission negatives run in the existing
+independent windowless decorator lifecycle fixture using production painting.
+The Shell still has neither its renderer queue nor its frame-submission API.
+No production code or policy changed for this fixture maintenance, and it does
+not establish original-OS pixels, physical hardware or complete E22 qualification.
+
+The selected SHM allocator now reserves actual backing before mapping and
+publishing output, cursor or effect buffers. Insufficient backing is an explicit
+allocation failure with full cleanup, not a returned sparse mapping that can
+fault on first write. Real isolated 64KiB rejection and adequately provisioned
+131072-byte read/write checks cover this safety class; existing Dock, scene,
+caption and renderer-role contracts remain. The backing fix first shipped with
+ABI3 and remains in the current ABI4 SDK with its updated exact patch identity
+and separate prefix. This does not explain earlier unknown
+SIGBUS/ENOSPC/reaping failures or enable held modern Shell material consumers.
+
+Private Shell, decorator, input-method and lock exits also share one event-loop
+notification source, while each owner still reaps only its exact PID. The
+production-core ready-batch regression covers the previous missed wakeup,
+simultaneous exits, restart, replacement and nested shutdown without polling or
+changing input/lock policy. This independent fix does not by itself attribute
+every historical reaping failure or qualify held effects/performance candidates.
+
+Mac-style Docks also provide bounded pointer-distance magnification through
+optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and
+`icons.dockMagnificationRadius` (integer 0-3, missing/0 preserves the previous
+single-hover behavior). Packaged/recovery Mac presets explicitly select peak
+120 and radius 2. Visible fixed commands and window-strip items share a natural
+neighbor sequence across the separator, with continuous distance weights.
+Only the passive glyph/bitmap scales about its center, limited by the actual
+slot, clipping ancestors and client viewport. Slot/tile/hit geometry, counts,
+running marks and native surface dimensions stay fixed.
+
+Entry, movement and leave use a finite 140ms smoothstep transition with a
+24-callback safety bound; settled state has no animation frames. Clock and
+immutable retheme preserve the pointer and instance state, while scroll/focus
+settling recomputes visible bounds. Leave/cancel restores every affected icon;
+retirement cancels pending work even after ancestor removal. This is not
+neighboring-slot displacement, a larger native input area, keyboard-focus
+enlargement or original macOS magnification/MRU qualification.
+
+Programs/category, window-group, window-action, workspace and tray management
+lists opt into the same themed 10px overlay scrollbar used by existing desktop
+consumers. The shared
 panel viewport offers explicit `scrollbar: true` only for fixed vertical layouts;
 its omitted/default, content-sized and horizontal paths retain their former
 output. Existing menu list IDs and direct command slots stay inside the original
@@ -565,6 +733,59 @@ flex allocation. Wheel, focused-command reveal and bounded layout settlement
 synchronize the thumb; SDK paging, keyboard steps and captured dragging remain
 the single input implementation. Leaving releases the controller and pending
 work, and ordinary repaint does not undo intentional scrolling.
+
+The existing notification center also consumes this shared scrollbar and focus
+viewport, preserving its transparent gaps, zero outer padding, card order and
+surface geometry. Low-height Tab/Shift+Tab reveals later Dismiss/action buttons;
+ordinary refresh and immutable retheme do not undo a manual wheel position.
+Long message bodies consume their own vertical wheel movement before chaining
+at the boundary, while action strips retain horizontal scrolling without
+invoking an action. Closing or externally retiring the center releases its
+pending focus/scroll work. Toast markup, keyboard mode, sizing/count and More
+behavior are unchanged. Actual software GUI checks use the production controller
+with inert notices, not a real D-Bus sender or notification-authorization claim.
+
+Power's existing unframed pane uses the same viewport/bar with its original
+content padding, gap, fill and surface geometry. Long waiting inventories and
+low windows retain keyboard access to Cancel/Refresh; unchanged updates do not
+undo manual scrolling. Close releases the viewport after the original
+cancellation decision and focus/key cleanup. Permission checks, sent/uncertain
+states, explicit final confirmation and request/cancel ordering are unchanged.
+The software GUI check uses entirely inert native/session-exit functions;
+no actual shutdown, restart, logout, login-service or application-close request
+is performed or qualified by that check.
+
+The existing window-action/workspace/tray menu frames, command widths and
+surface geometry remain unchanged; tray rows retain their original `trayGap`.
+Paging and captured dragging share the same SDK controller, and workspace
+editing retains its native input, value, caret, selection and focus. Retiring a
+tray view releases its controllers before the original close path without
+adding a native menu action. The separately reproduced pre-existing dispatch
+defect after geometry replacement is now fixed in the generic native bridge:
+each node phase admits only registrations present at its entry, honors removals
+and defers newly rebound handlers. The production tray now opens its submenu
+once on that first Enter instead of immediately returning to the root.
+This matching-helper GUI result does not certify live Linux D-Bus/tray authority.
+
+The generic/Mac Applications list now consumes the same viewport/bar inside its
+original flex allocation, without moving its header, real search field, footer
+or alert. Its padding stays zero, fill transparent and row gap `windowGap`;
+the existing 100-match cap, disabled entries, launch and both pin domains remain.
+The logout inventory opts into the bar while retaining its existing frame and
+focus reveal. Cancellation must succeed before user-close cleanup; external
+close and owner-stop cleanup preserve the original controller order.
+
+The former native 256-candidate Tab array has been replaced by one existing-order
+tree walk with constant traversal state and no candidate cap or allocator.
+Hidden-subtree filtering, element/tab-index eligibility, forward/reverse wrap
+and missing-focus fallback retain their original semantics. Native input checks
+cover 1100 candidates, including indices 256/1024/1099. The actual software Apps
+scene now traverses all 305 controls for 100 rows and both pin actions in both
+directions, retaining its original geometry, search state, selection and preedit.
+This uses an isolated matching Windows validation helper; it is not a new SDK
+image, Linux compositor or physical-input qualification. Controlled logout checks use inert
+inventory/counters, including cancellation-acknowledgment failure and rejection
+of user close during commit; they do not close real applications or end sessions.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
@@ -744,6 +965,14 @@ The Keyboard shortcut list also uses the existing frameless panel viewport to
 reveal focused Change/Off commands at low heights. It preserves card spacing,
 intentional wheel position on repaint, and the trusted recording lifecycle;
 no second frame or focus engine is introduced.
+Settings' page-navigation sidebar uses that same viewport and scrollbar so the
+last page remains visible after Tab/direct focus in short windows. Sidebar
+dimensions and commands stay unchanged, while the right content mount and footer
+are untouched; fitting-height navigation keeps its previous Tab order.
+Ancestor removal also retires the shared viewport's queued work, controller and
+focus/wheel listeners if descendant leave hooks were not invoked. A detached
+native node can have no `ownerDocument`; this is a normal lifecycle condition,
+not a reason to retain its capture state or hide an uncaught callback error.
 Audio's bounded content pane and the Displays/Keyboard lists also opt into the
 same themed scrollbar and focus viewport. The latter two retain fixed headers
 and footer actions. Scroll input issues no audio, display or shortcut service
@@ -753,7 +982,11 @@ The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
 focus. All six leave composing keyboard events untouched, including an already
 open Select popup; they do not change selection, consume the IME event or move
-focus during composition. Displays scale presets use a real, named per-head
+focus during composition. The scrollbar and desktop/menu ancestors also leave
+composing keys untouched: they do not navigate, dismiss Settings or menus, or
+Keep/Revert a trusted display transaction after a child returns. Ordinary
+keyboard behavior and display token/deadline handling stay unchanged.
+Displays scale presets use a real, named per-head
 themed radio group. Space and arrow/Home/End navigation edit only that head's
 draft, custom values can leave every preset unchecked, and Enter does not select
 a radio. Busy pages disable the factories rather than only replacing handlers.
@@ -913,11 +1146,32 @@ The standalone appearance preview is still a simulated sample. Its samples use
 the same data but do not certify every compositor effect. `unifiedToolbar`
 retains its preview meaning. Existing radius/shadow values affect native windows
 only through the explicit native-effects opt-in described below; this does not
-add backdrop blur, default-app material adoption or arbitrary font-file loading.
+add backdrop blur or arbitrary font-file loading. Settings' separate explicit
+wallpaper-client material policy is described above; it is not enabled by radius.
 Captions reuse the GUI text backend; on Linux, the existing ICU
 boundaries now keep the 512-codepoint cap and measured ellipsis on complete
 graphemes. Other platforms retain the SDK's existing code-point fallback.
 Font equivalence and full platform/state qualification remain incomplete.
+
+The current Linux GUI source has also been built in an isolated output using
+the existing SDL, static HarfBuzz, ICU and Skia dependencies, without modifying
+the frozen effects stack or shipping a new SDK. Actual native input/event,
+composition, pointer and complex-text entries pass. Installed DejaVu Sans/Mono
+literal families retain complete-string Arabic, Hebrew, Indic, CJK, combining
+and emoji shaping; named input measurement, native rendering, caret/hit testing,
+controlled selection/IME and mixed-instance controls use the same family.
+The existing selection pixel oracle reports no full/partial differences,
+including mixed RTL and real color emoji. These are matching Linux software
+runtime results, not original-system font equivalence, physical input or GPU
+certification. After the current GUI passed the original caption seam against
+the frozen scene helper, a separate isolated build also paired the current
+private GUI and WM with the unchanged, verified effects-ABI-2 library. Both
+original caption-effects and decorator-lifecycle tests pass, including all seven
+existing cold/normal/crash/saved/corrupt/legacy modes. The latter exercises real
+four-strip rendering, title/hover/press, resize/scale, minimize/maximize/restore,
+CSD/frameless/fullscreen exclusions and renderer recovery through actual native
+input and pixels. This is bounded current-stack headless/Pixman qualification,
+not all native features, physical hardware or six original-system comparisons.
 
 ### Per-theme discrepancy tasks
 
@@ -934,13 +1188,13 @@ specific task IDs, not another independently maintained status table.
 | Shared controls | E22.7: button borders, backgrounds and hover/press/disabled/default/focus; E22.8: checkbox/radio/switch/select/tabs/list selection; E22.9: text-box bevel/padding/caret/selection and scrollbars; E22.10: Settings/dialog/confirmation/authentication surfaces |
 | Actual geometry and state | E22.11: bounded native active/inactive/press/cancel/maximize/restore, narrow/low-screen and supported DPI checks, not just component fixtures |
 | XP SP3 Luna | E22.2: completed historical base-paint increment; E22.12: remaining caption bands, edges, text shadow and caption-control states; E22.13: taskbar/Start/quick-launch/tray/clock and two-column menu details |
-| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: multi-level Programs directories beyond the delivered flat submenu, profile and content-density/layout choices |
+| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: flat/tag/source-folder browsing and readonly local profile headers are delivered, while profile art/reference, full OS cascade and content-density/layout qualification remain; account management is a separate backend feature |
 | Server 2003 Classic corrected records | E22.16: bevel/outline ownership; E22.17: flat state, stipple, focus and icon spacing; E22.18: caption glyph size/offset and gradient span; E22.19: native menu/taskbar gap; E22.20: outside-menu caption input, linked to the existing functional task; E22.35: base frame metrics, solid desktop and gray two-column default with single-column override |
 | Windows 11 24H2 light | E22.21: caption backplates/glyphs/states; E22.22: centered taskbar, running markers, Start search/grid/footer; E22.23: full-client corner clipping/shadows; E22.24: Mica-like versus Acrylic backdrop mechanisms |
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
 | OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
 | macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
-| Shared Mac Dock semantics | E22.34: delivered grouping, window chooser, independent pins and bounded hover emphasis; native/reference qualification and full neighboring-icon animation remain |
+| Shared Mac Dock semantics | E22.34: delivered grouping, window chooser, independent pins and bounded animated neighboring-artwork magnification; native/reference qualification remains |
 
 The list distinguishes a measured defect, an explicit implementation gap and
 missing reference/qualification evidence. Corrected defects are not reopened
@@ -961,6 +1215,18 @@ macOS/Metal evidence likewise cannot be inferred from Windows raster fixtures.
 The existing whole-window effect tree samples only its own client and frame;
 the wallpaper-material helper paints an opaque, wallpaper-derived client base.
 Neither is a behind-scene regional sampling API for live Acrylic/vibrancy.
+The separate effects4 regional mechanism described below supplies that
+lower-scene sampling for the explicitly enabled Big Sur Dock and paired v8
+Modern taskbar/bounded optional Start recipients. It does not turn Settings'
+wallpaper material into live Acrylic or grant arbitrary surfaces sampling access.
+For bitmap wallpaper, packaged Settings reads only a bounded projection of the
+Shell's already-held committed asset through its authenticated, unique-owner
+`GetMaterialSource` binding. The PNG is at most 128 pixels per axis and 128 KiB;
+no caller path/key, other application's pixels or arbitrary file access enters
+that operation. The client rejects stale theme/revision/generation replies,
+keeps foreground DOM and inputs separate, and releases the material on stop.
+Failures retain the solid fill and an independent status row before the
+permanent footer, without covering the version or retrying on every clock.
 Real reflection, Snap layouts and installed-directory/account/history behavior
 also require actual mechanisms or data, rather than additional decorative rows.
 These boundaries do not block independent control, input and menu fixes.
@@ -983,8 +1249,9 @@ and limits are desktop policy, not built into the decoder.
 
 ## Native and application boundary
 
-Private `desktop.configureAppearance(theme, layout)` uses appearance protocol
-v6 with bounded numeric geometry schema 6. Prepare validates the bounded
+Private `desktop.configureAppearance(theme, layout, targets)` uses appearance protocol
+v7 with bounded numeric geometry schema 7. Omitted targets retain the original
+no-regional-target transaction. Prepare validates the bounded
 JS-compiled layout and an immutable descriptor; commit publishes the snapshot.
 The existing GUI renders complete four-strip pixel responses, not C theme
 commands. Each window owns current and pending snapshots so a delayed
@@ -1055,7 +1322,7 @@ physical pixel phase. Damage and visibility drive invalidation and sampling:
 there is no periodic idle rendering loop. Budget/allocation failures explicitly
 fail composition rather than producing an unreported square or missing shadow.
 
-Runtime library identity, headers, effects ABI 2, distinct SONAME and the packaged
+Runtime library identity, headers, effects ABI 4, distinct SONAME and the packaged
 patch hash must match.
 Stock SDKs are explicitly rejected rather than producing a square fallback.
 Current desktop builds use the paired Debian SDK; historical Alpine build and
@@ -1070,13 +1337,155 @@ lifecycle. Actual GUI strip pixels verify one outer-corner coverage rather than
 its square. Software llvmpipe checks exercise the pinned GLSL primitives at
 2048/4096/8192 widths; this is not a full WM GLES/DRM or physical-GPU qualification.
 The complete WM GLES path remains unqualified without a usable DRM device.
-Regional backdrop sampling remains separate work.
-Those compositor results describe the frozen shared-mechanism qualification.
-For the current preset-policy adoption, numeric compiler and production GUI
-caption/legacy-none checks pass; the attempted paired-Linux rerun did not reach
-its first execution marker, so no new live-compositor or GPU result is claimed.
-That environment revalidation remains separately tracked rather than triggering
-a new SDK/VM build or blocking unrelated interface work.
+The original effects2 results remain historical qualifications of that frozen
+stack. A later current-source private GUI/WM pair passed the original caption
+and seven-mode decorator lifecycle checks; those frozen effects3 results remain
+historical evidence, separate from the effects4 checks below.
+None of these software/headless results is physical GPU or original-OS pixel
+qualification.
+
+### Opt-in regional Dock backdrop
+
+`panel.regionalBackdrop` is optional public-schema-1 data with integer `sigma`
+1-32, RGB `tint` and integer `opacityPercent` 0-100. Only Big Sur explicitly sets
+`{ "sigma": 8, "tint": "#e7e7e7", "opacityPercent": 28 }` in the packaged and
+recovery catalogs. These are Polly design parameters, not measured macOS values.
+Other themes, the menu bar, Settings and third-party windows do not opt in.
+Removing the field restores the prior Dock material path; retained data is
+inactive if the panel is not a Dock.
+
+The generic non-input compositor node samples the current lower scene in paint
+order, including applications behind the Dock, rather than the previous output,
+its own glyphs, upper surfaces or a JS screenshot. An expanded kernel region
+feeds a separable premultiplied Gaussian, tint and single rounded coverage,
+clipped to the existing footprint. Foreground glyphs, bitmaps, markers, counts,
+hover animation, input and surface dimensions remain separate and unchanged.
+
+Only the authenticated Shell publisher can stage its actual mapped Dock Windows.
+Appearance7 declares the target count, stages bounded numeric material and
+rechecks owner, theme generation, privacy epoch, surface sequence and box at
+commit. Private material schema 2 carries effective radius in millipixels:
+JS projects it to both configured footprint axes without rewriting theme data
+or discarding half-pixel radii. The native adapter retains and revalidates Window
+handles across getters, serialization and roundtrips; retired targets fail
+explicitly before marshaling. There is no public pixel-readback or foreign-target
+API. Capability preflight precedes active publication and resource replacement;
+inactive catalog lookup stays pure.
+
+The new regional capability is **Pixman only**. GLES explicitly rejects its
+activation before publication, while existing GLES rounding/shadows retain
+their prior support. This is not a silent alpha/solid fallback. Effects4 uses
+`libwlroots-0.19-polly-effects4.so` and a separate prefix; the old effects2/3
+libraries and frozen validation outputs are not overwritten.
+
+At most eight regional nodes are retained, with bounded dimensions, sigma and
+per-output pixels. Old/candidate caches and workspace share the scene's 128MiB
+peak budget. Damage drives invalidation; idle does not resample on a timer.
+SHM backing is reserved so exhaustion reports failure instead of a mapped-page
+SIGBUS. A live failure retains the last committed output, reports independent
+`materialError` without swallowing business/service errors, and does not retry
+the same scene revision. New damage permits recovery. Lock/unlock privacy epochs,
+unmap, owner loss and output retirement discard retained samples; lock privacy
+takes precedence over preserving a stalled frame.
+
+The actual production Dock check moves two independent applications, preserves
+13,203 opaque foreground pixels and rectangular input, rejects invalid/retired
+targets without replacing the committed Dock, and exercises real allocation
+pressure plus lock-client crash/recovery. Native scene checks compare Gaussian
+pixels, mixed-scale/rotated outputs, aggregate peak refusal and byte-exact
+disable restoration. All eight historical native checks passed with the frozen matching
+effects3/GUI/WM on a byte-verified native Linux source snapshot.
+
+The current generic primitive admits at most 4096x768 logical pixels, but the
+original v7/schema2/role1 Dock contract explicitly keeps its 4096x512 limit.
+Expanded physical area remains at most 2*1024*1024 pixels, with unchanged
+32768-axis, sigma, eight-node and 128MiB peak bounds. Logical admission is not a
+guarantee at every scale or under backing pressure. Native checks retain the
+original pressure regression and add exact area/axis/height boundaries,
+640x640/660 Gaussian pixels, unchanged foreground/input, idle reuse and privacy.
+No larger Start or other surface gains authority from this primitive extension.
+
+### Modern taskbar and explicit Start opt-ins
+
+Public theme JSON remains schema 1. A fluent taskbar can optionally provide
+`panel.taskbarBackdrop: { "sigma": 8, "tint": "#f3f3f3", "opacityPercent": 72 }`;
+packaged Modern selects these original Polly design values. They are not
+Windows measurements, DWM/Mica or an official Acrylic reproduction. Missing
+fields preserve the original solid paint and other packaged themes.
+
+Optional `panel.startBackdrop` uses the same strict sigma (integer 1..32),
+RGB tint and integer opacity percentage (0..100) fields. It requires a fluent
+taskbar with `taskbarBackdrop`. The separately probed private appearance v8
+capability uses the current ABI4 renderer and binds actual owned taskbar/Start
+surfaces on the same output; v7 Dock support alone is not that capability.
+The decorator may still bind v7 with geometry schema 7. Only complete native
+transaction success clears the background; foreground opacity and input do not
+change. Serial plus exact-target retirement prevents old notifications from
+altering newly committed recipients.
+
+The v8 recipient policy explicitly remains 4096x512, even though the ABI4 generic
+primitive admits 4096x768. Packaged Start therefore has no `startBackdrop` default:
+its unchanged 660px menu token produces an actual 640px menu on a 720px output.
+An explicit oversized request is rejected and retains solid Start and committed
+taskbars. Only naturally shorter actual menus, such as 460px on a 540px output,
+can use the bounded optional material. Neither that result nor generic tall
+scene qualification delivers standard-height Start, original-OS pixels or E22
+completion. See the [paired consumer contract](README.md#modern-taskbar-and-bounded-optional-start-recipients).
+
+To explicitly enable the separate standard-height correctness path in a custom
+theme, use:
+
+```json
+"startBackdrop": {
+  "sigma": 16, "tint": "#f3f3f3", "opacityPercent": 72,
+  "standardHeight": true
+}
+```
+
+`standardHeight` is optional and strictly boolean, only in `panel.startBackdrop`.
+True requires the independently queried appearance v9 standard-Start capability
+and selects `[4, 3, radiusMilliLogicalPixels, sigma, tintRGB, opacityPercent]` via
+`prepare_start_backdrop`. Absent/false preserves v8/schema3/role3 and its 512 limit;
+v9 does not enlarge either old request. The v9 request admits only an actual
+paired Start, up to 4096x768 with the same expanded-area/axis/scale and aggregate
+old-plus-candidate/scratch/backing limits. Its taskbar remains v8/schema3/role2.
+Unsupported opt-in fails before resources, foreground, committed theme or saved
+preferences change. No public schema version, geometry, menu layout or input
+contract changes. The same original menu first paints solid; only a successful
+complete transaction clears its background, never glyph/text opacity.
+
+Both packaged catalogs deliberately omit this field and all Start material
+defaults. Standard 640/660-height correctness is not a 16.7ms/60Hz or interaction
+performance qualification, a default enablement, original-OS fidelity or full
+E22 completion.
+
+On the qualified GCC14/O3 x86-64 path, baseline SSE2 accumulates four channels
+in the original tap order, then uses the original scalar rounding with explicit
+constant lane packing. Other builds retain the original scalar source; there
+are no approximations, new ISA flags, workload thresholds or larger workspace.
+Both paths passed 40 exact-byte cases each, including the packed intermediate,
+alpha, tint and coverage; a guard-page check verifies the four-byte pixel read.
+Nine real scenes also retained identical complete frames and filter counts.
+
+One symmetric shared-host comparison, with one warmup and three samples per case,
+measured roughly 2.5-2.7x improvement for 640x640/660 production preparation and
+moving output builds; all seven other cases' observed production-stage medians
+also improved. Verification copy/storage is reported separately, with its
+allocation/prefault cost and longer lifetime disclosed. These are bounded
+observations, not statistical guarantees or 16.7ms/60Hz qualification: the large
+updates still take about 113-117ms. The corrected normal SHM test proves actual
+owner destruction, closed fd identity and unmapped pages rather than attributing
+shared-mount totals to one object; private 64KiB tests keep exact global recovery.
+Earlier failures and measurements remain preserved without a retrospective
+claim that all historical SIGBUS, ENOSPC or reaping causes are known.
+
+Two runs of the same binaries against Windows/P9 source mounts hit unchanged
+window-decoration frame/startup deadlines. Their failures remain preserved:
+measured P9 import I/O overhead is not proof of the full timeout cause, and no
+startup-race fix or universally successful P9 execution is claimed. Deadlines
+and original assertions were not weakened. These results qualify the native
+Linux source-filesystem runtime, not DRM, hardware, exact macOS vibrancy,
+reflection, Dock shadow or the remaining E22 items.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the

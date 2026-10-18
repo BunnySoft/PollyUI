@@ -140,7 +140,7 @@ def retain(output):
             records.append({"name": name, "version": expected["version"], "url": expected["url"],
                             "sha512": expected["sha512"], "file": "sources/" + source.name})
         subprocess.run(["python3", str(REPO / "desktop/release/debian/apply-wlroots-effects.py"),
-                        "/opt/pollyui-wlroots", "--check-installed"], check=True)
+                        "/opt/pollyui-wlroots-effects4", "--check-installed"], check=True)
         input_pin = json.loads((REPO / "desktop/release/debian/libinput.json").read_text())
         descriptor = Path("/opt/pollyui-input-source") / ("libinput_" + input_pin["version"] + ".dsc")
         version, archives = dsc_files(descriptor.read_text())

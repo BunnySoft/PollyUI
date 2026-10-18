@@ -1,4 +1,5 @@
 #include "pollyui/context.h"
+#include "native-window.h"
 #include "pollyui/window.h"
 #include "host/window_contract.h"
 #include "script/script.h"
@@ -261,6 +262,17 @@ static PuApp *window_app(JSContext *ctx, JSValueConst value, int allow_closed)
         return NULL;
     }
     return app;
+}
+
+PuWindow *pu_gui_window_from_value(JSContext *ctx, JSValueConst value)
+{
+    PuApp *app = window_app(ctx, value, 0);
+    if (!app) return NULL;
+    if (!app->window) {
+        JS_ThrowTypeError(ctx, "A live native Window is required");
+        return NULL;
+    }
+    return app->window;
 }
 
 static void app_report(JSContext *ctx)

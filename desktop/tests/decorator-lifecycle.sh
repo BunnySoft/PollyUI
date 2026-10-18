@@ -16,7 +16,7 @@ export XDG_RUNTIME_DIR="$temporary/run" XDG_CONFIG_HOME="$temporary/config"
 export XDG_DATA_HOME="$temporary/data" XDG_CACHE_HOME="$temporary/cache"
 export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman
 export SDL_VIDEODRIVER=wayland SDL_RENDER_DRIVER=software PU_RENDERER=raster
-for mode in cold-missing cold normal crash cold-saved cold-corrupt cold-legacy; do
+for mode in ${4:-cold-missing cold normal crash cold-saved cold-corrupt cold-legacy frame-policy}; do
     preferences="$temporary/config/pollyui/org.pollyui.shell/shell-preferences.json"
     legacy="$temporary/data/pollyui/org.pollyui.shell/localstorage.dat"
     case "$mode" in
@@ -47,6 +47,9 @@ for mode in cold-missing cold normal crash cold-saved cold-corrupt cold-legacy; 
     fi
     grep -q 'Decorator exited with status 0' "$temporary/lifecycle.log"
     grep '^PASS:' "$temporary/lifecycle.log"
+    if [ "$mode" = frame-policy ]; then
+        grep -q '^PASS: independent renderer completed all four frame submission negative cases$' "$temporary/lifecycle.log"
+    fi
     if [ -n "$before" ]; then
         [ "$before" = "$(cksum "$preferences")" ]
     else

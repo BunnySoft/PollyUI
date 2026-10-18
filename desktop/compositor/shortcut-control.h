@@ -13,6 +13,7 @@ void pu_shortcuts_unmap(struct PuDesktopView *view);
 void pu_shortcuts_metadata(struct PuDesktopView *view);
 void pu_shortcuts_keyboard_removed(struct PuDesktop *desktop, struct wlr_keyboard *keyboard);
 bool pu_shortcuts_switching(struct PuDesktop *desktop);
+bool pu_shortcuts_recording(struct PuDesktop *desktop);
 void pu_desktop_shortcut_action(struct PuDesktop *desktop, int action, bool reverse);
 void pu_desktop_focus_mapped(struct PuDesktop *desktop, uint64_t id);
 #endif

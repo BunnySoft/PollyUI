@@ -22,7 +22,14 @@ enum TestCommand {
     TEST_TEXT_ENABLE, TEST_TEXT_DISABLE, TEST_IME_CREATE, TEST_IME_COMMIT, TEST_IME_POPUP,
     TEST_IME_FORCE_BIND, TEST_IME_FORWARD,
     TEST_CURSOR_SHAPE, TEST_CURSOR_SURFACE, TEST_CURSOR_IMAGE_DESTROY, TEST_DRAG_TARGET,
-    TEST_CURSOR_INVALID, TEST_UNCONSTRAINED, TEST_EFFECT_APPEARANCE, TEST_EFFECT_SUBSURFACE
+    TEST_CURSOR_INVALID, TEST_UNCONSTRAINED, TEST_EFFECT_APPEARANCE, TEST_EFFECT_SUBSURFACE,
+    TEST_LIMITS, TEST_SHORTCUT_BIND, TEST_SHORTCUT_COMMIT, TEST_SHORTCUT_RECORDING, TEST_REFUSE_TILE,
+    TEST_CLIENT_SIZE, TEST_MENU_OPEN, TEST_MENU_PLACE, TEST_MENU_CLOSE, TEST_MENU_RETIRED_PLACE,
+    TEST_PICKER_ENABLE, TEST_PICKER_OPEN, TEST_PICKER_DISMISS,
+    TEST_MENU_CASCADE, TEST_MENU_RETIRED_CASCADE,
+    TEST_MENU_ARRANGE, TEST_MENU_RETIRED_ARRANGE,
+    TEST_SYSTEM_MENU_ENABLE, TEST_SYSTEM_MENU_CONSUME, TEST_SYSTEM_MENU_OWNER,
+    TEST_SYSTEM_MENU_RETIRED_CONSUME
 };
 
 struct TestLayer {
@@ -37,6 +44,7 @@ struct TestRequest {
     uint32_t serial;
     uint32_t edges;
     struct TestLayer layer;
+    char key[128];
 };
 
 struct TestReply {
@@ -56,6 +64,18 @@ struct TestReply {
     uint32_t serial;
     uint32_t cursor_enter_serial;
     int cursor_shape_capability;
+    uint32_t tiled, shortcut_mask;
+    int shortcut_version, shortcut_committed;
+    char shortcut_error[128];
+    uint32_t placement_serial, placement_epoch, placement_accepted, placement_results;
+    uint32_t placement, placement_pending, placement_capabilities;
+    char placement_message[192];
+    uint32_t picker_capability, picker_token, picker_target, picker_offers, picker_dismissals;
+    uint32_t arrangement_capability;
+    uint32_t output_ids[8];
+    uint32_t system_menu_capability, system_menu_serial, system_menu_target, system_menu_origin;
+    uint32_t system_menu_requests, system_menu_cancellations, system_menu_reply, system_menu_accepted;
+    uint32_t system_menu_results;
 };
 
 #endif

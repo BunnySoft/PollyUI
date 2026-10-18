@@ -1,4 +1,5 @@
 import { parseThemeFile, applyThemeOverrides } from './desktop/shared/ui/theme-schema.mjs';
+import { preflightBodyFont } from './desktop/shared/ui/body-font.mjs';
 
 const connections = new WeakMap();
 
@@ -50,6 +51,7 @@ export function subscribeDesktopTheme(onChange, {
       const theme = snapshot.theme ? applyThemeOverrides(
         { schemaVersion: 1, default: snapshot.theme.id, themes: [snapshot.theme] },
         JSON.stringify({ schemaVersion: 1, themes: { [snapshot.theme.id]: local } })).themes[0] : null;
+      if (theme) preflightBodyFont(theme);
       state = Object.freeze({ available: snapshot.available, ready: !!theme, revision: snapshot.revision,
         theme, error: '' });
       lastDocument = snapshot.document; lastRevision = snapshot.revision;

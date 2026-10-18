@@ -1,6 +1,6 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
-import { desktopCommand, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, themedText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
@@ -23,6 +23,43 @@ export function programCategories(entries) {
 
 export function programCategoryId(tag) {
   return tag === null ? 'shell-program-category-untagged' : 'shell-program-category-tag-' + encodeURIComponent(tag);
+}
+
+export function programSourcePath(entry) {
+  const { id, path } = entry;
+  if (typeof id !== 'string' || typeof path !== 'string' || id.startsWith('bundle:') || !id.endsWith('.desktop') ||
+      !id.length || /[\/\\\x00-\x1f\x7f]/.test(id) || /[\uD800-\uDFFF]/u.test(id) ||
+      !path.startsWith('/') || /[\\\x00-\x1f\x7f]/.test(path) || /[\uD800-\uDFFF]/u.test(path) ||
+      path.slice(1).split('/').some(part => !part || part === '.' || part === '..')) return null;
+  const start = path.length - id.length;
+  if (start < 1 || path[start - 1] !== '/') return null;
+  const relative = path.slice(start);
+  if (relative.replaceAll('/', '-') !== id || relative.split('/').at(-1).length <= 8) return null;
+  return relative;
+}
+
+export function programFolderContents(entries, folder = '') {
+  const folders = new Map(), applications = [];
+  let exists = false;
+  for (const entry of entries) {
+    const relative = programSourcePath(entry);
+    if (relative === null || folder && !relative.startsWith(folder + '/')) continue;
+    const remaining = folder ? relative.slice(folder.length + 1) : relative;
+    const separator = remaining.indexOf('/');
+    exists = true;
+    if (separator < 0) applications.push(entry);
+    else {
+      const name = remaining.slice(0, separator), path = folder ? folder + '/' + name : name;
+      folders.set(path, { folder: path, name });
+    }
+  }
+  return { exists: folder ? exists : folders.size > 0,
+    folders: [...folders.values()].sort((a, b) => a.name.localeCompare(b.name) ||
+      (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0)), entries: applications };
+}
+
+export function programFolderId(folder) {
+  return 'shell-program-source-folder/' + encodeURIComponent(folder);
 }
 
 const pendingLayouts = new WeakMap();
@@ -77,11 +114,17 @@ export function programsPlacement(root, trigger, rowHeight) {
 }
 
 export function programsMenu(theme, entries, desktop, state) {
-  const view = state.view ?? 'all', category = state.category ?? null;
-  const listed = view === 'categories' ? [] : view === 'category' ? categoryEntries(entries, category) : entries;
-  const identity = JSON.stringify([state.epoch, view, category]);
+  const view = state.view ?? 'all', category = state.category ?? null, folder = state.folder ?? '';
+  const sources = view === 'categories' || view === 'folders' ?
+    programFolderContents(entries, view === 'folders' ? folder : '') : null;
+  const listed = view === 'categories' ? [] : view === 'category' ? categoryEntries(entries, category) :
+    view === 'folders' ? sources.entries : entries;
+  const identity = JSON.stringify([state.epoch, view, category, folder]);
   const backAction = () => {
-    if (view === 'category') state.navigate('categories', null, programCategoryId(category));
+    if (view === 'folders') {
+      if (folder) state.navigateFolder(folder.split('/').slice(0, -1).join('/'), programFolderId(folder));
+      else state.navigate('categories', null, 'shell-program-source-folders');
+    } else if (view === 'category') state.navigate('categories', null, programCategoryId(category));
     else if (view === 'categories') state.navigate('all', null, 'shell-program-categories');
     else state.change(false, 'trigger');
   };
@@ -130,6 +173,17 @@ export function programsMenu(theme, entries, desktop, state) {
     node.props.onMouseleave = event => { mouseleave?.(event); leave(event); };
     return guardTaskGesture(node, identity + ':' + id);
   };
+  const folderCommand = (id, name, path) => {
+    const enter = () => state.navigateFolder(path);
+    const node = command(id, name + ' >', enter, true, 'Application registration source folder, not a metadata tag');
+    const key = node.props.onKeydown;
+    node.props.onKeydown = event => {
+      if (event.isComposing) return;
+      if (event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); enter(); }
+      else key(event);
+    };
+    return [id, node];
+  };
   const current = new Map(view === 'categories' ? programCategories(entries).map(item => {
     const id = programCategoryId(item.tag);
     const node = command(id, item.name + ' (' + item.count + ')',
@@ -142,13 +196,15 @@ export function programsMenu(theme, entries, desktop, state) {
       } else key(event);
     };
     return [id, node];
-  }) : listed.flatMap(entry => [
+  }).concat(sources.exists ? [folderCommand('shell-program-source-folders', 'Source folders', '')] : []) :
+    (view === 'folders' ? sources.folders.map(item => folderCommand(programFolderId(item.folder), item.name, item.folder)) : [])
+      .concat(listed.flatMap(entry => [
     ['shell-program-' + entry.id, command('shell-program-' + entry.id, entry.name,
       () => state.launch(entry.id), !entry.unavailable, entry.unavailable ?? '')],
     ...(desktop ? [['shell-program-pin-' + entry.id, command('shell-program-pin-' + entry.id,
       (desktop.has(entry.id) ? 'Unpin ' : 'Pin ') + entry.name,
       () => state.pin(entry.id))]] : []),
-  ]));
+  ])));
   // Positional reconciliation must not turn a held row into a different registered application.
   const known = new Set(state.slots);
   for (const id of current.keys()) if (!known.has(id)) { state.slots.push(id); known.add(id); }
@@ -159,6 +215,7 @@ export function programsMenu(theme, entries, desktop, state) {
     onUpdate: node => commandStates.delete(node),
   }), identity + ':vacant:' + id)) : [];
   const key = event => {
+    if (event.isComposing) return;
     if (event.key === 'Escape' || event.key === 'ArrowLeft') {
       event.preventDefault(); event.stopPropagation(); backAction(); return;
     }
@@ -177,11 +234,13 @@ export function programsMenu(theme, entries, desktop, state) {
       index < 0 ? forward ? 0 : enabled.length - 1 : (index + (forward ? 1 : -1) + enabled.length) % enabled.length;
     enabled[next].focus();
   };
-  const back = command('shell-program-back', view === 'category' ? '< ' + (category ?? 'Uncategorized') :
+  const back = command('shell-program-back', view === 'folders' ? '< ' + (folder.split('/').at(-1) || 'Source folders') :
+    view === 'category' ? '< ' + (category ?? 'Uncategorized') :
     '< All Programs', backAction);
   Object.assign(back.props.style, { height: 24, flexGrow: 1, flexBasis: 0, overflow: 'hidden',
     paddingLeft: 3, paddingRight: 3 });
   if (view === 'category') back.props['aria-label'] = 'Back to Categories from ' + (category ?? 'Uncategorized (no tags)');
+  if (view === 'folders') back.props['aria-label'] = folder ? 'Back to parent source folder from ' + folder : 'Back to Categories from Source folders';
   const browse = state.navigate ? command(view === 'all' ? 'shell-program-categories' : 'shell-program-all',
     view === 'all' ? 'Categories' : 'All apps',
     () => state.navigate(view === 'all' ? 'categories' : 'all')) : null;
@@ -202,7 +261,8 @@ export function programsMenu(theme, entries, desktop, state) {
     state.change(onTrigger, onTrigger ? 'first' : 'trigger');
   }, onKeydown: key, onMouseleave: leave,
     onLeave: (node, done) => { releasePanelScrollbar(node.querySelector('#shell-program-list')); done(); } },
-  h('view', { id: 'shell-program-menu', role: 'menu', 'aria-label': view === 'categories' ?
+  h('view', { id: 'shell-program-menu', role: 'menu', 'aria-label': view === 'folders' ?
+    'Application source folders: ' + (folder || 'root') : view === 'categories' ?
     'Application categories (metadata tags)' : view === 'category' ?
       'Category: ' + (category ?? 'Uncategorized (no tags)') : 'All Programs', style: {
     position: 'absolute', ...state.placement,
@@ -211,12 +271,13 @@ export function programsMenu(theme, entries, desktop, state) {
   h('view', { id: 'shell-program-header', style: { flexDirection: 'row', alignItems: 'center',
     height: 24, flexShrink: 0, minWidth: 0, overflow: 'hidden' } }, back, browse),
   h('view', { id: 'shell-program-error', role: 'alert', style: { display: state.error ? 'flex' : 'none', padding: 4, flexShrink: 0 } },
-    state.error ? desktopText(state.error, theme.colors.text, themeTextSize(theme)) : null),
+    state.error ? themedText(theme, state.error, theme.colors.text, themeTextSize(theme)) : null),
   withPanelScrollbar(theme, h('view', { id: 'shell-program-list', style: {
     flexGrow: 1, flexBasis: 0, minHeight: 0, minWidth: 0, overflow: 'scroll',
   }, onWheel: scrollDesktop, onMouseleave: leave,
     onMount: clampPrograms, onUpdate: clampPrograms, onLeave: leavePrograms }, items,
-  !current.size ? desktopText(view === 'categories' ? 'No application categories available' :
+  !current.size ? themedText(theme, view === 'categories' ? 'No application categories available' :
+    view === 'folders' ? 'No applications or subfolders in this source folder' :
     view === 'category' ? 'No applications in this category' : 'No applications available',
     theme.colors.muted, themeTextSize(theme)) : null))));
 }

@@ -269,11 +269,22 @@ static void presenter(struct wl_client *client, struct wl_resource *resource, ui
     }
 }
 
+bool pu_shortcuts_recording(struct PuDesktop *desktop)
+{
+    if (!desktop->shortcuts) return false;
+    struct Binding *binding;
+    wl_list_for_each(binding, &desktop->shortcuts->bindings, link)
+        if (binding->recording) return true;
+    return false;
+}
+
 static void recording(struct wl_client *client, struct wl_resource *resource, uint32_t enabled)
 {
     (void)client;
     struct Binding *binding = wl_resource_get_user_data(resource);
     binding->recording = enabled != 0;
+    if (enabled) pu_workspaces_system_menu_cancel(binding->state->desktop);
+    if (enabled) pu_workspaces_picker_cancel(binding->state->desktop);
     if (enabled) pu_shortcuts_cancel(binding->state->desktop);
 }
 
@@ -320,6 +331,10 @@ static void bind_control(struct wl_client *client, void *data, uint32_t version,
         wl_client_post_implementation_error(client, "Shortcut control requires the trusted Shell");
         return;
     }
+    if (version != 2) {
+        wl_client_post_implementation_error(client, "Shortcut control requires version 2 and the ten-action catalog");
+        return;
+    }
     struct Binding *binding = calloc(1, sizeof(*binding));
     if (!binding) { wl_client_post_no_memory(client); return; }
     binding->resource = wl_resource_create(client, &polly_shortcuts_v1_interface, version, id);
@@ -337,7 +352,7 @@ bool pu_shortcuts_init(struct PuDesktop *desktop)
     desktop->shortcuts = state; state->desktop = desktop;
     wl_list_init(&state->bindings);
     pu_shortcut_defaults(state->current);
-    state->global = wl_global_create(desktop->display, &polly_shortcuts_v1_interface, 1, state, bind_control);
+    state->global = wl_global_create(desktop->display, &polly_shortcuts_v1_interface, 2, state, bind_control);
     return state->global != NULL;
 }
 

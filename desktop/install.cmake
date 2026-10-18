@@ -85,6 +85,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/settings-environment.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/file-system.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/native-files.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/shared/user-profile.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/configuration-files.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/theme-resources.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/shared" COMPONENT PollyDesktop)

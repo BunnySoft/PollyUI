@@ -80,27 +80,36 @@ index 2159bc3..1a2f6d7 100644
  
  /**
 diff --git a/include/wlr/types/wlr_scene.h b/include/wlr/types/wlr_scene.h
-index 2292f1f..1abb0cd 100644
+index 2292f1f..1ed5b98 100644
 --- a/include/wlr/types/wlr_scene.h
 +++ b/include/wlr/types/wlr_scene.h
-@@ -38,6 +38,16 @@ struct wlr_surface;
+@@ -38,6 +38,25 @@ struct wlr_surface;
  
  struct wlr_scene_node;
  struct wlr_scene_buffer;
 +struct wlr_scene_rounding;
 +
-+#define WLR_SCENE_EFFECTS_ABI 2
++#define WLR_SCENE_EFFECTS_ABI 4
 +#define WLR_SCENE_EFFECTS_MAX_AXIS 32768
 +#define WLR_SCENE_EFFECTS_MAX_PIXELS (16u * 1024u * 1024u)
 +#define WLR_SCENE_EFFECTS_MAX_BYTES (128u * 1024u * 1024u)
++#define WLR_SCENE_BACKDROP_MAX_WIDTH 4096
++#define WLR_SCENE_BACKDROP_MAX_HEIGHT 768
++#define WLR_SCENE_BACKDROP_MAX_PIXELS (2u * 1024u * 1024u)
++#define WLR_SCENE_BACKDROP_MAX_NODES 8
++#define WLR_SCENE_BACKDROP_MAX_RADIUS 64
++#define WLR_SCENE_BACKDROP_MIN_SIGMA 0.5f
++#define WLR_SCENE_BACKDROP_MAX_SIGMA 32
++#define WLR_SCENE_BACKDROP_MAX_SCALED_SIGMA 64
 +
 +/* A separately named symbol makes a new compositor/old library mismatch fatal. */
-+uint32_t wlr_scene_effects_abi_v2(void);
-+const char *wlr_scene_effects_source_sha256_v2(void);
++uint32_t wlr_scene_effects_abi_v4(void);
++const char *wlr_scene_effects_source_sha256_v4(void);
++struct wlr_scene_backdrop;
  struct wlr_scene_output_layout;
  
  struct wlr_presentation;
-@@ -91,6 +101,7 @@ struct wlr_scene_tree {
+@@ -91,6 +110,7 @@ struct wlr_scene_tree {
  	struct wlr_scene_node node;
  
  	struct wl_list children; // wlr_scene_node.link
@@ -108,26 +117,39 @@ index 2292f1f..1abb0cd 100644
  };
  
  /** The root scene-graph node. */
-@@ -102,6 +113,8 @@ struct wlr_scene {
+@@ -102,6 +122,12 @@ struct wlr_scene {
  	// May be NULL
  	struct wlr_linux_dmabuf_v1 *linux_dmabuf_v1;
  	struct wlr_gamma_control_manager_v1 *gamma_control_manager_v1;
 +	size_t effects_cached_bytes;
 +	uint64_t effects_render_count;
++	struct wl_list backdrops;
++	uint64_t backdrop_render_count;
++	uint64_t backdrop_revision;
++	size_t effects_peak_bytes;
  
  	struct {
  		struct wl_listener linux_dmabuf_v1_destroy;
-@@ -140,6 +153,9 @@ struct wlr_scene_rect {
+@@ -140,6 +166,10 @@ struct wlr_scene_rect {
  	struct wlr_scene_node node;
  	int width, height;
  	float color[4];
 +	float corner_radius, shadow_sigma;
 +	int shadow_inset, shadow_offset_x, shadow_offset_y;
 +	bool is_shadow;
++	struct wlr_scene_backdrop *backdrop;
  };
  
  struct wlr_scene_outputs_update_event {
-@@ -361,6 +377,21 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
+@@ -211,6 +241,7 @@ struct wlr_scene_buffer {
+ /** A viewport for an output in the scene-graph */
+ struct wlr_scene_output {
+ 	struct wlr_output *output;
++	bool backdrop_failed;
+ 	struct wl_list link; // wlr_scene.outputs
+ 	struct wlr_scene *scene;
+ 	struct wlr_addon addon;
+@@ -361,6 +392,39 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
   */
  struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
  
@@ -146,11 +168,29 @@ index 2292f1f..1abb0cd 100644
 +bool wlr_scene_shadow_set_geometry(struct wlr_scene_rect *shadow,
 +	int width, int height, float radius, float sigma, int offset_x, int offset_y);
 +
++/**
++ * Pixman-only regional Gaussian backdrop. The non-input node samples the current
++ * lower scene in paint order, never its own/upper content or a previous frame.
++ * Tint is premultiplied RGBA; radius/sigma are logical pixels. Creation validates
++ * all intersecting outputs and renders candidate caches before returning disabled. NULL
++ * leaves all existing nodes unchanged. Caches and temporary work share the scene
++ * effects budget, including old-plus-candidate peak. At most eight nodes.
++ * Logical extent is at most 4096x768, not a guarantee at every scale/sigma:
++ * the actual scaled rectangle plus ceil(3*sigma*scale) padding on each side
++ * must also fit MAX_AXIS/MAX_PIXELS and the scene-wide peak reservation.
++ * Limits are exposed by WLR_SCENE_BACKDROP_*; no tiling or quality fallback.
++ */
++bool wlr_scene_backdrop_supported(struct wlr_renderer *renderer);
++/** Drop all retained backdrop pixels at a compositor privacy boundary. */
++void wlr_scene_backdrop_clear(struct wlr_scene *scene);
++struct wlr_scene_rect *wlr_scene_backdrop_create(struct wlr_scene_tree *parent,
++	const struct wlr_box *box, float radius, float sigma, const float tint[static 4]);
++
  /**
   * Add a node displaying a single surface to the scene-graph.
   *
 diff --git a/meson.build b/meson.build
-index 7aea9f0..936345b 100644
+index 7aea9f0..a0040e1 100644
 --- a/meson.build
 +++ b/meson.build
 @@ -20,6 +20,17 @@ versioned_name = '@0@-@1@.@2@'.format(meson.project_name(), version_major, versi
@@ -176,7 +216,7 @@ index 7aea9f0..936345b 100644
  symbols_flag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), symbols_file)
  lib_wlr = library(
 -	versioned_name, wlr_files,
-+	versioned_name + '-polly-effects2', wlr_files,
++	versioned_name + '-polly-effects4', wlr_files,
  	dependencies: wlr_deps,
  	include_directories: [wlr_inc],
  	install: true,
@@ -492,16 +532,21 @@ index 4ae742c..fab6df8 100644
  
  static const struct wlr_render_pass_impl render_pass_impl = {
 diff --git a/types/scene/wlr_scene.c b/types/scene/wlr_scene.c
-index e823d62..093f81b 100644
+index e823d62..f0f2f29 100644
 --- a/types/scene/wlr_scene.c
 +++ b/types/scene/wlr_scene.c
-@@ -1,10 +1,18 @@
+@@ -1,10 +1,23 @@
  #include <assert.h>
++#include <errno.h>
++#include <fcntl.h>
 +#include "polly-scene-effects.h"
 +#include <math.h>
 +#include <drm_fourcc.h>
  #include <stdlib.h>
  #include <string.h>
++#if defined(__x86_64__) && defined(__SSE2__)
++#include <emmintrin.h>
++#endif
  #include <wlr/backend.h>
  #include <wlr/render/swapchain.h>
  #include <wlr/render/drm_syncobj.h>
@@ -514,7 +559,7 @@ index e823d62..093f81b 100644
  #include <wlr/types/wlr_compositor.h>
  #include <wlr/types/wlr_damage_ring.h>
  #include <wlr/types/wlr_gamma_control_v1.h>
-@@ -16,6 +24,7 @@
+@@ -16,6 +29,7 @@
  #include <wlr/util/transform.h>
  #include "types/wlr_output.h"
  #include "types/wlr_scene.h"
@@ -522,7 +567,7 @@ index e823d62..093f81b 100644
  #include "util/array.h"
  #include "util/env.h"
  #include "util/time.h"
-@@ -29,6 +38,94 @@
+@@ -29,6 +43,169 @@
  #define DMABUF_FEEDBACK_DEBOUNCE_FRAMES  30
  #define HIGHLIGHT_DAMAGE_FADEOUT_TIME   250
  
@@ -547,11 +592,11 @@ index e823d62..093f81b 100644
 +	struct wl_list caches;
 +};
 +
-+uint32_t wlr_scene_effects_abi_v2(void) {
++uint32_t wlr_scene_effects_abi_v4(void) {
 +	return WLR_SCENE_EFFECTS_ABI;
 +}
 +
-+const char *wlr_scene_effects_source_sha256_v2(void) {
++const char *wlr_scene_effects_source_sha256_v4(void) {
 +	return WLR_SCENE_EFFECTS_SOURCE_SHA256;
 +}
 +
@@ -613,11 +658,101 @@ index e823d62..093f81b 100644
 +		rounding_release_subtree(child);
 +	}
 +}
++struct backdrop_cache {
++	struct wl_list link;
++	struct wlr_scene_backdrop *backdrop;
++	struct wlr_scene_output *output;
++	struct wl_listener output_destroy;
++	struct wlr_buffer *buffer;
++	struct wlr_texture *texture;
++	struct wlr_box physical;
++	float scale;
++	float phase_x, phase_y;
++	size_t bytes;
++	bool dirty;
++};
++
++struct wlr_scene_backdrop {
++	struct wlr_scene_rect *rect;
++	struct wlr_scene *scene;
++	struct wl_list link, caches;
++	float sigma;
++};
++
++static void backdrop_cache_destroy(struct backdrop_cache *cache) {
++	if (cache->texture) {
++		wlr_texture_destroy(cache->texture);
++	}
++	if (cache->buffer) {
++		wlr_buffer_drop(cache->buffer);
++	}
++	cache->backdrop->scene->effects_cached_bytes -= cache->bytes;
++	wl_list_remove(&cache->output_destroy.link);
++	wl_list_remove(&cache->link);
++	free(cache);
++}
++
++static void backdrop_release(struct wlr_scene_backdrop *backdrop) {
++	struct backdrop_cache *cache, *tmp;
++	wl_list_for_each_safe(cache, tmp, &backdrop->caches, link) {
++		backdrop_cache_destroy(cache);
++	}
++}
++
++static void backdrop_release_subtree(struct wlr_scene_node *node) {
++	if (node->type == WLR_SCENE_NODE_RECT) {
++		struct wlr_scene_backdrop *backdrop = wlr_scene_rect_from_node(node)->backdrop;
++		if (backdrop) {
++			backdrop_release(backdrop);
++		}
++	} else if (node->type == WLR_SCENE_NODE_TREE) {
++		struct wlr_scene_node *child;
++		wl_list_for_each(child, &wlr_scene_tree_from_node(node)->children, link) {
++			backdrop_release_subtree(child);
++		}
++	}
++}
++
++static void backdrop_invalidate(struct wlr_scene *scene, struct wlr_scene_node *changed);
++static bool backdrop_preflight(struct wlr_scene_rect *rect);
++
++static struct wlr_buffer *effects_create_buffer(struct wlr_output *output,
++		int width, int height, const struct wlr_drm_format *format) {
++	struct wlr_buffer *buffer = wlr_allocator_create_buffer(output->allocator, width, height, format);
++	struct wlr_shm_attributes shm;
++	if (buffer && wlr_renderer_is_pixman(output->renderer) && wlr_buffer_get_shm(buffer, &shm)) {
++		int error;
++		do {
++			error = posix_fallocate(shm.fd, shm.offset, (off_t)shm.stride * shm.height);
++		} while (error == EINTR);
++		if (error) {
++			wlr_log(WLR_ERROR, "Cannot reserve scene effect SHM backing: %s", strerror(error));
++			wlr_buffer_drop(buffer);
++			return NULL;
++		}
++	}
++	return buffer;
++}
 +
  struct wlr_scene_tree *wlr_scene_tree_from_node(struct wlr_scene_node *node) {
  	assert(node->type == WLR_SCENE_NODE_TREE);
  	struct wlr_scene_tree *tree = wl_container_of(node, tree, node);
-@@ -134,6 +231,11 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
+@@ -108,6 +285,14 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
+ 	wlr_scene_node_set_enabled(node, false);
+ 
+ 	struct wlr_scene *scene = scene_node_get_root(node);
++	if (node->type == WLR_SCENE_NODE_RECT) {
++		struct wlr_scene_backdrop *backdrop = wlr_scene_rect_from_node(node)->backdrop;
++		if (backdrop) {
++			backdrop_release(backdrop);
++			wl_list_remove(&backdrop->link);
++			free(backdrop);
++		}
++	}
+ 	if (node->type == WLR_SCENE_NODE_BUFFER) {
+ 		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
+ 
+@@ -134,6 +319,11 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
  		assert(wl_list_empty(&scene_buffer->events.frame_done.listener_list));
  	} else if (node->type == WLR_SCENE_NODE_TREE) {
  		struct wlr_scene_tree *scene_tree = wlr_scene_tree_from_node(node);
@@ -629,7 +764,15 @@ index e823d62..093f81b 100644
  
  		if (scene_tree == &scene->tree) {
  			assert(!node->parent);
-@@ -256,12 +358,16 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
+@@ -177,6 +367,7 @@ struct wlr_scene *wlr_scene_create(void) {
+ 	}
+ 
+ 	scene_tree_init(&scene->tree, NULL);
++	wl_list_init(&scene->backdrops);
+ 
+ 	wl_list_init(&scene->outputs);
+ 	wl_list_init(&scene->linux_dmabuf_v1_destroy.link);
+@@ -256,12 +447,16 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
  
  static void scene_node_opaque_region(struct wlr_scene_node *node, int x, int y,
  		pixman_region32_t *opaque) {
@@ -643,11 +786,11 @@ index e823d62..093f81b 100644
  	if (node->type == WLR_SCENE_NODE_RECT) {
  		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
 -		if (scene_rect->color[3] != 1) {
-+		if (scene_rect->is_shadow || scene_rect->color[3] != 1) {
++		if (scene_rect->backdrop || scene_rect->is_shadow || scene_rect->color[3] != 1) {
  			return;
  		}
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
-@@ -329,12 +435,16 @@ struct render_data {
+@@ -329,12 +524,16 @@ struct render_data {
  
  	struct wlr_render_pass *render_pass;
  	pixman_region32_t damage;
@@ -664,7 +807,7 @@ index e823d62..093f81b 100644
  	wlr_region_transform(region, region, transform, data->trans_width, data->trans_height);
  }
  
-@@ -360,6 +470,8 @@ static void scale_box(struct wlr_box *box, float scale) {
+@@ -360,6 +559,8 @@ static void scale_box(struct wlr_box *box, float scale) {
  static void transform_output_box(struct wlr_box *box, const struct render_data *data) {
  	enum wl_output_transform transform = wlr_output_transform_invert(data->transform);
  	scale_box(box, data->scale);
@@ -673,21 +816,86 @@ index e823d62..093f81b 100644
  	wlr_box_transform(box, box, transform, data->trans_width, data->trans_height);
  }
  
-@@ -675,6 +787,7 @@ static void scene_update_region(struct wlr_scene *scene,
+@@ -673,9 +874,69 @@ static void scene_update_region(struct wlr_scene *scene,
+ 	pixman_region32_fini(&visible);
+ }
  
++static bool backdrop_depends_on(struct wlr_scene_node *backdrop, struct wlr_scene_node *changed) {
++	for (struct wlr_scene_node *ancestor = backdrop; ancestor;
++			ancestor = ancestor->parent ? &ancestor->parent->node : NULL) {
++		if (ancestor == changed) {
++			return true;
++		}
++	}
++	for (struct wlr_scene_node *a = changed; a->parent; a = &a->parent->node) {
++		for (struct wlr_scene_node *b = backdrop; b->parent; b = &b->parent->node) {
++			if (a->parent != b->parent || a == b) {
++				continue;
++			}
++			struct wlr_scene_node *sibling;
++			wl_list_for_each(sibling, &a->parent->children, link) {
++				if (sibling == a) {
++					return true;
++				}
++				if (sibling == b) {
++					return false;
++				}
++			}
++		}
++	}
++	return false;
++}
++
++static void backdrop_invalidate(struct wlr_scene *scene, struct wlr_scene_node *changed) {
++	if (!wl_list_empty(&scene->backdrops)) {
++		scene->backdrop_revision++;
++	}
++	struct wlr_scene_backdrop *backdrop;
++	wl_list_for_each(backdrop, &scene->backdrops, link) {
++		if (changed && !backdrop_depends_on(&backdrop->rect->node, changed)) {
++			continue;
++		}
++		struct backdrop_cache *cache;
++		wl_list_for_each(cache, &backdrop->caches, link) {
++			cache->dirty = true;
++		}
++		int x, y;
++		if (wlr_scene_node_coords(&backdrop->rect->node, &x, &y)) {
++			pixman_region32_t damage;
++			pixman_region32_init_rect(&damage, x, y,
++				backdrop->rect->width, backdrop->rect->height);
++			scene_damage_outputs(scene, &damage);
++			pixman_region32_fini(&damage);
++		}
++	}
++}
++
++void wlr_scene_backdrop_clear(struct wlr_scene *scene) {
++	struct wlr_scene_backdrop *backdrop;
++	wl_list_for_each(backdrop, &scene->backdrops, link) {
++		backdrop_release(backdrop);
++	}
++	backdrop_invalidate(scene, NULL);
++}
++
  static void scene_node_update(struct wlr_scene_node *node,
  		pixman_region32_t *damage) {
 +	rounding_invalidate(node);
  	struct wlr_scene *scene = scene_node_get_root(node);
++	backdrop_invalidate(scene, node);
  
  	int x, y;
-@@ -711,6 +824,62 @@ static void scene_node_update(struct wlr_scene_node *node,
+ 	if (!wlr_scene_node_coords(node, &x, &y)) {
+@@ -711,6 +972,65 @@ static void scene_node_update(struct wlr_scene_node *node,
  	pixman_region32_fini(damage);
  }
  
 +static bool subtree_has_rounding(struct wlr_scene_tree *tree) {
 +	struct wlr_scene_node *child;
 +	wl_list_for_each(child, &tree->children, link) {
++		if (child->type == WLR_SCENE_NODE_RECT && wlr_scene_rect_from_node(child)->backdrop) {
++			return true;
++		}
 +		if (child->type == WLR_SCENE_NODE_TREE) {
 +			struct wlr_scene_tree *subtree = wlr_scene_tree_from_node(child);
 +			if (subtree->rounding || subtree_has_rounding(subtree)) {
@@ -744,7 +952,7 @@ index e823d62..093f81b 100644
  struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
  		int width, int height, const float color[static 4]) {
  	assert(parent);
-@@ -731,6 +900,48 @@ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
+@@ -731,6 +1051,94 @@ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
  	return scene_rect;
  }
  
@@ -754,6 +962,52 @@ index e823d62..093f81b 100644
 +		shadow->is_shadow = true;
 +	}
 +	return shadow;
++}
++bool wlr_scene_backdrop_supported(struct wlr_renderer *renderer) {
++	return renderer && wlr_renderer_is_pixman(renderer);
++}
++
++struct wlr_scene_rect *wlr_scene_backdrop_create(struct wlr_scene_tree *parent,
++		const struct wlr_box *box, float radius, float sigma, const float tint[static 4]) {
++	struct wlr_scene *scene = scene_node_get_root(&parent->node);
++	if (!box || box->width <= 0 || box->height <= 0 ||
++			box->width > WLR_SCENE_BACKDROP_MAX_WIDTH || box->height > WLR_SCENE_BACKDROP_MAX_HEIGHT ||
++			!isfinite(radius) || radius < 0 || radius > WLR_SCENE_BACKDROP_MAX_RADIUS ||
++			radius > fminf(box->width, box->height) / 2 ||
++			!isfinite(sigma) || sigma < WLR_SCENE_BACKDROP_MIN_SIGMA || sigma > WLR_SCENE_BACKDROP_MAX_SIGMA ||
++			wl_list_length(&scene->backdrops) >= WLR_SCENE_BACKDROP_MAX_NODES ||
++			parent->rounding || scene_node_rounding(&parent->node)) {
++		wlr_log(WLR_ERROR, "Invalid regional backdrop geometry or node limit");
++		return NULL;
++	}
++	for (size_t i = 0; i < 4; i++) {
++		if (!isfinite(tint[i]) || tint[i] < 0 || tint[i] > 1 ||
++				(i < 3 && tint[i] > tint[3])) {
++			wlr_log(WLR_ERROR, "Backdrop tint must be premultiplied RGBA");
++			return NULL;
++		}
++	}
++	struct wlr_scene_backdrop *backdrop = calloc(1, sizeof(*backdrop));
++	struct wlr_scene_rect *rect = backdrop ?
++		wlr_scene_rect_create(parent, box->width, box->height, tint) : NULL;
++	if (!rect) {
++		free(backdrop);
++		wlr_log(WLR_ERROR, "Cannot allocate regional backdrop node");
++		return NULL;
++	}
++	*backdrop = (struct wlr_scene_backdrop){ .rect = rect, .scene = scene, .sigma = sigma };
++	wl_list_init(&backdrop->caches);
++	wl_list_insert(&scene->backdrops, &backdrop->link);
++	rect->backdrop = backdrop;
++	rect->corner_radius = radius;
++	wlr_scene_node_set_enabled(&rect->node, false);
++	wlr_scene_node_set_position(&rect->node, box->x, box->y);
++	wlr_scene_node_lower_to_bottom(&rect->node);
++	if (!backdrop_preflight(rect)) {
++		wlr_scene_node_destroy(&rect->node);
++		return NULL;
++	}
++	return rect;
 +}
 +
 +bool wlr_scene_shadow_set_geometry(struct wlr_scene_rect *shadow,
@@ -793,7 +1047,7 @@ index e823d62..093f81b 100644
  void wlr_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height) {
  	if (rect->width == width && rect->height == height) {
  		return;
-@@ -848,6 +1059,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
+@@ -848,6 +1256,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
  
  void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buffer,
  		struct wlr_buffer *buffer, const struct wlr_scene_buffer_set_buffer_options *options) {
@@ -801,20 +1055,69 @@ index e823d62..093f81b 100644
  	const struct wlr_scene_buffer_set_buffer_options default_options = {0};
  	if (options == NULL) {
  		options = &default_options;
-@@ -1160,6 +1372,9 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
+@@ -874,6 +1283,10 @@ void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buf
+ 		update = update || scene_buffer->buffer_width != buffer->width ||
+ 			scene_buffer->buffer_height != buffer->height;
+ 	}
++	if (update || buffer != scene_buffer->buffer || !options->damage ||
++			pixman_region32_not_empty(options->damage)) {
++		backdrop_invalidate(scene_node_get_root(&scene_buffer->node), &scene_buffer->node);
++	}
+ 
+ 	// If this is a buffer change, check if it's a single pixel buffer.
+ 	// Cache that so we can still apply rendering optimisations even when
+@@ -1160,6 +1573,10 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
  	}
  
  	node->enabled = enabled;
 +	if (!enabled) {
 +		rounding_release_subtree(node);
++		backdrop_release_subtree(node);
 +	}
  
  	scene_node_update(node, &visible);
  }
-@@ -1227,6 +1442,16 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
+@@ -1182,7 +1599,7 @@ void wlr_scene_node_place_above(struct wlr_scene_node *node,
+ 	if (node->link.prev == &sibling->link) {
+ 		return;
+ 	}
+-
++	backdrop_invalidate(scene_node_get_root(node), NULL);
+ 	wl_list_remove(&node->link);
+ 	wl_list_insert(&sibling->link, &node->link);
+ 	scene_node_update(node, NULL);
+@@ -1196,7 +1613,7 @@ void wlr_scene_node_place_below(struct wlr_scene_node *node,
+ 	if (node->link.next == &sibling->link) {
+ 		return;
+ 	}
+-
++	backdrop_invalidate(scene_node_get_root(node), NULL);
+ 	wl_list_remove(&node->link);
+ 	wl_list_insert(sibling->link.prev, &node->link);
+ 	scene_node_update(node, NULL);
+@@ -1227,6 +1644,38 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
  	if (node->parent == new_parent) {
  		return;
  	}
++	struct wlr_scene *old_scene = scene_node_get_root(node);
++	struct wlr_scene *new_scene = scene_node_get_root(&new_parent->node);
++	if (old_scene != new_scene) {
++		struct wlr_scene_backdrop *backdrop;
++		wl_list_for_each(backdrop, &old_scene->backdrops, link) {
++			for (struct wlr_scene_node *ancestor = &backdrop->rect->node; ancestor;
++					ancestor = ancestor->parent ? &ancestor->parent->node : NULL) {
++				if (ancestor == node) {
++					wlr_log(WLR_ERROR, "Regional backdrops cannot migrate between scene owners");
++					return;
++				}
++			}
++		}
++	}
++	if (node->type == WLR_SCENE_NODE_RECT && wlr_scene_rect_from_node(node)->backdrop &&
++			(new_parent->rounding || scene_node_rounding(&new_parent->node))) {
++		wlr_log(WLR_ERROR, "Cannot reparent a backdrop below isolated rounding");
++		return;
++	}
 +	if (node->type == WLR_SCENE_NODE_TREE &&
 +			(new_parent->rounding || scene_node_rounding(&new_parent->node))) {
 +		struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
@@ -825,31 +1128,41 @@ index e823d62..093f81b 100644
 +	}
 +	rounding_invalidate(node);
 +	rounding_release_subtree(node);
++	backdrop_release_subtree(node);
++	backdrop_invalidate(old_scene, NULL);
++	backdrop_invalidate(new_scene, NULL);
  
  	/* Ensure that a node cannot become its own ancestor */
  	for (struct wlr_scene_tree *ancestor = new_parent; ancestor != NULL;
-@@ -1308,6 +1533,9 @@ static bool scene_node_at_iterator(struct wlr_scene_node *node,
+@@ -1308,6 +1757,10 @@ static bool scene_node_at_iterator(struct wlr_scene_node *node,
  
  	double rx = at_data->lx - lx;
  	double ry = at_data->ly - ly;
-+	if (node->type == WLR_SCENE_NODE_RECT && wlr_scene_rect_from_node(node)->is_shadow) {
++	if (node->type == WLR_SCENE_NODE_RECT &&
++			(wlr_scene_rect_from_node(node)->is_shadow || wlr_scene_rect_from_node(node)->backdrop)) {
 +		return false;
 +	}
  
  	if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-@@ -1357,12 +1585,29 @@ struct render_list_entry {
+@@ -1357,12 +1810,35 @@ struct render_list_entry {
  	int x, y;
  };
  
 +static void rounding_render_entry(struct render_list_entry *entry,
 +	const struct render_data *data);
++static bool backdrop_prepare(struct wlr_scene_rect *rect, const struct render_data *data);
++static void backdrop_render_entry(struct render_list_entry *entry, const struct render_data *data);
 +static void scene_buffer_send_dmabuf_feedback(const struct wlr_scene *scene,
 +	struct wlr_scene_buffer *scene_buffer,
 +	const struct wlr_linux_dmabuf_feedback_v1_init_options *options);
 +
  static void scene_entry_render(struct render_list_entry *entry, const struct render_data *data) {
  	struct wlr_scene_node *node = entry->node;
++	if (node->type == WLR_SCENE_NODE_RECT && wlr_scene_rect_from_node(node)->backdrop) {
++		backdrop_render_entry(entry, data);
++		return;
++	}
 +	if (node->type == WLR_SCENE_NODE_TREE) {
 +		rounding_render_entry(entry, data);
 +		return;
@@ -869,7 +1182,7 @@ index e823d62..093f81b 100644
  	pixman_region32_translate(&render_region, -data->logical.x, -data->logical.y);
  	logical_to_buffer_coords(&render_region, data, true);
  	pixman_region32_intersect(&render_region, &render_region, &data->damage);
-@@ -1393,6 +1638,34 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1393,6 +1869,37 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  		break;
  	case WLR_SCENE_NODE_RECT:;
  		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
@@ -888,6 +1201,9 @@ index e823d62..093f81b 100644
 +				break;
 +			}
 +			data->output->scene->effects_cached_bytes += workspace;
++			if (data->output->scene->effects_cached_bytes > data->output->scene->effects_peak_bytes) {
++				data->output->scene->effects_peak_bytes = data->output->scene->effects_cached_bytes;
++			}
 +		}
 +		struct wlr_box shape = {
 +			.x = x + scene_rect->shadow_inset, .y = y + scene_rect->shadow_inset,
@@ -904,7 +1220,7 @@ index e823d62..093f81b 100644
  
  		wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
  			.box = dst_box,
-@@ -1403,7 +1676,11 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1403,7 +1910,11 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  				.a = scene_rect->color[3],
  			},
  			.clip = &render_region,
@@ -916,7 +1232,7 @@ index e823d62..093f81b 100644
  		break;
  	case WLR_SCENE_NODE_BUFFER:;
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-@@ -1428,6 +1705,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1428,6 +1939,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			data->output->output->renderer);
  		if (texture == NULL) {
  			scene_output_damage(data->output, &render_region);
@@ -926,7 +1242,7 @@ index e823d62..093f81b 100644
  			break;
  		}
  
-@@ -1443,7 +1723,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1443,7 +1957,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			.clip = &render_region,
  			.alpha = &scene_buffer->opacity,
  			.filter_mode = scene_buffer->filter_mode,
@@ -935,7 +1251,7 @@ index e823d62..093f81b 100644
  					!pixman_region32_empty(&opaque) ?
  				WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
  			.wait_timeline = scene_buffer->wait_timeline,
-@@ -1454,7 +1734,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1454,7 +1968,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			.output = data->output,
  			.direct_scanout = false,
  		};
@@ -946,7 +1262,7 @@ index e823d62..093f81b 100644
  
  		if (entry->highlight_transparent_region) {
  			wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
-@@ -1471,6 +1753,208 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1471,6 +1987,537 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  	pixman_region32_fini(&render_region);
  }
  
@@ -1048,10 +1364,13 @@ index e823d62..093f81b 100644
 +		cache->output_destroy.notify = rounding_output_destroy;
 +		wl_signal_add(&data->output->events.destroy, &cache->output_destroy);
 +		scene->effects_cached_bytes += bytes;
++		if (scene->effects_cached_bytes > scene->effects_peak_bytes) {
++			scene->effects_peak_bytes = scene->effects_cached_bytes;
++		}
 +		const struct wlr_drm_format_set *formats = wlr_renderer_get_render_formats(output->renderer);
 +		const struct wlr_drm_format *format = wlr_drm_format_set_get(formats, DRM_FORMAT_ARGB8888);
 +		if (format) {
-+			cache->buffer = wlr_allocator_create_buffer(output->allocator,
++			cache->buffer = effects_create_buffer(output,
 +				physical.width, physical.height, format);
 +		}
 +		if (!cache->buffer) {
@@ -1135,7 +1454,12 @@ index e823d62..093f81b 100644
 +	assert(cache && cache->texture && !cache->dirty);
 +	pixman_region32_t clip;
 +	pixman_region32_init(&clip);
-+	pixman_region32_copy(&clip, &entry->node->visible);
++	if (data->isolated) {
++		pixman_region32_union_rect(&clip, &clip, entry->x + tree->rounding->box.x,
++			entry->y + tree->rounding->box.y, tree->rounding->box.width, tree->rounding->box.height);
++	} else {
++		pixman_region32_copy(&clip, &entry->node->visible);
++	}
 +	pixman_region32_translate(&clip, -data->logical.x, -data->logical.y);
 +	logical_to_buffer_coords(&clip, data, true);
 +	pixman_region32_intersect(&clip, &clip, &data->damage);
@@ -1149,13 +1473,343 @@ index e823d62..093f81b 100644
 +		.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
 +	});
 +	pixman_region32_fini(&clip);
-+	wlr_scene_node_for_each_buffer(&tree->node, rounding_sample, data->output);
++	if (!data->isolated) {
++		wlr_scene_node_for_each_buffer(&tree->node, rounding_sample, data->output);
++	}
++}
++
++static void backdrop_output_destroy(struct wl_listener *listener, void *data) {
++	(void)data;
++	struct backdrop_cache *cache = wl_container_of(listener, cache, output_destroy);
++	backdrop_cache_destroy(cache);
++}
++
++static struct backdrop_cache *backdrop_find(struct wlr_scene_backdrop *backdrop,
++		struct wlr_scene_output *output) {
++	struct backdrop_cache *cache;
++	wl_list_for_each(cache, &backdrop->caches, link) {
++		if (cache->output == output) {
++			return cache;
++		}
++	}
++	return NULL;
++}
++
++/* Traverse the scene, not the visibility-culled output list: an upper opaque
++ * node must not erase lower pixels needed by an earlier backdrop's kernel. */
++static bool backdrop_lower(struct wlr_scene_node *node, struct wlr_scene_node *stop,
++		int x, int y, const struct render_data *data) {
++	if (node == stop) {
++		return true;
++	}
++	if (!node->enabled) {
++		return false;
++	}
++	x += node->x;
++	y += node->y;
++	struct render_list_entry entry = { .node = node, .x = x, .y = y };
++	if (node->type == WLR_SCENE_NODE_TREE) {
++		struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
++		if (tree->rounding) {
++			if (!rounding_prepare(&entry, data)) {
++				*data->failed = true;
++			} else {
++				rounding_render_entry(&entry, data);
++			}
++			return false;
++		}
++		struct wlr_scene_node *child;
++		wl_list_for_each(child, &tree->children, link) {
++			if (backdrop_lower(child, stop, x, y, data)) {
++				return true;
++			}
++		}
++	} else {
++		int width, height;
++		scene_node_get_size(node, &width, &height);
++		struct wlr_box box = {x - data->logical.x, y - data->logical.y, width, height};
++		scale_box(&box, data->scale);
++		struct wlr_box region = {data->buffer_offset_x, data->buffer_offset_y,
++			data->trans_width, data->trans_height}, intersection;
++		if (wlr_box_intersection(&intersection, &box, &region)) {
++			if (node->type == WLR_SCENE_NODE_RECT && wlr_scene_rect_from_node(node)->backdrop &&
++					!backdrop_prepare(wlr_scene_rect_from_node(node), data)) {
++				*data->failed = true;
++			} else {
++				scene_entry_render(&entry, data);
++			}
++		}
++	}
++	return false;
++}
++
++#if defined(__x86_64__) && defined(__SSE2__)
++static inline __m128 backdrop_pixel_channels(uint32_t pixel) {
++	int32_t bits;
++	memcpy(&bits, &pixel, sizeof(bits));
++	__m128i bytes = _mm_cvtsi32_si128(bits);
++	__m128i zero = _mm_setzero_si128();
++	__m128i words = _mm_unpacklo_epi8(bytes, zero);
++	return _mm_cvtepi32_ps(_mm_unpacklo_epi16(words, zero));
++}
++#endif
++
++static bool backdrop_prepare(struct wlr_scene_rect *rect, const struct render_data *data) {
++	struct wlr_scene_backdrop *backdrop = rect->backdrop;
++	struct wlr_scene *scene = backdrop->scene;
++	struct wlr_output *output = data->output->output;
++	int x, y;
++	wlr_scene_node_coords(&rect->node, &x, &y);
++	struct wlr_box physical = {x - data->logical.x, y - data->logical.y, rect->width, rect->height};
++	scale_box(&physical, data->scale);
++	float phase_x = (x - data->logical.x) * data->scale - physical.x;
++	float phase_y = (y - data->logical.y) * data->scale - physical.y;
++	struct backdrop_cache *old = backdrop_find(backdrop, data->output);
++	if (old && !old->dirty && old->scale == data->scale &&
++			old->phase_x == phase_x && old->phase_y == phase_y && wlr_box_equal(&physical, &old->physical)) {
++		return true;
++	}
++	float sigma = backdrop->sigma * data->scale;
++	int pad = ceilf(3 * sigma);
++	int width = physical.width + pad * 2, height = physical.height + pad * 2;
++	if (!wlr_scene_backdrop_supported(output->renderer) || !isfinite(sigma) || sigma > WLR_SCENE_BACKDROP_MAX_SCALED_SIGMA ||
++			physical.width <= 0 || physical.height <= 0 ||
++			width > WLR_SCENE_EFFECTS_MAX_AXIS || height > WLR_SCENE_EFFECTS_MAX_AXIS ||
++			(uint64_t)width * height > WLR_SCENE_BACKDROP_MAX_PIXELS) {
++		wlr_log(WLR_ERROR, "Unsupported backdrop renderer/scale or regional pixel budget");
++		return false;
++	}
++	size_t bytes = (size_t)width * height * 8 +
++		(size_t)physical.width * physical.height * 8 + sizeof(float) * (2 * pad + 1);
++	if (bytes > WLR_SCENE_EFFECTS_MAX_BYTES - scene->effects_cached_bytes) {
++		wlr_log(WLR_ERROR, "Backdrop old-plus-candidate/workspace peak budget exceeded");
++		return false;
++	}
++	struct backdrop_cache *cache = calloc(1, sizeof(*cache));
++	if (!cache) {
++		wlr_log(WLR_ERROR, "Cannot allocate backdrop cache");
++		return false;
++	}
++	*cache = (struct backdrop_cache){ .backdrop = backdrop, .output = data->output,
++		.bytes = bytes, .physical = physical, .scale = data->scale,
++		.phase_x = phase_x, .phase_y = phase_y, .dirty = true };
++	wl_list_insert(&backdrop->caches, &cache->link);
++	cache->output_destroy.notify = backdrop_output_destroy;
++	wl_signal_add(&data->output->events.destroy, &cache->output_destroy);
++	scene->effects_cached_bytes += bytes;
++	if (scene->effects_cached_bytes > scene->effects_peak_bytes) {
++		scene->effects_peak_bytes = scene->effects_cached_bytes;
++	}
++	const struct wlr_drm_format *format = wlr_drm_format_set_get(
++		wlr_renderer_get_render_formats(output->renderer), DRM_FORMAT_ARGB8888);
++	struct wlr_buffer *sample = format ? effects_create_buffer(output, width, height, format) : NULL;
++	cache->buffer = format ? effects_create_buffer(output,
++		physical.width, physical.height, format) : NULL;
++	uint32_t *temporary = malloc((size_t)width * height * 4);
++	float *kernel = malloc(sizeof(float) * (2 * pad + 1));
++	bool ok = sample && cache->buffer && temporary && kernel;
++	if (ok) {
++		struct wlr_render_pass *pass = wlr_renderer_begin_buffer_pass(output->renderer, sample, NULL);
++		ok = pass != NULL;
++		if (pass) {
++			wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
++				.box = {0, 0, width, height}, .color = {.a = 1}, .blend_mode = WLR_RENDER_BLEND_MODE_NONE });
++			bool failed = false;
++			struct render_data lower = *data;
++			lower.render_pass = pass;
++			lower.transform = WL_OUTPUT_TRANSFORM_NORMAL;
++			lower.isolated = true;
++			lower.failed = &failed;
++			lower.buffer_offset_x = physical.x - pad;
++			lower.buffer_offset_y = physical.y - pad;
++			lower.trans_width = width;
++			lower.trans_height = height;
++			pixman_region32_init_rect(&lower.damage, 0, 0, width, height);
++			bool found = backdrop_lower(&scene->tree.node, &rect->node, 0, 0, &lower);
++			pixman_region32_fini(&lower.damage);
++			ok = wlr_render_pass_submit(pass) && found && !failed;
++		}
++	}
++	void *source = NULL, *destination = NULL;
++	uint32_t source_format = 0, dest_format = 0;
++	size_t source_stride = 0, dest_stride = 0;
++	bool source_access = ok && wlr_buffer_begin_data_ptr_access(sample, WLR_BUFFER_DATA_PTR_ACCESS_READ,
++		&source, &source_format, &source_stride);
++	bool dest_access = source_access && wlr_buffer_begin_data_ptr_access(cache->buffer,
++		WLR_BUFFER_DATA_PTR_ACCESS_WRITE, &destination, &dest_format, &dest_stride);
++	ok = dest_access && source_format == DRM_FORMAT_ARGB8888 && dest_format == DRM_FORMAT_ARGB8888;
++	if (ok) {
++		double sum = 0;
++		for (int i = -pad; i <= pad; i++) {
++			kernel[i + pad] = expf(-(float)(i * i) / (2 * sigma * sigma));
++			sum += kernel[i + pad];
++		}
++		for (int i = 0; i <= 2 * pad; i++) {
++			kernel[i] /= sum;
++		}
++		for (int py = 0; py < height; py++) {
++			uint32_t *row = (uint32_t *)((uint8_t *)source + py * source_stride);
++			for (int px = pad; px < width - pad; px++) {
++#if defined(__x86_64__) && defined(__SSE2__)
++				__m128 accumulated = _mm_setzero_ps();
++				for (int i = -pad; i <= pad; i++) {
++					__m128 channels = backdrop_pixel_channels(row[px + i]);
++					__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
++					accumulated = _mm_add_ps(accumulated, weighted);
++				}
++				float values[4];
++				_mm_storeu_ps(values, accumulated);
++				uint32_t pixel = (uint32_t)lroundf(values[0]);
++				pixel |= (uint32_t)lroundf(values[1]) << 8;
++				pixel |= (uint32_t)lroundf(values[2]) << 16;
++				pixel |= (uint32_t)lroundf(values[3]) << 24;
++#else
++				uint32_t pixel = 0;
++				for (int channel = 0; channel < 32; channel += 8) {
++					float value = 0;
++					for (int i = -pad; i <= pad; i++) {
++						value += ((row[px + i] >> channel) & 255) * kernel[i + pad];
++					}
++					pixel |= (uint32_t)lroundf(value) << channel;
++				}
++#endif
++				temporary[py * width + px] = pixel;
++			}
++		}
++		for (int py = 0; py < physical.height; py++) {
++			uint32_t *row = (uint32_t *)((uint8_t *)destination + py * dest_stride);
++			for (int px = 0; px < physical.width; px++) {
++				float radius = rect->corner_radius * data->scale;
++				float qx = fabsf(px + 0.5f - physical.width / 2.0f) - physical.width / 2.0f + radius;
++				float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
++				float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
++				float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
++#if defined(__x86_64__) && defined(__SSE2__)
++				__m128 accumulated = _mm_setzero_ps();
++				for (int i = -pad; i <= pad; i++) {
++					__m128 channels = backdrop_pixel_channels(
++						temporary[(py + pad + i) * width + px + pad]);
++					__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
++					accumulated = _mm_add_ps(accumulated, weighted);
++				}
++				float values[4];
++				_mm_storeu_ps(values, accumulated);
++				values[0] = rect->color[2] * 255 + values[0] * (1 - rect->color[3]);
++				values[1] = rect->color[1] * 255 + values[1] * (1 - rect->color[3]);
++				values[2] = rect->color[0] * 255 + values[2] * (1 - rect->color[3]);
++				values[3] = rect->color[3] * 255 + values[3] * (1 - rect->color[3]);
++				uint32_t pixel = (uint32_t)lroundf(fminf(values[0], 255) * coverage);
++				pixel |= (uint32_t)lroundf(fminf(values[1], 255) * coverage) << 8;
++				pixel |= (uint32_t)lroundf(fminf(values[2], 255) * coverage) << 16;
++				pixel |= (uint32_t)lroundf(fminf(values[3], 255) * coverage) << 24;
++#else
++				uint32_t pixel = 0;
++				for (int channel = 0; channel < 32; channel += 8) {
++					float value = 0;
++					for (int i = -pad; i <= pad; i++) {
++						value += ((temporary[(py + pad + i) * width + px + pad] >> channel) & 255) * kernel[i + pad];
++					}
++					int component = channel == 24 ? 3 : 2 - channel / 8;
++					value = rect->color[component] * 255 + value * (1 - rect->color[3]);
++					pixel |= (uint32_t)lroundf(fminf(value, 255) * coverage) << channel;
++				}
++#endif
++				row[px] = pixel;
++			}
++		}
++	}
++	if (dest_access) {
++		wlr_buffer_end_data_ptr_access(cache->buffer);
++	}
++	if (source_access) {
++		wlr_buffer_end_data_ptr_access(sample);
++	}
++	if (sample) {
++		wlr_buffer_drop(sample);
++	}
++	free(temporary);
++	free(kernel);
++	if (ok) {
++		cache->texture = wlr_texture_from_buffer(output->renderer, cache->buffer);
++		ok = cache->texture != NULL;
++	}
++	if (!ok) {
++		wlr_log(WLR_ERROR, "Regional backdrop allocation/composition/import failed; no fallback");
++		backdrop_cache_destroy(cache);
++		return false;
++	}
++	/* Only the result remains live; the conservative workspace reservation was
++	 * held throughout sampling, filtering, import and old-cache replacement. */
++	size_t retained = (size_t)physical.width * physical.height * 8;
++	scene->effects_cached_bytes -= cache->bytes - retained;
++	cache->bytes = retained;
++	cache->dirty = false;
++	if (old) {
++		backdrop_cache_destroy(old);
++	}
++	scene->backdrop_render_count++;
++	return true;
++}
++
++static void backdrop_render_entry(struct render_list_entry *entry, const struct render_data *data) {
++	struct wlr_scene_rect *rect = wlr_scene_rect_from_node(entry->node);
++	struct backdrop_cache *cache = backdrop_find(rect->backdrop, data->output);
++	if (!cache || cache->dirty) {
++		*data->failed = true;
++		return;
++	}
++	pixman_region32_t clip;
++	pixman_region32_init(&clip);
++	if (data->isolated) {
++		pixman_region32_union_rect(&clip, &clip, entry->x, entry->y, rect->width, rect->height);
++	} else {
++		pixman_region32_copy(&clip, &entry->node->visible);
++	}
++	pixman_region32_translate(&clip, -data->logical.x, -data->logical.y);
++	logical_to_buffer_coords(&clip, data, true);
++	pixman_region32_intersect(&clip, &clip, &data->damage);
++	struct wlr_box box = {entry->x - data->logical.x, entry->y - data->logical.y, rect->width, rect->height};
++	transform_output_box(&box, data);
++	wlr_render_pass_add_texture(data->render_pass, &(struct wlr_render_texture_options){
++		.texture = cache->texture, .dst_box = box, .transform = data->transform,
++		.clip = &clip, .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED });
++	pixman_region32_fini(&clip);
++}
++
++static bool backdrop_preflight(struct wlr_scene_rect *rect) {
++	struct wlr_scene_output *output;
++	wl_list_for_each(output, &rect->backdrop->scene->outputs, link) {
++		if (!output->output->enabled) {
++			continue;
++		}
++		bool failed = false;
++		struct render_data data = {.output = output, .scale = output->output->scale,
++			.logical = {.x = output->x, .y = output->y}, .failed = &failed};
++		int x, y, width, height;
++		wlr_scene_node_coords(&rect->node, &x, &y);
++		wlr_output_effective_resolution(output->output, &width, &height);
++		struct wlr_box region = {output->x, output->y, width, height};
++		struct wlr_box box = {x, y, rect->width, rect->height}, intersection;
++		if (wlr_box_intersection(&intersection, &box, &region) && !backdrop_prepare(rect, &data)) {
++			return false;
++		}
++	}
++	return true;
 +}
 +
  static void scene_handle_linux_dmabuf_v1_destroy(struct wl_listener *listener,
  		void *data) {
  	struct wlr_scene *scene =
-@@ -1772,6 +2256,7 @@ struct render_list_constructor_data {
+@@ -1756,7 +2803,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
+ 	} else if (node->type == WLR_SCENE_NODE_RECT) {
+ 		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
+ 
+-		return rect->color[3] == 0.f;
++		return !rect->backdrop && rect->color[3] == 0.f;
+ 	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
+ 		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+ 
+@@ -1772,6 +2819,7 @@ struct render_list_constructor_data {
  	bool calculate_visibility;
  	bool highlight_transparent_region;
  	bool fractional_scale;
@@ -1163,7 +1817,7 @@ index e823d62..093f81b 100644
  };
  
  static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer) {
-@@ -1786,6 +2271,35 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
+@@ -1786,6 +2834,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
  static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		int lx, int ly, void *_data) {
  	struct render_list_constructor_data *data = _data;
@@ -1180,6 +1834,8 @@ index e823d62..093f81b 100644
 +				pixman_region32_intersect_rect(&group->visible, &group->visible,
 +					x + rounding->box.x, y + rounding->box.y,
 +					rounding->box.width, rounding->box.height);
++				pixman_region32_intersect_rect(&group->visible, &group->visible,
++					data->box.x, data->box.y, data->box.width, data->box.height);
 +				return false;
 +			}
 +		}
@@ -1193,13 +1849,32 @@ index e823d62..093f81b 100644
 +		pixman_region32_intersect_rect(&group->visible, &group->visible,
 +			x + rounding->box.x, y + rounding->box.y,
 +			rounding->box.width, rounding->box.height);
++		pixman_region32_intersect_rect(&group->visible, &group->visible,
++			data->box.x, data->box.y, data->box.width, data->box.height);
 +		*entry = (struct render_list_entry) { .node = group, .x = x, .y = y };
 +		return false;
 +	}
  
  	if (scene_node_invisible(node)) {
  		return false;
-@@ -2073,6 +2587,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -1800,7 +2881,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
+ 		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
+ 		float *black = (float[4]){ 0.f, 0.f, 0.f, 1.f };
+ 
+-		if (memcmp(rect->color, black, sizeof(float) * 4) == 0) {
++		if (!rect->backdrop && memcmp(rect->color, black, sizeof(float) * 4) == 0) {
+ 			return false;
+ 		}
+ 	}
+@@ -2046,6 +3127,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
+ 
+ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+ 		struct wlr_output_state *state, const struct wlr_scene_output_state_options *options) {
++	scene_output->backdrop_failed = false;
+ 	struct wlr_scene_output_state_options default_options = {0};
+ 	if (!options) {
+ 		options = &default_options;
+@@ -2073,6 +3155,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		.logical = { .x = scene_output->x, .y = scene_output->y },
  		.output = scene_output,
  	};
@@ -1208,7 +1883,7 @@ index e823d62..093f81b 100644
  
  	int resolution_width, resolution_height;
  	output_pending_resolution(output, state,
-@@ -2117,6 +2633,23 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2117,6 +3201,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  
  	struct render_list_entry *list_data = list_con.render_list->data;
  	int list_len = list_con.render_list->size / sizeof(*list_data);
@@ -1223,16 +1898,30 @@ index e823d62..093f81b 100644
 +		}
 +	}
 +	list_len = kept;
++	bool regional = false;
 +	for (int i = 0; i < list_len; i++) {
++		if (list_data[i].node->type == WLR_SCENE_NODE_RECT &&
++				wlr_scene_rect_from_node(list_data[i].node)->backdrop) {
++			regional = true;
++		}
++	}
++	for (int i = list_len - 1; i >= 0; i--) {
 +		if (list_data[i].node->type == WLR_SCENE_NODE_TREE &&
 +				!rounding_prepare(&list_data[i], &render_data)) {
++			scene_output->backdrop_failed = regional;
++			return false;
++		}
++		if (list_data[i].node->type == WLR_SCENE_NODE_RECT &&
++				wlr_scene_rect_from_node(list_data[i].node)->backdrop &&
++				!backdrop_prepare(wlr_scene_rect_from_node(list_data[i].node), &render_data)) {
++			scene_output->backdrop_failed = true;
 +			return false;
 +		}
 +	}
  
  	if (debug_damage == WLR_SCENE_DEBUG_DAMAGE_RERENDER) {
  		scene_output_damage_whole(scene_output);
-@@ -2330,7 +2863,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2330,7 +3445,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  	wlr_output_add_software_cursors_to_render_pass(output, render_pass, &render_data.damage);
  	pixman_region32_fini(&render_data.damage);
  
@@ -1241,3 +1930,34 @@ index e823d62..093f81b 100644
  		wlr_buffer_unlock(buffer);
  
  		// if we failed to render the buffer, it will have undefined contents
+diff --git a/render/allocator/shm.c b/render/allocator/shm.c
+--- a/render/allocator/shm.c
++++ b/render/allocator/shm.c
+@@ -1,6 +1,9 @@
+ #include <assert.h>
+ #include <drm_fourcc.h>
++#include <errno.h>
++#include <fcntl.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+ #include <wlr/interfaces/wlr_buffer.h>
+@@ -81,6 +84,17 @@ static struct wlr_buffer *allocator_create_buffer(
+ 		return NULL;
+ 	}
+ 
++	int error;
++	do {
++		error = posix_fallocate(buffer->shm.fd, 0, buffer->size);
++	} while (error == EINTR);
++	if (error != 0) {
++		wlr_log(WLR_ERROR, "Failed to reserve SHM buffer backing: %s", strerror(error));
++		close(buffer->shm.fd);
++		free(buffer);
++		return NULL;
++	}
++
+ 	buffer->shm.format = format->format;
+ 	buffer->shm.width = width;
+ 	buffer->shm.height = height;

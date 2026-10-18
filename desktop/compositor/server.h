@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <wayland-server-core.h>
 #include <wlr/util/box.h>
+#include "private-process.h"
 
 struct PuDesktop;
 struct PuDesktopOwner {
@@ -18,9 +19,13 @@ struct PuDesktopLayer {
     struct PuDesktopOwner owner;
     struct wlr_layer_surface_v1 *surface;
     struct wlr_scene_tree *tree, *content, *popups;
+    struct wlr_scene_rect *backdrop;
+    struct wl_resource *backdrop_owner;
     struct wl_list link;
     struct wl_listener map, unmap, commit, destroy;
     struct wlr_box pending_box;
+    struct wlr_box backdrop_box;
+    uint32_t backdrop_role, backdrop_taskbar, backdrop_serial, backdrop_index;
     uint32_t serial;
     bool ready, positioned, presented;
 };
@@ -29,7 +34,12 @@ enum PuDesktopMode {
     PU_DESKTOP_FLOATING,
     PU_DESKTOP_MAXIMIZED,
     PU_DESKTOP_FULLSCREEN,
+    PU_DESKTOP_TILED_LEFT,
+    PU_DESKTOP_TILED_RIGHT,
 };
+
+enum PuDesktopTile { PU_TILE_NONE, PU_TILE_LEFT, PU_TILE_RIGHT };
+enum PuDesktopArrangement { PU_ARRANGE_CASCADE, PU_ARRANGE_HORIZONTAL, PU_ARRANGE_VERTICAL };
 
 struct PuDesktopView {
     struct PuDesktop *desktop;
@@ -46,10 +56,14 @@ struct PuDesktopView {
     uint64_t workspace_window;
     /* Policy may lead the presented mode until a matching configure is committed. */
     bool maximized, fullscreen, geometry_pending, geometry_reuse;
+    enum PuDesktopTile tile;
     enum PuDesktopMode mode;
     struct wlr_output *output;
-    struct wlr_box restore_box, pending_box, presented_box;
+    struct wlr_box restore_box, floating_box, pending_box, presented_box;
     uint32_t geometry_serial;
+    enum PuDesktopArrangement pending_arrangement;
+    bool drag_restore_pending;
+    double drag_restore_anchor;
     bool resize_pending;
     struct wlr_box resize_anchor;
     uint32_t resize_edges;
@@ -107,18 +121,23 @@ struct PuDesktop {
     double last_title_x, last_title_y;
     enum PuDesktopGrab grab;
     double grab_x, grab_y;
+    double grab_start_x, grab_start_y;
+    bool grab_title, grab_title_moved, grab_title_restored;
     struct wlr_box grab_box;
     uint32_t grab_edges, grab_button, suppressed_button;
     int output_count;
+    uint64_t backdrop_epoch;
     bool failed, stopping;
     bool live_startup, live_splash, live_ready;
     const char *socket_name;
     struct wl_event_source *sigint, *sigterm;
-    struct wl_event_source *shell_exit;
+    struct wl_event_source *private_process_exit;
+    struct PuPrivateProcessWatch private_processes[PU_PRIVATE_PROCESS_COUNT];
+    bool private_process_dispatching, private_process_pending;
     struct wl_event_source *shell_restart_timer;
     char **shell_command;
     unsigned shell_restarts_left, shell_restarts_used;
-    bool shell_restart_pending, exit_with_shell, exit_on_shell_failure;
+    bool shell_restart_pending, shell_stopping, exit_with_shell, exit_on_shell_failure;
     struct wl_client *shell_client;
     struct wl_listener shell_client_destroy;
     pid_t shell_pid;
@@ -142,6 +161,17 @@ void pu_desktop_stop_shell(struct PuDesktop *desktop);
 bool pu_desktop_global_filter(const struct wl_client *client,
                               const struct wl_global *global, void *data);
 struct wlr_surface;
+const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDesktopTile tile);
+const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
+    struct wlr_surface *surface, enum PuDesktopTile tile);
+const char *pu_desktop_cascade_from_menu(struct PuDesktopView *view, struct wlr_surface *surface);
+const char *pu_desktop_arrange_from_menu(struct PuDesktopView *view, struct wlr_surface *surface,
+    enum PuDesktopArrangement arrangement);
+struct wlr_output *pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
+    bool require_hit, struct wlr_box *button, struct wlr_box *output);
+struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds);
+struct wlr_output *pu_desktop_system_menu_anchor(struct PuDesktopView *view, bool pointer,
+    struct wlr_box *anchor, struct wlr_box *bounds);
 bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surface,
     struct wlr_box *box, struct PuDesktopOwner **owner);
 bool pu_desktop_session_exit(struct PuDesktop *desktop, struct wl_client *client,

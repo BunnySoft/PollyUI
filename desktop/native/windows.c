@@ -11,6 +11,7 @@
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
 #include "polly-session-status-client.h"
+#include "gui/src/context/native-window.h"
 
 #include <SDL3/SDL.h>
 #include <errno.h>
@@ -44,6 +45,15 @@ struct DesktopWindow {
     struct polly_workspace_toplevel_v1 *workspace_handle;
     struct DesktopWorkspace *workspace, *pending_workspace;
     int workspace_ready, workspace_changed;
+    uint32_t placement, placement_capabilities;
+    bool placement_ready, placement_pending;
+    char placement_message[128];
+};
+
+struct SystemMenuRequest {
+    uint32_t serial, target, origin;
+    int32_t x, y, width, height, output_x, output_y, output_width, output_height;
+    char output_name[128];
 };
 
 static struct {
@@ -70,6 +80,20 @@ static struct {
     int changed, failed, ready;
     uint32_t restore_serial, restore_reply, restore_result;
     char restore_error[192];
+    uint32_t placement_serial, placement_reply, placement_target, placement_epoch;
+    uint32_t menu_epoch, menu_target;
+    bool placement_accepted, placement_unknown, placement_waiting;
+    char placement_error[192];
+    JSValue placement_menu;
+    bool picker_capability, picker_changed, arrangement_capability;
+    uint32_t picker_target, picker_token;
+    int32_t picker_x, picker_y, picker_width, picker_height;
+    int32_t picker_output_x, picker_output_y, picker_output_width, picker_output_height;
+    char picker_output_name[128];
+    bool system_menu_capability, system_menu_enabled, system_menu_changed;
+    struct SystemMenuRequest system_menu;
+    uint32_t system_menu_last_serial, system_menu_reply;
+    bool system_menu_accepted;
 } control;
 
 static void session_status(void *data, struct polly_session_status_v1 *status, uint32_t serial, uint32_t input_method)
@@ -120,15 +144,53 @@ static void workspace_restored(void *data, struct polly_workspace_toplevel_manag
     control.restore_result = result;
     snprintf(control.restore_error, sizeof(control.restore_error), "%s", message);
 }
+static void picker_capability(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)data; (void)manager;
+    if (supported > 1) { control.failed = control.changed = 1; return; }
+    control.picker_capability = supported == 1;
+}
+static void arrangement_capability(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)data; (void)manager;
+    if (supported > 1) { control.failed = control.changed = 1; return; }
+    control.arrangement_capability = supported == 1;
+    control.changed = 1;
+}
+static void system_menu_capability(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)data; (void)manager;
+    if (supported > 1) { control.failed = control.changed = 1; return; }
+    control.system_menu_capability = supported == 1;
+}
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .restored = workspace_restored,
+    .layout_picker_capabilities = picker_capability,
+    .arrangement_capabilities = arrangement_capability,
+    .system_menu_capabilities = system_menu_capability,
 };
+
+static void clear_system_menu(uint32_t target)
+{
+    if (target && control.system_menu.target != target) return;
+    memset(&control.system_menu, 0, sizeof(control.system_menu));
+    control.system_menu_changed = true;
+}
+
+static void clear_picker(uint32_t target)
+{
+    if (target && control.picker_target != target) return;
+    control.picker_target = control.picker_token = 0;
+    control.picker_changed = true;
+}
 
 static void workspace_membership(void *data, struct polly_workspace_toplevel_v1 *handle,
                                  struct ext_workspace_handle_v1 *workspace)
 {
     (void)handle;
     struct DesktopWindow *window = data;
+    clear_picker(window->id);
+    clear_system_menu(window->id);
     window->pending_workspace = workspace ? ext_workspace_handle_v1_get_user_data(workspace) : NULL;
     window->workspace_changed = 1;
 }
@@ -136,15 +198,119 @@ static void workspace_membership(void *data, struct polly_workspace_toplevel_v1 
 static void workspace_window_closed(void *data, struct polly_workspace_toplevel_v1 *handle)
 {
     struct DesktopWindow *window = data;
+    clear_picker(window->id);
+    clear_system_menu(window->id);
     polly_workspace_toplevel_v1_destroy(handle);
     window->workspace_handle = NULL;
     window->workspace = window->pending_workspace = NULL;
     window->workspace_ready = window->workspace_changed = 0;
+    window->placement_ready = false;
     control.changed = 1;
+}
+
+static void placement_state(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t placement, uint32_t pending, uint32_t capabilities, const char *message)
+{
+    (void)handle;
+    struct DesktopWindow *window = data;
+    if (placement > 2 || pending > 1 || capabilities > 7) {
+        control.failed = control.changed = 1;
+        return;
+    }
+    window->placement = placement;
+    window->placement_pending = pending;
+    window->placement_capabilities = capabilities;
+    window->placement_ready = true;
+    snprintf(window->placement_message, sizeof(window->placement_message), "%s", message);
+    control.changed = 1;
+}
+
+static void placement_result(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t epoch, uint32_t accepted, const char *message)
+{
+    (void)handle;
+    struct DesktopWindow *window = data;
+    if (!control.placement_waiting || serial != control.placement_serial || window->id != control.placement_target ||
+        control.placement_reply == serial) return;
+    if (accepted > 1) { control.failed = control.changed = 1; return; }
+    control.placement_reply = serial;
+    control.placement_epoch = epoch;
+    control.placement_accepted = accepted;
+    snprintf(control.placement_error, sizeof(control.placement_error), "%s", message);
+}
+
+static void layout_offer(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t token, int32_t x, int32_t y, int32_t width, int32_t height, const char *output_name,
+    int32_t output_x, int32_t output_y, int32_t output_width, int32_t output_height)
+{
+    struct DesktopWindow *window = data;
+    if (!control.picker_capability || polly_workspace_toplevel_v1_get_version(handle) < 4 || !token ||
+        width < 1 || height < 1 || width > 96 || height > 96 ||
+        output_width < 1 || output_height < 1 || output_width > 32768 || output_height > 32768 ||
+        strlen(output_name) >= sizeof(control.picker_output_name)) {
+        control.failed = control.changed = 1; return;
+    }
+    control.picker_target = window->id; control.picker_token = token;
+    control.picker_x = x; control.picker_y = y;
+    control.picker_width = width; control.picker_height = height;
+    control.picker_output_x = output_x; control.picker_output_y = output_y;
+    control.picker_output_width = output_width; control.picker_output_height = output_height;
+    snprintf(control.picker_output_name, sizeof(control.picker_output_name), "%s", output_name);
+    control.picker_changed = true;
+}
+
+static void layout_dismissed(void *data, struct polly_workspace_toplevel_v1 *handle, uint32_t token)
+{
+    (void)handle;
+    struct DesktopWindow *window = data;
+    if (control.picker_target == window->id && control.picker_token == token) clear_picker(window->id);
+}
+
+static void system_menu_requested(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t origin, int32_t x, int32_t y, int32_t width, int32_t height,
+    const char *name, int32_t ox, int32_t oy, int32_t ow, int32_t oh)
+{
+    struct DesktopWindow *window = data;
+    if (!control.system_menu_capability || polly_workspace_toplevel_v1_get_version(handle) < 7 ||
+        !serial || serial <= control.system_menu_last_serial || (origin != 1 && origin != 2) ||
+        width < 1 || height < 1 || width > 32768 || height > 32768 ||
+        ow < 1 || oh < 1 || ow > 32768 || oh > 32768 || x < 0 || y < 0 ||
+        (int64_t)x + width > ow || (int64_t)y + height > oh ||
+        !name[0] || strlen(name) >= sizeof(control.system_menu.output_name)) {
+        control.failed = control.changed = 1; return;
+    }
+    control.system_menu_last_serial = serial;
+    if (!control.system_menu_enabled) return;
+    control.system_menu = (struct SystemMenuRequest){.serial = serial, .target = window->id,
+        .origin = origin, .x = x, .y = y, .width = width, .height = height,
+        .output_x = ox, .output_y = oy, .output_width = ow, .output_height = oh};
+    snprintf(control.system_menu.output_name, sizeof(control.system_menu.output_name), "%s", name);
+    control.system_menu_changed = true;
+}
+
+static void system_menu_cancelled(void *data, struct polly_workspace_toplevel_v1 *handle, uint32_t serial)
+{
+    (void)handle;
+    struct DesktopWindow *window = data;
+    if (window->id == control.system_menu.target && serial == control.system_menu.serial)
+        clear_system_menu(window->id);
+}
+
+static void system_menu_consumed(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t accepted)
+{
+    (void)data; (void)handle;
+    if (accepted > 1) { control.failed = control.changed = 1; return; }
+    control.system_menu_reply = serial;
+    control.system_menu_accepted = accepted == 1;
 }
 
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = workspace_membership, .closed = workspace_window_closed,
+    .placement_state = placement_state, .result = placement_result,
+    .layout_offer = layout_offer, .layout_dismissed = layout_dismissed,
+    .system_menu_requested = system_menu_requested, .system_menu_cancelled = system_menu_cancelled,
+    .system_menu_consumed = system_menu_consumed,
 };
 
 static void watch_workspace(struct DesktopWindow *window)
@@ -328,6 +494,8 @@ static void done(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
 static void closed(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
 {
     struct DesktopWindow *window = data;
+    clear_picker(window->id);
+    clear_system_menu(window->id);
     struct DesktopWindow **link = &control.windows;
     while (*link && *link != window) link = &(*link)->next;
     if (*link) *link = window->next;
@@ -375,7 +543,7 @@ static const struct wl_seat_listener seat_listener = { .capabilities = capabilit
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
     (void)data;
-    if (pu_shortcut_client_bind(control.display, registry, name, interface)) return;
+    if (pu_shortcut_client_bind(control.display, registry, name, interface, version)) return;
     if (pu_output_client_bind(control.display, registry, name, interface, version)) return;
     if (!control.session_status && !strcmp(interface, polly_session_status_v1_interface.name)) {
         control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, version >= 2 ? 2 : 1);
@@ -390,8 +558,8 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             zwlr_foreign_toplevel_manager_v1_add_listener(control.manager, &manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
-        if (version < 6) { control.failed = control.changed = 1; return; }
-        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 6);
+        if (version < 7) { control.failed = control.changed = 1; return; }
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, version >= 9 ? 9 : version >= 8 ? 8 : 7);
         if (!control.appearance ||
             polly_appearance_v1_add_listener(control.appearance, &pu_decoration_client_listener, NULL) < 0)
             control.failed = control.changed = 1;
@@ -402,7 +570,7 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             control.failed = control.changed = 1;
     } else if (!control.workspace_toplevels && !strcmp(interface, "polly_workspace_toplevel_manager_v1")) {
         control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
-            version < 2 ? version : 2);
+            version < 7 ? version : 7);
         if (!control.workspace_toplevels ||
             polly_workspace_toplevel_manager_v1_add_listener(control.workspace_toplevels,
                 &workspace_control_listener, NULL) < 0) control.failed = control.changed = 1;
@@ -446,6 +614,9 @@ static int roundtrip(void)
 
 static void disconnect_control(void)
 {
+    JS_FreeValue(control.ctx, control.placement_menu);
+    control.placement_menu = JS_UNDEFINED;
+    control.menu_epoch = control.menu_target = 0;
     pu_decoration_client_disconnect();
     while (control.windows) closed(control.windows, control.windows->handle);
     while (control.workspaces) {
@@ -460,6 +631,13 @@ static void disconnect_control(void)
     if (control.workspace_toplevels) polly_workspace_toplevel_manager_v1_destroy(control.workspace_toplevels);
     control.workspace_manager = NULL; control.workspace_group = NULL; control.workspace_toplevels = NULL;
     control.workspaces_ready = control.workspaces_changed = 0;
+    control.picker_capability = false;
+    control.arrangement_capability = false;
+    control.system_menu_capability = control.system_menu_enabled = false;
+    control.system_menu_last_serial = control.system_menu_reply = 0;
+    control.system_menu_accepted = false;
+    clear_system_menu(0);
+    clear_picker(0);
     if (control.manager) {
         zwlr_foreign_toplevel_manager_v1_stop(control.manager);
         zwlr_foreign_toplevel_manager_v1_destroy(control.manager);
@@ -775,11 +953,331 @@ static JSValue windows(JSContext *ctx, JSValueConst self, int argc, JSValueConst
             !property(ctx, item, "fullscreen", JS_NewBool(ctx, window->state & 8))) {
             JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
         }
+        if (!property(ctx, item, "cascadeSupported", JS_NewBool(ctx,
+            window->workspace_handle && control.workspace_toplevels &&
+            polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 5 &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 5))) {
+            JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
+        }
+        if (!property(ctx, item, "arrangementSupported", JS_NewBool(ctx,
+            control.arrangement_capability && window->workspace_handle && control.workspace_toplevels &&
+            polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 6 &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 6))) {
+            JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
+        }
+        if (window->placement_ready) {
+            const char *placements[] = { "floating", "left", "right" };
+            if (!property(ctx, item, "placement", JS_NewString(ctx, placements[window->placement])) ||
+                !property(ctx, item, "placementPending", JS_NewBool(ctx, window->placement_pending)) ||
+                !property(ctx, item, "placementCapabilities", JS_NewUint32(ctx, window->placement_capabilities)) ||
+                !property(ctx, item, "placementMessage", JS_NewString(ctx, window->placement_message))) {
+                JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
+            }
+        }
         if (JS_SetPropertyUint32(ctx, array, index++, item) < 0) {
             JS_FreeValue(ctx, array); return JS_EXCEPTION;
         }
     }
     return array;
+}
+
+static struct DesktopWindow *placement_window(JSContext *ctx, JSValueConst value)
+{
+    double id;
+    if (!JS_IsNumber(value) || JS_ToFloat64(ctx, &id, value) < 0 ||
+        !(id > 0 && id <= UINT32_MAX) || id != (uint32_t)id) {
+        JS_ThrowTypeError(ctx, "A live window ID is required"); return NULL;
+    }
+    if (!ensure_workspaces(ctx)) return NULL;
+    for (struct DesktopWindow *window = control.windows; window; window = window->next) {
+        if (window->id != (uint32_t)id) continue;
+        if (window->ready && window->workspace_ready && window->workspace && window->workspace_handle &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 3 && window->placement_ready)
+            return window;
+        break;
+    }
+    JS_ThrowTypeError(ctx, "Window placement requires a live paired workspace v3 object");
+    return NULL;
+}
+
+static int begin_placement_request(JSContext *ctx, struct DesktopWindow *window)
+{
+    if (control.placement_waiting) {
+        JS_ThrowTypeError(ctx, "A window placement request is already awaiting admission"); return 0;
+    }
+    if (control.placement_unknown) {
+        JS_ThrowInternalError(ctx, "Window placement transport outcome is unknown; do not retry");
+        return 0;
+    }
+    if (control.placement_serial == UINT32_MAX) {
+        JS_ThrowInternalError(ctx, "Window placement serials exhausted"); return 0;
+    }
+    ++control.placement_serial;
+    control.placement_target = window->id;
+    control.placement_reply = 0;
+    control.placement_epoch = 0;
+    control.placement_waiting = true;
+    return 1;
+}
+
+static int finish_placement_request(JSContext *ctx)
+{
+    int completed = roundtrip();
+    control.placement_waiting = false;
+    if (!completed || control.placement_reply != control.placement_serial) {
+        control.placement_unknown = true;
+        JS_ThrowInternalError(ctx, "Window placement transport outcome is unknown; no rollback or retry was performed");
+        return 0;
+    }
+    if (!control.placement_accepted) {
+        JS_ThrowTypeError(ctx, "Window placement denied: %s", control.placement_error);
+        return 0;
+    }
+    return 1;
+}
+
+static JSValue open_window_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int picker)
+{
+    (void)self;
+    if (argc != 2) return JS_ThrowTypeError(ctx, "Window ID and live owned menu Window are required");
+    uint32_t token = 0;
+    if (picker) {
+        double number;
+        if (!JS_IsNumber(argv[0]) || JS_ToFloat64(ctx, &number, argv[0]) < 0 ||
+            !(number > 0 && number <= UINT32_MAX) || number != (uint32_t)number)
+            return JS_ThrowTypeError(ctx, "A current native caption hover token is required");
+        token = (uint32_t)number;
+        if (token != control.picker_token || !control.picker_target)
+            return JS_ThrowTypeError(ctx, "Native caption hover grant is closed or stale");
+    }
+    JSValue target = picker ? JS_NewUint32(ctx, control.picker_target) : JS_DupValue(ctx, argv[0]);
+    struct DesktopWindow *window = placement_window(ctx, target);
+    JS_FreeValue(ctx, target);
+    if (!window) return JS_EXCEPTION;
+    if (picker && (!control.picker_capability || token != control.picker_token ||
+        window->id != control.picker_target || polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 4))
+        return JS_ThrowTypeError(ctx, "Native caption picker requires a live paired workspace v4 grant");
+    uint32_t target_id = window->id;
+    PuWindow *owned = pu_gui_window_from_value(ctx, argv[1]);
+    struct wl_surface *surface = owned ? (picker ? pu_window_layer_surface_peek(owned) :
+        pu_window_layer_surface(owned)) : NULL;
+    if (!surface) return JS_HasException(ctx) ? JS_EXCEPTION :
+        JS_ThrowTypeError(ctx, "A live owned layer Window is required");
+    if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
+    if (picker) polly_workspace_toplevel_v1_open_layout_picker(window->workspace_handle,
+        control.placement_serial, token, surface);
+    else polly_workspace_toplevel_v1_open_menu(window->workspace_handle, control.placement_serial, surface);
+    if (!finish_placement_request(ctx)) return JS_EXCEPTION;
+    if (picker) {
+        PuWindow *current = pu_gui_window_from_value(ctx, argv[1]);
+        if (!current || pu_window_layer_surface_peek(current) != surface ||
+            control.picker_token != token || control.picker_target != target_id)
+            return JS_HasException(ctx) ? JS_EXCEPTION :
+                JS_ThrowTypeError(ctx, "Caption picker Window or grant retired during registration");
+    }
+    if (!control.placement_epoch) return JS_ThrowInternalError(ctx, "Invalid window menu epoch");
+    JS_FreeValue(ctx, control.placement_menu);
+    control.placement_menu = JS_DupValue(ctx, argv[1]);
+    control.menu_target = control.placement_target;
+    control.menu_epoch = control.placement_epoch;
+    return JS_NewUint32(ctx, control.menu_epoch);
+}
+
+static JSValue layout_picker_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    return JS_NewBool(ctx, control.workspace_toplevels &&
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 4 && control.picker_capability);
+}
+
+static JSValue system_menu_supported(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    return JS_NewBool(ctx, control.workspace_toplevels &&
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 7 &&
+        control.system_menu_capability);
+}
+
+static JSValue enable_system_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsBool(argv[0])) return JS_ThrowTypeError(ctx, "System-menu opt-in must be boolean");
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    if (!control.system_menu_capability || polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 7)
+        return JS_ThrowTypeError(ctx, "Native system-menu input is unsupported by this provider");
+    control.system_menu_enabled = JS_ToBool(ctx, argv[0]);
+    clear_system_menu(0);
+    polly_workspace_toplevel_manager_v1_enable_system_menu_requests(control.workspace_toplevels, control.system_menu_enabled);
+    if (!roundtrip()) return JS_ThrowInternalError(ctx, "System-menu opt-in transport outcome is unknown");
+    return JS_UNDEFINED;
+}
+
+static JSValue take_system_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    struct SystemMenuRequest request = control.system_menu;
+    if (!control.system_menu_enabled || !request.serial) return JS_NULL;
+    clear_system_menu(0);
+    struct DesktopWindow *window;
+    for (window = control.windows; window; window = window->next)
+        if (window->id == request.target && window->workspace_handle) break;
+    if (!window) return JS_NULL;
+    control.system_menu_reply = 0;
+    polly_workspace_toplevel_v1_consume_system_menu(window->workspace_handle, request.serial);
+    if (!roundtrip() || control.system_menu_reply != request.serial)
+        return JS_ThrowInternalError(ctx, "System-menu consumption transport outcome is unknown; no retry was performed");
+    if (!control.system_menu_accepted) return JS_NULL;
+    JSValue value = JS_NewObject(ctx);
+    if (JS_IsException(value)) return value;
+    const char *names[] = {"serial", "windowId", "x", "y", "width", "height",
+        "outputX", "outputY", "outputWidth", "outputHeight"};
+    int64_t numbers[] = {request.serial, request.target, request.x, request.y, request.width, request.height,
+        request.output_x, request.output_y, request.output_width, request.output_height};
+    for (unsigned i = 0; i < sizeof(numbers) / sizeof(numbers[0]); i++)
+        if (!property(ctx, value, names[i], JS_NewInt64(ctx, numbers[i]))) {
+            JS_FreeValue(ctx, value); return JS_EXCEPTION;
+        }
+    if (!property(ctx, value, "outputName", JS_NewString(ctx, request.output_name)) ||
+        !property(ctx, value, "origin", JS_NewString(ctx, request.origin == 1 ? "title" : "keyboard"))) {
+        JS_FreeValue(ctx, value); return JS_EXCEPTION;
+    }
+    return value;
+}
+
+static JSValue enable_layout_picker(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsBool(argv[0])) return JS_ThrowTypeError(ctx, "Picker opt-in must be boolean");
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    if (!control.picker_capability || polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 4)
+        return JS_ThrowTypeError(ctx, "Native caption picker is unsupported by this provider");
+    polly_workspace_toplevel_manager_v1_enable_layout_picker(control.workspace_toplevels, JS_ToBool(ctx, argv[0]));
+    clear_picker(0);
+    if (!roundtrip()) return JS_ThrowInternalError(ctx, "Caption picker opt-in transport outcome is unknown");
+    return JS_UNDEFINED;
+}
+
+static JSValue layout_picker_offer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    if (!control.picker_token || !control.picker_target) return JS_NULL;
+    JSValue value = JS_NewObject(ctx);
+    if (JS_IsException(value)) return value;
+    const char *names[] = {"token", "windowId", "x", "y", "width", "height",
+        "outputX", "outputY", "outputWidth", "outputHeight"};
+    int64_t numbers[] = {control.picker_token, control.picker_target, control.picker_x, control.picker_y,
+        control.picker_width, control.picker_height, control.picker_output_x, control.picker_output_y,
+        control.picker_output_width, control.picker_output_height};
+    for (unsigned i = 0; i < sizeof(numbers) / sizeof(numbers[0]); i++)
+        if (!property(ctx, value, names[i], JS_NewInt64(ctx, numbers[i]))) {
+            JS_FreeValue(ctx, value); return JS_EXCEPTION;
+        }
+    if (!property(ctx, value, "outputName", JS_NewString(ctx, control.picker_output_name))) {
+        JS_FreeValue(ctx, value); return JS_EXCEPTION;
+    }
+    return value;
+}
+
+static JSValue dismiss_layout_picker(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    double token;
+    if (argc != 1 || !JS_IsNumber(argv[0]) || JS_ToFloat64(ctx, &token, argv[0]) < 0 ||
+        !(token > 0 && token <= UINT32_MAX) || token != (uint32_t)token)
+        return JS_ThrowTypeError(ctx, "A native caption hover token is required");
+    if ((uint32_t)token != control.picker_token) return JS_UNDEFINED;
+    for (struct DesktopWindow *window = control.windows; window; window = window->next)
+        if (window->id == control.picker_target && window->workspace_handle &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 4)
+            polly_workspace_toplevel_v1_dismiss_layout_picker(window->workspace_handle, (uint32_t)token);
+    clear_picker(0);
+    if (control.display && wl_display_flush(control.display) < 0 && errno != EAGAIN && errno != EINTR)
+        return JS_ThrowInternalError(ctx, "Cannot retire caption picker; transport outcome is unknown");
+    return JS_UNDEFINED;
+}
+
+static bool menu_epoch(JSContext *ctx, JSValueConst value, uint32_t *epoch)
+{
+    double number;
+    if (!JS_IsNumber(value) || JS_ToFloat64(ctx, &number, value) < 0 ||
+        !(number > 0 && number <= UINT32_MAX) || number != (uint32_t)number) {
+        JS_ThrowTypeError(ctx, "A current window-menu epoch is required"); return false;
+    }
+    *epoch = (uint32_t)number;
+    return true;
+}
+
+static JSValue close_window_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    uint32_t epoch;
+    if (argc != 1 || !menu_epoch(ctx, argv[0], &epoch)) return JS_HasException(ctx) ? JS_EXCEPTION :
+        JS_ThrowTypeError(ctx, "A window-menu epoch is required");
+    if (epoch != control.menu_epoch) return JS_UNDEFINED;
+    for (struct DesktopWindow *window = control.windows; window; window = window->next)
+        if (window->id == control.menu_target && window->workspace_handle)
+            polly_workspace_toplevel_v1_close_menu(window->workspace_handle, epoch);
+    control.menu_epoch = control.menu_target = 0;
+    JS_FreeValue(ctx, control.placement_menu);
+    control.placement_menu = JS_UNDEFINED;
+    if (control.display && wl_display_flush(control.display) < 0 && errno != EAGAIN && errno != EINTR)
+        return JS_ThrowInternalError(ctx, "Cannot retire the window menu; transport outcome is unknown");
+    return JS_UNDEFINED;
+}
+
+static JSValue place_window(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int command)
+{
+    (void)self;
+    if (argc != (command == 1 || command == 2 ? 2 : 3))
+        return JS_ThrowTypeError(ctx, "Window, placement and current menu epoch are required");
+    struct DesktopWindow *window = placement_window(ctx, argv[0]);
+    if (!window) return JS_EXCEPTION;
+    if (command == 2 && (polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 5 ||
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 5))
+        return JS_ThrowTypeError(ctx, "Window cascade is unsupported by this provider; paired workspace v5 is required");
+    if (command == 3 && (!control.arrangement_capability ||
+        polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 6 ||
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 6))
+        return JS_ThrowTypeError(ctx, "Window arrangement is unsupported by this provider; paired workspace v6 capability is required");
+    uint32_t placement = 0, epoch;
+    if (!command || command == 3) {
+        if (!JS_IsString(argv[1])) return JS_ThrowTypeError(ctx, "A bounded window placement or arrangement is required");
+        size_t length;
+        const char *side = JS_ToCStringLen(ctx, &length, argv[1]);
+        if (!side) return JS_EXCEPTION;
+        placement = command == 3 ?
+            (length == 10 && !memcmp(side, "horizontal", 10) ? 1 :
+             length == 8 && !memcmp(side, "vertical", 8) ? 2 : 0) :
+            (length == 4 && !memcmp(side, "left", 4) ? 1 :
+             length == 5 && !memcmp(side, "right", 5) ? 2 : 0);
+        JS_FreeCString(ctx, side);
+        if (!placement) return JS_ThrowTypeError(ctx, command == 3 ?
+            "Arrangement must be horizontal or vertical" : "Placement must be left or right");
+    }
+    if (!menu_epoch(ctx, argv[command == 1 || command == 2 ? 1 : 2], &epoch)) return JS_EXCEPTION;
+    if (epoch != control.menu_epoch || window->id != control.menu_target)
+        return JS_ThrowTypeError(ctx, "Window menu is closed or stale");
+    PuWindow *owned = pu_gui_window_from_value(ctx, control.placement_menu);
+    if (!owned || !(command >= 2 ? pu_window_layer_surface_peek(owned) : pu_window_layer_surface(owned)))
+        return JS_HasException(ctx) ? JS_EXCEPTION :
+        JS_ThrowTypeError(ctx, "Window menu is closed");
+    if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
+    if (command == 3) polly_workspace_toplevel_v1_arrange(window->workspace_handle, control.placement_serial, epoch, placement);
+    else if (command == 2) polly_workspace_toplevel_v1_cascade(window->workspace_handle, control.placement_serial, epoch);
+    else polly_workspace_toplevel_v1_place(window->workspace_handle, control.placement_serial, epoch, placement);
+    if (!finish_placement_request(ctx)) return JS_EXCEPTION;
+    if (control.placement_epoch != epoch) {
+        control.placement_unknown = true;
+        return JS_ThrowInternalError(ctx, "Window placement result epoch mismatch; outcome is unknown");
+    }
+    JSValue result = JS_NewObject(ctx);
+    if (JS_IsException(result)) return result;
+    if (!property(ctx, result, "admitted", JS_TRUE)) { JS_FreeValue(ctx, result); return JS_EXCEPTION; }
+    return result;
 }
 
 static JSValue action(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int command)
@@ -884,17 +1382,36 @@ static JSValue session_exit(JSContext *ctx, JSValueConst self, int argc, JSValue
     return result;
 }
 
+static JSValue backdrop_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return pu_decoration_client_backdrop_capability(ctx, control.appearance, control.display);
+}
 static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self;
     if (!ensure_control(ctx)) return JS_EXCEPTION;
     return pu_decoration_client_configure(ctx, argc, argv, control.appearance, control.display);
 }
+static JSValue shell_backdrop_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return pu_decoration_client_shell_backdrop_capability(ctx, control.appearance, control.display);
+}
+static JSValue start_backdrop_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return pu_decoration_client_start_backdrop_capability(ctx, control.appearance, control.display);
+}
 
 int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
 {
     control.ctx = ctx;
     control.exit_windows = JS_UNDEFINED;
+    control.placement_menu = JS_UNDEFINED;
     control.api = JS_DupValue(ctx, api);
     if (!pu_shortcut_client_install(ctx, api)) return 0;
     if (!pu_output_client_install(ctx, api)) return 0;
@@ -907,7 +1424,33 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     if (!pu_theme_client_install(ctx, api)) return 0;
     if (!pu_decoration_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
+    if (!property(ctx, api, "openWindowMenu", JS_NewCFunctionMagic(ctx, open_window_menu,
+            "openWindowMenu", 2, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "openLayoutPicker", JS_NewCFunctionMagic(ctx, open_window_menu,
+            "openLayoutPicker", 2, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "layoutPickerCapability", JS_NewCFunction(ctx, layout_picker_capability, "layoutPickerCapability", 0)) ||
+        !property(ctx, api, "layoutPickerOffer", JS_NewCFunction(ctx, layout_picker_offer, "layoutPickerOffer", 0)) ||
+        !property(ctx, api, "enableLayoutPicker", JS_NewCFunction(ctx, enable_layout_picker, "enableLayoutPicker", 1)) ||
+        !property(ctx, api, "dismissLayoutPicker", JS_NewCFunction(ctx, dismiss_layout_picker, "dismissLayoutPicker", 1)) ||
+        !property(ctx, api, "onLayoutPickerChanged", JS_NULL) ||
+        !property(ctx, api, "systemMenuCapability", JS_NewCFunction(ctx, system_menu_supported, "systemMenuCapability", 0)) ||
+        !property(ctx, api, "enableSystemMenuRequests", JS_NewCFunction(ctx, enable_system_menu, "enableSystemMenuRequests", 1)) ||
+        !property(ctx, api, "takeSystemMenuRequest", JS_NewCFunction(ctx, take_system_menu, "takeSystemMenuRequest", 0)) ||
+        !property(ctx, api, "onSystemMenuRequested", JS_NULL) ||
+        !property(ctx, api, "closeWindowMenu", JS_NewCFunction(ctx, close_window_menu, "closeWindowMenu", 1)) ||
+        !property(ctx, api, "tileWindow", JS_NewCFunctionMagic(ctx, place_window, "tileWindow", 3, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "restoreFloatingWindow", JS_NewCFunctionMagic(ctx, place_window,
+            "restoreFloatingWindow", 2, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "cascadeWindows", JS_NewCFunctionMagic(ctx, place_window,
+            "cascadeWindows", 2, JS_CFUNC_generic_magic, 2)) ||
+        !property(ctx, api, "arrangeWindows", JS_NewCFunctionMagic(ctx, place_window,
+            "arrangeWindows", 3, JS_CFUNC_generic_magic, 3))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 2))) return 0;
+    if (!property(ctx, api, "backdropCapability", JS_NewCFunction(ctx, backdrop_capability, "backdropCapability", 0))) return 0;
+    if (!property(ctx, api, "shellBackdropCapability",
+        JS_NewCFunction(ctx, shell_backdrop_capability, "shellBackdropCapability", 0))) return 0;
+    if (!property(ctx, api, "startBackdropCapability",
+        JS_NewCFunction(ctx, start_backdrop_capability, "startBackdropCapability", 0))) return 0;
     if (!property(ctx, api, "workspaces", JS_NewCFunction(ctx, workspaces, "workspaces", 0)) ||
         !property(ctx, api, "restoreWorkspaces", JS_NewCFunction(ctx, restore_workspaces, "restoreWorkspaces", 2)) ||
         !property(ctx, api, "renameWorkspace", JS_NewCFunction(ctx, rename_workspace, "renameWorkspace", 2)) ||
@@ -950,6 +1493,16 @@ int pu_desktop_windows_pump(void)
     worked += pu_theme_client_pump();
     worked += pu_output_client_pump();
     worked += pu_decoration_client_pump();
+    if (control.ctx && control.system_menu_changed) {
+        control.system_menu_changed = false;
+        notify("onSystemMenuRequested");
+        worked++;
+    }
+    if (control.ctx && control.picker_changed) {
+        control.picker_changed = false;
+        notify("onLayoutPickerChanged");
+        worked++;
+    }
     if (!control.ctx || (!control.changed && !control.workspaces_changed)) return worked;
     int windows = control.changed, workspaces = control.workspaces_changed;
     control.changed = control.workspaces_changed = 0;

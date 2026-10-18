@@ -1,10 +1,13 @@
 #include "decoration.h"
+#include "workspace.h"
 #include "decorator-process.h"
 #include "decoration-layout.h"
 #include "decoration-frame.h"
 #include "appearance-document.h"
 #include "server.h"
+#include "session-lock.h"
 #include "polly-appearance-server.h"
+#include "wlr-layer-shell-unstable-v1-protocol.h"
 #include <drm_fourcc.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,17 +15,31 @@
 #include <unistd.h>
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
 #include <wlr/util/log.h>
 
+struct BackdropTarget {
+    struct wlr_scene_rect *node;
+    struct wl_listener destroy;
+    uint32_t surface_id, sequence, role, taskbar_id, taskbar_sequence;
+    struct wlr_box box, taskbar_box;
+};
 struct Snapshot {
     unsigned refs;
     struct PuDecorationLayout layout;
     uint64_t generation;
     int fd;
     uint32_t length;
+    unsigned backdrop_count, backdrop_expected;
+    uint64_t backdrop_epoch;
+    struct BackdropTarget backdrops[8];
 };
 struct FrameBudget { unsigned refs; size_t bytes; };
 struct FrameMapping { unsigned refs; void *data; size_t length; struct FrameBudget *budget; };
@@ -102,6 +119,8 @@ static struct Snapshot *snapshot_ref(struct Snapshot *snapshot)
 static void snapshot_drop(struct Snapshot *snapshot)
 {
     if (!snapshot || --snapshot->refs) return;
+    for (unsigned i = 0; i < snapshot->backdrop_count; i++)
+        if (snapshot->backdrops[i].node) wlr_scene_node_destroy(&snapshot->backdrops[i].node->node);
     if (snapshot->fd >= 0) close(snapshot->fd);
     free(snapshot);
 }
@@ -382,6 +401,46 @@ static bool request_frame(struct PuDesktopView *view)
     return false;
 }
 bool pu_decoration_ready(struct PuDesktopView *view) { return request_frame(view); }
+bool pu_decoration_presented_current(const struct PuDesktopView *view)
+{
+    const struct PuDecoration *d = view->decoration;
+    return view->mapped && !view->geometry_pending && !view->resize_pending &&
+        d && d->decorated && !d->failed && d->shown && d->current && d->revision &&
+        !d->ready && !d->timeout && d->accepted_revision == d->revision &&
+        d->shown->snapshot == d->current &&
+        !memcmp(d->shown->meta, d->meta, sizeof(d->meta)) &&
+        !!(d->shown->meta[PU_FRAME_STATE] & 1) ==
+            (view->desktop->focused == view && !view->desktop->focused_layer);
+}
+uint32_t pu_decoration_presented_revision(const struct PuDesktopView *view)
+{
+    return pu_decoration_presented_current(view) ?
+        view->decoration->shown->meta[PU_FRAME_REVISION] : 0;
+}
+bool pu_decoration_layout_settled(const struct PuDesktopView *view)
+{
+    const struct PuDecoration *d = view->decoration;
+    if (d && d->decorated) return pu_decoration_presented_current(view);
+    return view->mapped && !view->geometry_pending && !view->resize_pending &&
+        view->toplevel->base->surface->buffer && d && !server_side(view->decoration, true);
+}
+bool pu_decoration_shown_geometry(struct PuDesktopView *view)
+{
+    const struct PuDecoration *d = view->decoration;
+    struct wlr_box geometry = view->toplevel->base->geometry;
+    if (!view->mapped || view->geometry_pending || view->resize_pending || view->drag_restore_pending ||
+        pu_decoration_mode_pending(view) || !view->toplevel->base->surface->buffer || !d ||
+        geometry.width < 1 || geometry.height < 1 ||
+        geometry.width != view->presented_box.width || geometry.height != view->presented_box.height) return false;
+    if (!d->decorated) return !server_side(view->decoration, true);
+    if (d->failed || !d->shown || !d->current || d->shown->snapshot != d->current ||
+        !d->tree->node.enabled || !d->shown->tree->node.enabled) return false;
+    const uint32_t *meta = d->shown->meta;
+    return meta[PU_FRAME_CLIENT_WIDTH] == (uint32_t)geometry.width &&
+        meta[PU_FRAME_CLIENT_HEIGHT] == (uint32_t)geometry.height &&
+        meta[PU_FRAME_SCALE] == pu_frame_scale_word((float)pu_desktop_view_scale(view)) &&
+        !!(meta[PU_FRAME_STATE] & 2) == (view->mode == PU_DESKTOP_MAXIMIZED);
+}
 void pu_decoration_update(struct PuDesktopView *view)
 {
     if (!request_frame(view)) return;
@@ -493,6 +552,12 @@ static void appearance_released(struct wl_resource *resource)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     struct PuDecorations *state = owner->state;
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &state->desktop->layers, link) {
+        if (layer->backdrop_owner != resource) continue;
+        if (layer->backdrop) wlr_scene_node_destroy(&layer->backdrop->node);
+        layer->backdrop = NULL; layer->backdrop_owner = NULL;
+    }
     if (state->renderer == owner) {
         state->renderer = NULL;
         struct PuDesktopView *view;
@@ -607,7 +672,7 @@ static void disable_renderer(struct wl_client *client, struct wl_resource *resou
     pu_decorator_fail(owner->state->desktop, "Independent GUI renderer stopped");
 }
 static void prepare_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
-    const char *name, struct wl_array *configuration, int32_t document, uint32_t length)
+    const char *name, struct wl_array *configuration, int32_t document, uint32_t length, uint32_t backdrop_count)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     if (!authorized(client, owner)) { close(document); return; }
@@ -619,20 +684,32 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
         return;
     }
     struct PuDecorationLayout layout;
-    bool valid = serial && pu_appearance_identifier(name) &&
+    bool valid = serial && backdrop_count <= 8 && pu_appearance_identifier(name) &&
         configuration->size == PU_APPEARANCE_WORDS * sizeof(uint32_t) &&
         pu_appearance_document_valid(document, length);
     uint32_t words[PU_APPEARANCE_WORDS];
     if (valid) { memcpy(words, configuration->data, sizeof(words)); valid = pu_appearance_decode(&layout, words); }
     if (!valid) {
         close(document);
-        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 6 are required");
+        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 7 are required");
         pu_decorations_service_changed(owner->state->desktop);
         return;
     }
+    if (backdrop_count && (owner->renderer_role ||
+        !wlr_scene_backdrop_supported(owner->state->desktop->renderer) ||
+        pu_session_lock_active(owner->state->desktop))) {
+        close(document);
+        polly_appearance_v1_send_prepared(resource, serial, 0, "Regional backdrop is unsupported or unavailable");
+        return;
+    }
     owner->staged = calloc(1, sizeof(*owner->staged));
-    if (!owner->staged) { close(document); wl_resource_post_no_memory(resource); return; }
-    *owner->staged = (struct Snapshot) {.refs = 1, .layout = layout, .fd = document, .length = length};
+    if (!owner->staged) {
+        close(document);
+        polly_appearance_v1_send_prepared(resource, serial, 0, "Cannot allocate appearance transaction");
+        return;
+    }
+    *owner->staged = (struct Snapshot) {.refs = 1, .layout = layout, .fd = document, .length = length,
+        .backdrop_expected = backdrop_count, .backdrop_epoch = owner->state->desktop->backdrop_epoch};
     owner->base_generation = owner->state->snapshot->generation;
     if (!owner->renderer_role) {
         struct AppearanceClient *other;
@@ -644,16 +721,297 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
     owner->serial = serial; polly_appearance_v1_send_prepared(resource, serial, 1, "");
     pu_decorations_service_changed(owner->state->desktop);
 }
+static struct PuDesktopLayer *owned_backdrop_layer(struct AppearanceClient *owner, uint32_t id)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &owner->state->desktop->layers, link) {
+        struct wlr_layer_surface_v1 *surface = layer->surface;
+        if (wl_resource_get_client(surface->surface->resource) !=
+            wl_resource_get_client(owner->resource) || wl_resource_get_id(surface->surface->resource) != id) continue;
+        if (!surface->surface->mapped || !layer->presented || !layer->ready ||
+            surface->surface->current.width != layer->pending_box.width ||
+            surface->surface->current.height != layer->pending_box.height) return NULL;
+        return layer;
+    }
+    return NULL;
+}
+static struct PuDesktopLayer *backdrop_layer(struct AppearanceClient *owner, uint32_t id)
+{
+    struct PuDesktopLayer *layer = owned_backdrop_layer(owner, id);
+    if (layer) {
+        struct wlr_layer_surface_v1 *surface = layer->surface;
+        if (surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_TOP ||
+            surface->current.anchor != ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM ||
+            !surface->current.desired_width || !surface->current.desired_height ||
+            surface->current.keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
+            surface->current.exclusive_zone != layer->pending_box.height ||
+            surface->surface->current.width != layer->pending_box.width ||
+            surface->surface->current.height != layer->pending_box.height) return NULL;
+        return layer;
+    }
+    return NULL;
+}
+static struct PuDesktopLayer *shell_backdrop_layer(struct AppearanceClient *owner,
+    uint32_t id, uint32_t taskbar_id, uint32_t role)
+{
+    struct PuDesktopLayer *layer = owned_backdrop_layer(owner, id);
+    struct PuDesktopLayer *taskbar = owned_backdrop_layer(owner, taskbar_id);
+    if (!layer || !taskbar || (role != 2 && role != 3) ||
+        !taskbar->surface->output || !taskbar->surface->output->enabled ||
+        layer->surface->output != taskbar->surface->output) return NULL;
+    const struct wlr_layer_surface_v1_state *panel = &taskbar->surface->current;
+    struct wlr_box full;
+    wlr_output_layout_get_box(owner->state->desktop->layout, taskbar->surface->output, &full);
+    if (full.width < 1 || full.height < 1 ||
+        panel->layer != ZWLR_LAYER_SHELL_V1_LAYER_TOP ||
+        panel->anchor != (ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) ||
+        panel->desired_width || !panel->desired_height ||
+        panel->keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE ||
+        panel->exclusive_zone != taskbar->pending_box.height ||
+        panel->margin.top || panel->margin.bottom || panel->margin.left || panel->margin.right ||
+        taskbar->pending_box.x != full.x || taskbar->pending_box.width != full.width ||
+        taskbar->pending_box.y != full.y + full.height - taskbar->pending_box.height ||
+        taskbar->pending_box.height > full.height) return NULL;
+    if (role == 2) return layer == taskbar ? layer : NULL;
+    const struct wlr_layer_surface_v1_state *menu = &layer->surface->current;
+    const struct wlr_box *box = &layer->pending_box;
+    if (pu_session_lock_active(owner->state->desktop) ||
+        layer == taskbar || menu->layer != ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
+        menu->anchor != ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM ||
+        !menu->desired_width || !menu->desired_height || menu->exclusive_zone != -1 ||
+        menu->keyboard_interactive != ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE ||
+        menu->margin.top || menu->margin.left || menu->margin.right || menu->margin.bottom < 0 ||
+        owner->state->desktop->focused_layer != layer ||
+        owner->state->desktop->seat->keyboard_state.focused_surface != layer->surface->surface ||
+        box->x < full.x || box->y < full.y ||
+        (int64_t)box->x + box->width > (int64_t)full.x + full.width ||
+        (int64_t)box->y + box->height > taskbar->pending_box.y) return NULL;
+    return layer;
+}
+void pu_decorations_validate_shell_backdrops(struct PuDesktop *desktop)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop->layers, link) {
+        if (!layer->backdrop || layer->backdrop_role < 2 || !layer->backdrop_owner) continue;
+        struct AppearanceClient *owner = wl_resource_get_user_data(layer->backdrop_owner);
+        if (wl_resource_get_client(owner->resource) == desktop->shell_client &&
+            shell_backdrop_layer(owner, wl_resource_get_id(layer->surface->surface->resource),
+                layer->backdrop_taskbar, layer->backdrop_role) &&
+            wlr_box_equal(&layer->backdrop_box, &layer->pending_box)) continue;
+        polly_appearance_v1_send_shell_backdrop_retired(owner->resource, layer->backdrop_serial,
+            layer->backdrop_index, layer->backdrop_role, layer->backdrop_role == 3 ?
+            "Shell Start backdrop retired; solid material required" :
+            "Shell taskbar backdrop retired; solid material required");
+        wlr_scene_node_destroy(&layer->backdrop->node);
+        layer->backdrop = NULL; layer->backdrop_owner = NULL;
+    }
+}
+static void backdrop_candidate_destroyed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct BackdropTarget *target = wl_container_of(listener, target, destroy);
+    wl_list_remove(&target->destroy.link);
+    target->node = NULL;
+}
+void pu_decorations_backdrop_status(struct PuDesktop *desktop, struct wlr_output *output, const char *message)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop->layers, link)
+        if (layer->backdrop && layer->backdrop_owner && layer->surface->surface->mapped &&
+            layer->surface->output == output &&
+            wl_resource_get_client(layer->backdrop_owner) == desktop->shell_client)
+            polly_appearance_v1_send_backdrop_status(layer->backdrop_owner, message);
+}
+static void get_backdrop_capability(struct wl_client *client, struct wl_resource *resource)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (!authorized(client, owner)) return;
+    polly_appearance_v1_send_backdrop_capability(resource, !owner->renderer_role &&
+        wlr_scene_backdrop_supported(owner->state->desktop->renderer));
+}
+static void get_shell_backdrop_capability(struct wl_client *client, struct wl_resource *resource)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (!authorized(client, owner)) return;
+    polly_appearance_v1_send_shell_backdrop_capability(resource, !owner->renderer_role &&
+        wlr_scene_backdrop_supported(owner->state->desktop->renderer));
+}
+static void get_start_backdrop_capability(struct wl_client *client, struct wl_resource *resource)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (!authorized(client, owner)) return;
+    polly_appearance_v1_send_start_backdrop_capability(resource, !owner->renderer_role &&
+        wlr_scene_backdrop_supported(owner->state->desktop->renderer));
+}
+static void prepare_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_array *configuration)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (!authorized(client, owner)) return;
+    struct Snapshot *snapshot = owner->staged;
+    uint32_t words[6] = {0};
+    if (configuration->size == sizeof(words)) memcpy(words, configuration->data, sizeof(words));
+    uint32_t id = wl_resource_get_id(surface);
+    struct PuDesktopLayer *layer = backdrop_layer(owner, id);
+    bool valid = !owner->renderer_role && snapshot && snapshot->backdrop_expected &&
+        owner->serial == serial && snapshot->backdrop_count < snapshot->backdrop_expected && layer &&
+        /* The v7/schema2/role1 Dock contract does not inherit effects4's taller extent. */
+        layer->pending_box.width <= 4096 && layer->pending_box.height <= 512 &&
+        snapshot->backdrop_epoch == owner->state->desktop->backdrop_epoch &&
+        wl_resource_get_client(surface) == client &&
+        configuration->size == sizeof(words) && words[0] == 2 && words[1] == 1 &&
+        words[2] <= 64000 && words[3] >= 1 && words[3] <= 32 &&
+        words[4] <= 0xffffff && words[5] <= 100 &&
+        !pu_session_lock_active(owner->state->desktop);
+    for (unsigned i = 0; valid && i < snapshot->backdrop_count; i++)
+        if (snapshot->backdrops[i].surface_id == id) valid = false;
+    struct wlr_scene_rect *node = NULL;
+    if (valid) {
+        float alpha = words[5] / 100.0f;
+        float tint[4] = {((words[4] >> 16) & 255) / 255.0f * alpha,
+            ((words[4] >> 8) & 255) / 255.0f * alpha, (words[4] & 255) / 255.0f * alpha, alpha};
+        struct wlr_box box = {0, 0, layer->pending_box.width, layer->pending_box.height};
+        node = wlr_scene_backdrop_create(layer->tree, &box, words[2] / 1000.0f, words[3], tint);
+    }
+    if (!node) {
+        polly_appearance_v1_send_backdrop_prepared(resource, serial, 0,
+            "Regional backdrop target, generation, renderer or peak budget rejected");
+        return;
+    }
+    struct BackdropTarget *target = &snapshot->backdrops[snapshot->backdrop_count++];
+    *target = (struct BackdropTarget){.node = node, .surface_id = id, .role = 1,
+        .sequence = layer->surface->surface->current.seq, .box = layer->pending_box};
+    target->destroy.notify = backdrop_candidate_destroyed;
+    wl_signal_add(&node->node.events.destroy, &target->destroy);
+    polly_appearance_v1_send_backdrop_prepared(resource, serial, 1, "");
+}
+static void prepare_paired_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration, bool standard_start)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (!authorized(client, owner)) return;
+    struct Snapshot *snapshot = owner->staged;
+    uint32_t words[6] = {0};
+    if (configuration->size == sizeof(words)) memcpy(words, configuration->data, sizeof(words));
+    uint32_t id = wl_resource_get_id(surface), peer = wl_resource_get_id(taskbar);
+    struct PuDesktopLayer *layer = shell_backdrop_layer(owner, id, peer, words[1]);
+    struct PuDesktopLayer *panel = owned_backdrop_layer(owner, peer);
+    bool valid = !owner->renderer_role && snapshot && snapshot->backdrop_expected &&
+        owner->serial == serial && snapshot->backdrop_count < snapshot->backdrop_expected && layer && panel &&
+        snapshot->backdrop_epoch == owner->state->desktop->backdrop_epoch &&
+        wl_resource_get_client(surface) == client && wl_resource_get_client(taskbar) == client &&
+        configuration->size == sizeof(words) && words[0] == (standard_start ? 4u : 3u) &&
+        (!standard_start || words[1] == 3) &&
+        words[2] <= 64000 && words[3] >= 1 && words[3] <= 32 &&
+        words[4] <= 0xffffff && words[5] <= 100 &&
+        !pu_session_lock_active(owner->state->desktop);
+    for (unsigned i = 0; valid && i < snapshot->backdrop_count; i++) {
+        struct BackdropTarget *target = &snapshot->backdrops[i];
+        if (target->surface_id == id || (words[1] == 3 && target->role == 3)) valid = false;
+        if (words[1] == 2 && target->role == 2) {
+            struct PuDesktopLayer *other = owned_backdrop_layer(owner, target->surface_id);
+            if (!other || other->surface->output == layer->surface->output) valid = false;
+        }
+    }
+    struct wlr_scene_rect *node = NULL;
+    if (valid && (layer->pending_box.width > 4096 || layer->pending_box.height > (standard_start ? 768 : 512))) {
+        polly_appearance_v1_send_backdrop_prepared(resource, serial, 0,
+            standard_start ? "Standard Start recipient extent exceeds 4096x768 logical-pixel limit" :
+            "Paired Shell recipient extent exceeds 4096x512 logical-pixel limit");
+        return;
+    }
+    if (valid) {
+        float alpha = words[5] / 100.0f;
+        float tint[4] = {((words[4] >> 16) & 255) / 255.0f * alpha,
+            ((words[4] >> 8) & 255) / 255.0f * alpha, (words[4] & 255) / 255.0f * alpha, alpha};
+        node = wlr_scene_backdrop_create(layer->tree,
+            &(struct wlr_box){0, 0, layer->pending_box.width, layer->pending_box.height},
+            words[2] / 1000.0f, words[3], tint);
+    }
+    if (!node) {
+        polly_appearance_v1_send_backdrop_prepared(resource, serial, 0,
+            "Paired Shell backdrop target, generation, renderer or peak budget rejected");
+        return;
+    }
+    struct BackdropTarget *target = &snapshot->backdrops[snapshot->backdrop_count++];
+    *target = (struct BackdropTarget){.node = node, .surface_id = id, .role = words[1],
+        .sequence = layer->surface->surface->current.seq, .box = layer->pending_box,
+        .taskbar_id = peer, .taskbar_sequence = panel->surface->surface->current.seq,
+        .taskbar_box = panel->pending_box};
+    target->destroy.notify = backdrop_candidate_destroyed;
+    wl_signal_add(&node->node.events.destroy, &target->destroy);
+    polly_appearance_v1_send_backdrop_prepared(resource, serial, 1, "");
+}
+static void prepare_shell_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration)
+{
+    prepare_paired_backdrop(client, resource, serial, surface, taskbar, configuration, false);
+}
+static void prepare_start_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration)
+{
+    prepare_paired_backdrop(client, resource, serial, surface, taskbar, configuration, true);
+}
 static void commit_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     struct PuDecorations *state = owner->state;
     if (!authorized(client, owner)) return;
     if (!serial || owner->serial != serial || !owner->staged || state->snapshot->generation == UINT64_MAX ||
-        (owner->renderer_role && (!bootstrap_allowed(owner) || owner->base_generation != state->snapshot->generation))) {
+        owner->base_generation != state->snapshot->generation ||
+        (owner->renderer_role && !bootstrap_allowed(owner))) {
         polly_appearance_v1_send_applied(resource, serial, 0, "No matching prepared appearance"); return;
     }
+    struct Snapshot *snapshot = owner->staged;
+    if (snapshot->backdrop_count != snapshot->backdrop_expected || (snapshot->backdrop_expected &&
+        (snapshot->backdrop_epoch != state->desktop->backdrop_epoch ||
+         pu_session_lock_active(state->desktop) || !wlr_scene_backdrop_supported(state->desktop->renderer)))) {
+        polly_appearance_v1_send_applied(resource, serial, 0, "No current regional backdrop targets"); return;
+    }
+    for (unsigned i = 0; i < snapshot->backdrop_count; i++) {
+        struct BackdropTarget *target = &snapshot->backdrops[i];
+        struct PuDesktopLayer *layer = target->role == 1 ? backdrop_layer(owner, target->surface_id) :
+            shell_backdrop_layer(owner, target->surface_id, target->taskbar_id, target->role);
+        if (!target->node || !layer || layer->surface->surface->current.seq != target->sequence ||
+            !wlr_box_equal(&layer->pending_box, &target->box)) {
+            polly_appearance_v1_send_applied(resource, serial, 0, "Obsolete backdrop surface or geometry"); return;
+        }
+        if (target->role >= 2) {
+            struct PuDesktopLayer *panel = owned_backdrop_layer(owner, target->taskbar_id);
+            bool paired = target->role == 2;
+            for (unsigned j = 0; j < snapshot->backdrop_count; j++)
+                if (snapshot->backdrops[j].role == 2 &&
+                    snapshot->backdrops[j].surface_id == target->taskbar_id) paired = true;
+            if (!paired || !panel || panel->surface->surface->current.seq != target->taskbar_sequence ||
+                !wlr_box_equal(&panel->pending_box, &target->taskbar_box)) {
+                polly_appearance_v1_send_applied(resource, serial, 0, "Obsolete or missing paired taskbar"); return;
+            }
+        }
+    }
+    if (!owner->renderer_role) {
+        struct PuDesktopLayer *layer;
+        wl_list_for_each(layer, &state->desktop->layers, link) {
+            if (layer->backdrop_owner != resource) continue;
+            if (layer->backdrop) wlr_scene_node_destroy(&layer->backdrop->node);
+            layer->backdrop = NULL; layer->backdrop_owner = NULL;
+        }
+        for (unsigned i = 0; i < snapshot->backdrop_count; i++) {
+            struct BackdropTarget *target = &snapshot->backdrops[i];
+            layer = owned_backdrop_layer(owner, target->surface_id);
+            layer->backdrop = target->node; layer->backdrop_owner = resource;
+            layer->backdrop_role = target->role; layer->backdrop_taskbar = target->taskbar_id;
+            layer->backdrop_serial = serial;
+            layer->backdrop_index = i;
+            layer->backdrop_box = target->box;
+            wl_list_remove(&target->destroy.link); target->node = NULL;
+            wlr_scene_node_set_enabled(&layer->backdrop->node, true);
+        }
+        snapshot->backdrop_count = 0;
+    }
     owner->staged->generation = state->snapshot->generation + 1;
+    pu_workspaces_system_menu_cancel(state->desktop);
+    pu_workspaces_picker_cancel(state->desktop);
     snapshot_drop(state->snapshot); state->snapshot = owner->staged;
     state->initial_theme_consumed = true;
     owner->staged = NULL; owner->serial = 0;
@@ -762,13 +1120,16 @@ static const struct polly_appearance_v1_interface appearance_impl = {
     .destroy = appearance_destroy, .prepare = prepare_theme, .commit = commit_theme, .cancel = cancel_theme,
     .enable_renderer = enable_renderer, .disable_renderer = disable_renderer,
     .submit_frame = submit_frame, .frame_failed = frame_failed,
+    .get_backdrop_capability = get_backdrop_capability, .prepare_backdrop = prepare_backdrop,
+    .get_shell_backdrop_capability = get_shell_backdrop_capability, .prepare_shell_backdrop = prepare_shell_backdrop,
+    .get_start_backdrop_capability = get_start_backdrop_capability, .prepare_start_backdrop = prepare_start_backdrop,
 };
 static void appearance_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 {
     struct PuDecorations *state = data;
     bool rendering = pu_decorator_allowed(state->desktop, client);
-    if ((!rendering && client != state->desktop->shell_client) || version < 6) {
-        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v6"); return;
+    if ((!rendering && client != state->desktop->shell_client) || version < 7) {
+        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v7"); return;
     }
     struct AppearanceClient *existing;
     wl_list_for_each(existing, &state->appearance_clients, link)
@@ -797,7 +1158,7 @@ bool pu_decorations_init(struct PuDesktop *desktop)
     if (!state->budget) return false;
     state->budget->refs = 1; state->theme_revision = 1;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 6, state, appearance_bind);
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 9, state, appearance_bind);
     state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
     if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;

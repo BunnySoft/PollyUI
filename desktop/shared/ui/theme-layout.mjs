@@ -20,6 +20,26 @@ export function dockSurfaceWidth(theme, taskCount, availableWidth) {
   return Math.max(1, Math.min(width, availableWidth - l.screenInset * 2));
 }
 
+export function dockBackdropMaterial(theme, width, height) {
+  const material = theme.panel.regionalBackdrop;
+  if (theme.panel.kind !== 'dock' || !material) return null;
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0)
+    throw new RangeError('A current positive Dock footprint is required');
+  const radius = Math.min(theme.panel.radius, width / 2, height / 2);
+  return [2, 1, Math.round(radius * 1000), material.sigma,
+    Number.parseInt(material.tint.slice(1), 16), material.opacityPercent];
+}
+export function shellBackdropMaterial(theme, role, width, height) {
+  if (![2, 3].includes(role)) throw new RangeError('Unknown paired Shell backdrop role');
+  const material = theme.panel[role === 2 ? 'taskbarBackdrop' : 'startBackdrop'];
+  if (theme.panel.kind !== 'taskbar' || theme.panel.surfaceStyle !== 'fluent' || !material) return null;
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0)
+    throw new RangeError('A current positive Shell footprint is required');
+  const radius = Math.min(role === 2 ? theme.panel.radius : 8, width / 2, height / 2);
+  return [role === 3 && material.standardHeight === true ? 4 : 3, role, Math.round(radius * 1000), material.sigma,
+    Number.parseInt(material.tint.slice(1), 16), material.opacityPercent];
+}
+
 export function applicationMenuPlacement(theme, availableWidth) {
   const l = theme.layout, mac = theme.panel.kind === 'dock';
   const inset = l.menuLeftInset ?? l.screenInset;
@@ -38,4 +58,31 @@ export function applicationMenuHeight(theme, availableHeight) {
   return Math.max(1, Math.min(l.menuHeight,
     availableHeight - theme.panel.height + (theme.panel.kind === 'taskbar' ? l.menuBottomOverlap ?? 0 : 0) -
       (l.menuVerticalInset ?? l.overlayInset) * 2));
+}
+export function layoutPickerPlacement(theme, offer) {
+  for (const key of ['x', 'y', 'width', 'height', 'outputX', 'outputY', 'outputWidth', 'outputHeight'])
+    if (!Number.isInteger(offer?.[key])) throw new TypeError('Invalid native layout picker anchor');
+  if (offer.width < 1 || offer.height < 1 || offer.outputWidth < 1 || offer.outputHeight < 1)
+    throw new RangeError('Native layout picker anchor has no live output');
+  const width = Math.max(1, Math.min(280, offer.outputWidth));
+  const height = Math.max(1, Math.min(260, offer.outputHeight));
+  const left = Math.max(0, Math.min(offer.outputWidth - width, offer.x + offer.width - width));
+  const below = offer.y + offer.height;
+  const top = Math.max(0, Math.min(offer.outputHeight - height,
+    below + height <= offer.outputHeight ? below : offer.y - height));
+  return { width, height, anchors: ['top', 'left'], margins: { left, top } };
+}
+
+export function systemMenuPlacement(theme, request) {
+  for (const key of ['x', 'y', 'width', 'height', 'outputX', 'outputY', 'outputWidth', 'outputHeight'])
+    if (!Number.isInteger(request?.[key])) throw new TypeError('Invalid native system-menu anchor');
+  if (request.width < 1 || request.height < 1 || request.outputWidth < 1 || request.outputHeight < 1)
+    throw new RangeError('Native system-menu anchor has no live output');
+  const width = Math.max(1, Math.min(theme.layout.menuWidth, request.outputWidth));
+  const height = Math.max(1, Math.min(theme.layout.menuHeight, request.outputHeight));
+  const left = Math.max(0, Math.min(request.outputWidth - width, request.x));
+  const below = request.y + request.height;
+  const top = Math.max(0, Math.min(request.outputHeight - height,
+    below + height <= request.outputHeight ? below : request.y - height));
+  return { width, height, anchors: ['top', 'left'], margins: { left, top } };
 }

@@ -8,7 +8,7 @@ all live in that one application's own window/document, process/QuickJS realm
 and event loop. There is no complete Shell-owned settings window or
 **Open desktop controls** delegation. Theme changes,
 other application activity and launcher dismissal do not close it.
-Escape (unless consumed by an input), Alt+F4 and the window-frame close control
+Escape (unless composing or consumed by an input), Alt+F4 and the window-frame close control
 close only Settings. Use its normal taskbar/window-switcher entry to restore a
 minimized Settings window. Launch buttons and `polly-settings` request the same
 owned instance's navigation/presentation; Shell activates its current window.
@@ -21,8 +21,12 @@ owned instance's navigation/presentation; Shell activates its current window.
 | Displays | Edit enabled outputs, resolution/refresh, scale, rotation and position using the existing display draft and native output manager. Apply opens the existing trusted-layer **Keep / Revert** confirmation. The compositor's 15-second watchdog remains authoritative; only Keep saves the exact-identity startup profile. Hotplug/serial changes discard the stale draft and visibly ask the user to review the replacement. |
 | Network | The independent Settings document mounts the existing iwd controls through authenticated, fixed Shell RPCs. Actual adapters, radio/connection state, RSSI and IP-configuration status come from the single Shell-owned JS service. Scan, radio power, connect, masked password/username prompts, disconnect and explicitly confirmed forgetting retain revision/token-bound requests. An unprovisioned enterprise network remains disabled. No Bluetooth, VPN or IP-address backend is added. |
 | Audio | The existing private PipeWire policy provides endpoint volume, mute and default playback/recording devices. Requests show acknowledgment progress; existing name/class preferences are saved only after the actual service echoes them. Device loss, missing service, unavailable volume/mute and storage errors remain visible. No host audio daemon or WirePlumber is substituted. |
-| Keyboard | Change, disable or reset the existing fixed shortcut catalog inside Settings. Change opens only a small trusted recording prompt, not another full Keyboard page. Capture starts on actual prompt activation and ends on Escape, deactivation/lock focus loss, timeout, page detach or owned-process exit. The ordinary Settings window never receives a global keyboard hook. Conflicts and save/rollback errors remain visible. |
+| Keyboard | Change, disable or reset the ten-action native shortcut catalog, including left/right half-screen placement and floating restore. Defaults for those three actions are Super+Left/Right/Down; existing user mappings survive the v4 configuration migration. Change opens only a small trusted recording prompt, not another full Keyboard page. Capture starts on actual prompt activation and ends on Escape, deactivation/lock focus loss, timeout, page detach or owned-process exit. The ordinary Settings window never receives a global keyboard hook. Conflicts and save/rollback errors remain visible. |
 | About | Grouped system build, session and preference cards show the actual system release, full build revision/source state, appearance, display count and service status. Expand Technical details for Settings's separate application version/runtime, identity/directories and saved profile information. Unknown source metadata is explicit. Login/lock behavior remains deployment-policy-dependent; account/password/administrator actions are unavailable here. |
+
+About's strict service snapshot includes the session monitor's existing
+`decorations` state alongside input-method/audio state. Missing fields, unknown
+fields and invented states are rejected; the UI does not turn them into readiness.
 
 Missing native APIs are visibly unavailable, not fake ready services. Existing
 native APIs can still report an unavailable service, denied operation or missing
@@ -41,8 +45,13 @@ in a persistent footer, even while loading or displaying an error. The strict
 Appearance/About snapshots carry the actual Shell build; the Settings runtime
 is labelled separately if it differs. Appearance has a wrapping native preview
 gallery and grouped theme-library controls. Illustrated previews are not
-hardware captures. The shared layout uses original icons, 14px body text, solid
-surfaces and card/list hierarchy; native window captions remain authoritative.
+hardware captures. The shared layout uses original icons, theme typography,
+opaque cards and card/list hierarchy; native window captions remain authoritative.
+Packaged Settings additionally honors explicit `window.clientMaterial:"wallpaper"`
+(Modern opts in) using the cached, opaque wallpaper-derived client base. Missing
+or solid policy and direct app API defaults preserve the solid path. Foreground,
+inputs and the permanent footer remain separate; a material failure reports its
+own bounded status row without covering the version or changing a page's error.
 
 ## Ownership and lifetime
 
@@ -75,6 +84,12 @@ claimed identity. No-reply calls perform no effects. Timeout/cancel/disconnect
 do not prove rollback; writes never reconnect, retry or replay automatically.
 This is not a sandbox against an attacker already controlling the same UID or
 ptrace. See `apps/settings/README.md` for the exact first-version boundaries.
+The argument-free `GetMaterialSource` read is bound to the verified unique Shell
+owner and current Settings generation. It projects only the already-held,
+committed wallpaper bitmap as a PNG of at most 128 pixels per axis and 128 KiB;
+it takes no client file path, resource key or window target. It does not capture
+the desktop/other apps, provide native management connections, or implement live
+Acrylic, desktop-coordinate Mica or compositor backdrop blur.
 
 Navigation detaches the previous Settings page before mounting the next one.
 Network detach wipes credential fields

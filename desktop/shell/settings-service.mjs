@@ -1,10 +1,11 @@
-import { SETTINGS_INSTANCE_NAME, settingsPage, settingsThemeId, settingsTarget, daemonTarget } from './desktop/client/settings-contract.mjs';
+import { SETTINGS_INSTANCE_NAME, settingsPage, settingsThemeId, settingsTarget, daemonTarget,
+  parseMaterialSource, matchMaterialSource } from './desktop/client/settings-contract.mjs';
 import { waitSettingsReply, settingsPeer } from './desktop/client/settings.mjs';
 import { parseSettingsNetwork, parseSettingsNetworkAction, parseSettingsNetworkAuthentication } from './desktop/client/settings-network-contract.mjs';
 
 const denied = message => Object.assign(new Error(message), { dbusName: 'org.pollyui.Settings.Error.AccessDenied' });
 export function createSettingsService({ service, client, pid, uid, spawn, activate, appearance, about,
-  select, reload, restore, managed, network = null, domains = null, report = console.error }) {
+  select, reload, restore, managed, materialSource = null, network = null, domains = null, report = console.error }) {
   let owned = null, generation = 0, closed = false, fatal = null, opening = false, requestOrder = 0;
   const requests = new Set();
   function networkSnapshot(owner) {
@@ -78,6 +79,11 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     // No awaits between the final owned-generation check and a Shell operation.
     if (!current(owner)) throw denied('Settings generation changed before execution');
     if (member === 'GetAppearance') return [JSON.stringify(appearance())];
+    if (member === 'GetMaterialSource') {
+      if (request.args.length || !materialSource) throw new TypeError('Material source takes no arguments and requires a current bitmap');
+      const source = parseMaterialSource(JSON.stringify({ ...materialSource(), generation: owner.generation }));
+      return [JSON.stringify(matchMaterialSource(source, appearance(), owner.generation))];
+    }
     if (member === 'GetAbout') return [JSON.stringify(about())];
     if (member === 'GetDisplays') return [JSON.stringify(domains.displays())];
     if (member === 'GetAudio') return [JSON.stringify(domains.audio())];

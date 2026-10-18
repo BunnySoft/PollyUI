@@ -1,3 +1,5 @@
+import { fontFamily } from '../../../gui/sdk/js/font-family.mjs';
+
 export const DECORATION_METRICS = [
   ['border_width', 'borderWidth', 0, 8, 1],
   ['title_height', 'titleHeight', 16, 96, 1],
@@ -79,7 +81,8 @@ const options = {
 };
 const optionalOptions = {
   icons: { desktopLabelStyle: ['capsule', 'shadow'] },
-  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'], nativeEffects: ['none', 'rounded', 'rounded-shadow'] },
+  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'], nativeEffects: ['none', 'rounded', 'rounded-shadow'],
+    clientMaterial: ['solid', 'wallpaper'], layoutPicker: [true, false], systemMenu: [true, false] },
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
   panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],
     menuStyle: ['legacy', 'two-column', 'grid'], taskTexture: ['flat', 'stipple'],
@@ -87,7 +90,7 @@ const optionalOptions = {
 };
 const optionalNumbers = {
   panel: { materialOpacityPercent: [0, 100], menuBarOpacityPercent: [0, 100] },
-  icons: { dockHoverPercent: [100, 125] },
+  icons: { dockHoverPercent: [100, 125], dockMagnificationRadius: [0, 3] },
   window: { controlWidth: [8, 96], controlTop: [0, 64], nativeShadowOpacity: [0, 100],
     nativeShadowInactiveOpacity: [0, 100], nativeShadowX: [-64, 64], nativeShadowY: [-64, 64] },
   layout: { launcherWidth: [24, 160], dockIconSize: [16, 96], dockPadding: [0, 32],
@@ -151,7 +154,8 @@ export function validateTheme(value) {
   for (const group of groups) {
     const prefix = value.id + '.' + group;
     const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {}),
-      ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] : [])];
+      ...(group === 'colors' ? ['selectionText'] : group === 'panel' ? ['regionalBackdrop', 'taskbarBackdrop', 'startBackdrop'] : group === 'window' ? ['nativeShadowColor'] :
+        group === 'layout' ? ['fontFamily'] : [])];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
       prefix, true, optional);
@@ -161,6 +165,7 @@ export function validateTheme(value) {
     if (group === 'colors' && Object.hasOwn(value.colors, 'selectionText') &&
         (typeof value.colors.selectionText !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.colors.selectionText)))
       throw new TypeError(prefix + '.selectionText must be an RGB color');
+    if (group === 'layout' && Object.hasOwn(value.layout, 'fontFamily')) fontFamily(value.layout.fontFamily);
     if (group === 'window' && Object.hasOwn(value.window, 'nativeShadowColor') &&
         (typeof value.window.nativeShadowColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.window.nativeShadowColor)))
       throw new TypeError(prefix + '.nativeShadowColor must be an RGB color');
@@ -187,11 +192,7 @@ export function validateTheme(value) {
         value.panel.height - value.layout.panelItemInset)
       throw new RangeError('Classic task icons and text do not fit the configured taskbar');
     const window = value.window;
-    text(window.fontFamily, 128, value.id + '.window.fontFamily');
-    if (window.fontFamily !== window.fontFamily.trim() ||
-        !/^[\p{L}\p{N}][\p{L}\p{M}\p{N} ._()'-]*$/u.test(window.fontFamily) ||
-        /['"]$|\burl *\(/i.test(window.fontFamily))
-      throw new TypeError(value.id + '.window.fontFamily must be a bounded family name, not a font resource');
+    fontFamily(window.fontFamily);
     const top = window.controlTop ?? Math.floor((window.titleHeight - window.controlSize) / 2) +
       (window.surfaceStyle === 'luna' ? 2 : 0);
     if ((window.surfaceStyle === 'luna' && window.controlSize + 4 > window.titleHeight) ||
@@ -217,6 +218,22 @@ export function validateTheme(value) {
       value.panel.height - 12, value.panel.height + 2 - 2 * marker))
       throw new RangeError('Dock icons and running indicators do not fit the configured slot/panel geometry');
   }
+  for (const key of ['regionalBackdrop', 'taskbarBackdrop', 'startBackdrop']) {
+    if (!Object.hasOwn(value.panel, key)) continue;
+    const material = value.panel[key];
+    keys(material, ['sigma', 'tint', 'opacityPercent', ...(key === 'startBackdrop' ? ['standardHeight'] : [])],
+      'panel.' + key, true, key === 'startBackdrop' ? ['standardHeight'] : []);
+    if (!Number.isInteger(material.sigma) || material.sigma < 1 || material.sigma > 32 ||
+        !Number.isInteger(material.opacityPercent) || material.opacityPercent < 0 || material.opacityPercent > 100 ||
+        typeof material.tint !== 'string' || !/^#[0-9a-f]{6}$/i.test(material.tint))
+      throw new TypeError('Invalid panel.' + key + ' backdrop');
+    if (Object.hasOwn(material, 'standardHeight') && typeof material.standardHeight !== 'boolean')
+      throw new TypeError('Invalid panel.startBackdrop.standardHeight opt-in');
+  }
+  if ((value.panel.taskbarBackdrop || value.panel.startBackdrop) &&
+      (value.panel.kind !== 'taskbar' || value.panel.surfaceStyle !== 'fluent' ||
+       value.panel.startBackdrop && !value.panel.taskbarBackdrop))
+    throw new TypeError('Paired Shell backdrops require a fluent taskbar and Start requires its taskbar material');
   const asset = value.desktop.asset;
   if (typeof asset !== 'string' || asset.length > 192 || (asset &&
     (!/^(?:[a-z0-9_-][a-z0-9_.-]*\/)*[a-z0-9_-][a-z0-9_.-]*\.(?:png|jpe?g)$/i.test(asset) ||
@@ -263,7 +280,8 @@ export function applyThemeOverrides(catalog, text) {
       if (!Object.hasOwn(override, group)) continue;
       keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {}),
         ...Object.keys(optionalNumbers[group] || {}),
-        ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] : [])],
+        ...(group === 'colors' ? ['selectionText'] : group === 'panel' ? ['regionalBackdrop'] :
+          group === 'window' ? ['nativeShadowColor'] : [])],
         theme.id + '.' + group, false);
       result[group] = { ...theme[group], ...override[group] };
     }

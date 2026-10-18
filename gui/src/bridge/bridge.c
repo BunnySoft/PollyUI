@@ -650,8 +650,17 @@ static JSValue js_node_addEventListener(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowTypeError(ctx, "addEventListener(type, fn)");
     const char *type = JS_ToCString(ctx, argv[0]);
     if (!type) return JS_EXCEPTION;
-    pu_node_add_listener(self, type, JS_DupValue(ctx, argv[1]));
+    if (self->listener_serial == UINT64_MAX) {
+        JS_FreeCString(ctx, type);
+        return JS_ThrowRangeError(ctx, "Event listener registration identity exhausted");
+    }
+    JSValue func = JS_DupValue(ctx, argv[1]);
+    bool added = pu_node_add_listener(self, type, func);
     JS_FreeCString(ctx, type);
+    if (!added) {
+        JS_FreeValue(ctx, func);
+        return JS_ThrowOutOfMemory(ctx);
+    }
     return JS_UNDEFINED;
 }
 
@@ -764,8 +773,9 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     if (!b || !target || !type) return 0;
     JSContext *ctx = b->ctx;
 
+    pu_node_ref(target);
     JSValue ev = JS_NewObject(ctx);                       /* one event for the whole walk */
-    if (JS_IsException(ev)) { dispatch_report(ctx); return 0; }
+    if (JS_IsException(ev)) { dispatch_report(ctx); pu_node_unref(target); return 0; }
     JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
     JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
@@ -841,14 +851,26 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         JS_NewCFunction(ctx, js_event_prevent, "preventDefault", 0));
     if (JS_HasException(ctx)) goto failed;
 
-    for (PuNode *n = target; n; n = n->parent) {
+    PuNode *n = target;
+    pu_node_ref(n);
+    while (n) {
+        uint64_t boundary = n->listener_serial, cursor = 0;
         JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
-        for (int i = 0; i < n->listener_count; i++) {
-            if (strcmp(n->listeners[i].type, type) != 0) continue;
+        for (;;) {
+            /* Registered serials stay sorted across removals; additions exceed this phase's boundary. */
+            int low = 0, high = n->listener_count;
+            while (low < high) {
+                int middle = low + (high - low) / 2;
+                if (n->listeners[middle].serial <= cursor) low = middle + 1;
+                else high = middle;
+            }
+            if (low == n->listener_count || n->listeners[low].serial > boundary) break;
+            cursor = n->listeners[low].serial;
+            if (strcmp(n->listeners[low].type, type) != 0) continue;
             /* Dup the callback across the call: a handler that removeEventListeners
              * itself (e.g. a reconciler swapping handlers on re-render) would
              * otherwise free a function that is still executing. */
-            JSValue func = JS_DupValue(ctx, n->listeners[i].func);
+            JSValue func = JS_DupValue(ctx, n->listeners[low].func);
             JSValue self = pu_node_wrapper(ctx, n);
             JSValue arg = ev;
             JSValue r = JS_Call(ctx, func, self, 1, &arg);
@@ -858,7 +880,10 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
             JS_FreeValue(ctx, func);
             if (js_event_flag(ctx, ev, "__stopImmediate")) break;
         }
-        if (!bubble || js_event_flag(ctx, ev, "__stop")) break;
+        PuNode *parent = bubble && !js_event_flag(ctx, ev, "__stop") ? n->parent : NULL;
+        pu_node_ref(parent);
+        pu_node_unref(n);
+        n = parent;
     }
 
     if (!bubble && (!strcmp(type,"load") || !strcmp(type,"error") || !strncmp(type,"webglcontext",12)) &&
@@ -877,10 +902,12 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     }
     int prevented = js_event_flag(ctx, ev, "defaultPrevented");
     JS_FreeValue(ctx, ev);
+    pu_node_unref(target);
     return prevented;
 failed:
     dispatch_report(ctx);
     JS_FreeValue(ctx, ev);
+    pu_node_unref(target);
     return 0;
 }
 
@@ -1210,29 +1237,33 @@ int pu_bridge_set_focus(PuBridge *b, PuNode *node)
     return 1; /* focus changed -> the host should repaint */
 }
 
-static void collect_focusable(PuNode *n, PuNode **arr, int *count, int cap)
+typedef struct {
+    PuNode *focused, *first, *last, *previous, *next;
+} PuFocusTraversal;
+
+static void collect_focusable(PuNode *n, PuFocusTraversal *traversal)
 {
     const char *display = pu_style_get(&n->style, "display");
     if (display && strcmp(display, "none") == 0) return;
-    if (n->type == PU_NODE_ELEMENT && n->tab_index >= 0 && *count < cap)
-        arr[(*count)++] = n;
+    if (n->type == PU_NODE_ELEMENT && n->tab_index >= 0) {
+        if (!traversal->first) traversal->first = n;
+        if (n == traversal->focused) traversal->previous = traversal->last;
+        if (traversal->last && traversal->last == traversal->focused) traversal->next = n;
+        traversal->last = n;
+    }
     for (PuNode *c = n->first_child; c; c = c->next_sibling)
-        collect_focusable(c, arr, count, cap);
+        collect_focusable(c, traversal);
 }
 
 void pu_bridge_focus_step(PuBridge *b, int backwards)
 {
     if (!b) return;
-    PuNode *arr[256];
-    int count = 0;
-    collect_focusable(b->body, arr, &count, 256);
-    if (count == 0) return;
-    int idx = -1;
-    for (int i = 0; i < count; i++)
-        if (arr[i] == b->focused) { idx = i; break; }
-    int next = idx < 0 ? (backwards ? count - 1 : 0) :
-                        (idx + (backwards ? -1 : 1) + count) % count;
-    pu_bridge_set_focus(b, arr[next]);
+    PuFocusTraversal traversal = { .focused = b->focused };
+    collect_focusable(b->body, &traversal);
+    if (!traversal.first) return;
+    PuNode *next = backwards ? traversal.previous : traversal.next;
+    if (!next) next = backwards ? traversal.last : traversal.first;
+    pu_bridge_set_focus(b, next);
 }
 
 /* ---- document --------------------------------------------------------------*/
@@ -1282,7 +1313,47 @@ static JSValue js_document_get_body(JSContext *ctx, JSValueConst this_val)
     return b ? pu_node_wrapper(ctx, b->body) : JS_NULL;
 }
 
-/* measureText(str, fontSize=16) -> advance width in (logical) pixels. Lets JS
+static int measurement_family(JSContext *ctx, int argc, JSValueConst *argv, const char **family)
+{
+    *family = NULL;
+    if (argc < 4 || JS_IsUndefined(argv[3])) return 1;
+    if (!JS_IsString(argv[3])) { JS_ThrowTypeError(ctx, "Measurement fontFamily must be a literal family name"); return 0; }
+    size_t length;
+    const char *name = JS_ToCStringLen(ctx, &length, argv[3]);
+    if (!name) return 0;
+    /* UTF-8 non-ASCII names are resolved by the existing platform font manager. */
+    size_t units = 0;
+    int valid = length > 0 && length <= 512;
+    for (size_t i = 0; valid && i < length; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if (c < 0x80) {
+            valid = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || strchr(" ._()'-", c);
+            if (!c || (!i && !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') &&
+                !(c >= '0' && c <= '9'))) valid = 0;
+        }
+        if (c < 0x80 || c >= 0xc0) units += c >= 0xf0 ? 2 : 1;
+    }
+    if (length && (name[length - 1] == ' ' || name[length - 1] == '\'')) valid = 0;
+    for (size_t i = 0; valid && i + 3 < length; i++) {
+        if ((i && ((name[i - 1] >= 'A' && name[i - 1] <= 'Z') ||
+             (name[i - 1] >= 'a' && name[i - 1] <= 'z') ||
+             (name[i - 1] >= '0' && name[i - 1] <= '9') || name[i - 1] == '_')) ||
+            (name[i] != 'u' && name[i] != 'U') || (name[i + 1] != 'r' && name[i + 1] != 'R') ||
+            (name[i + 2] != 'l' && name[i + 2] != 'L')) continue;
+        size_t at = i + 3;
+        while (at < length && name[at] == ' ') at++;
+        if (at < length && name[at] == '(') valid = 0;
+    }
+    if (!valid || units > 128) {
+        JS_FreeCString(ctx, name);
+        JS_ThrowTypeError(ctx, "Measurement fontFamily must be a bounded literal family name"); return 0;
+    }
+    *family = name;
+    return 1;
+}
+
+/* measureText(str, fontSize=16, weight=400, fontFamily?) -> logical advance. Lets JS
  * position carets, truncate labels, etc. */
 static JSValue js_measure_text(JSContext *ctx, JSValueConst this_val,
                                int argc, JSValueConst *argv)
@@ -1299,7 +1370,10 @@ static JSValue js_measure_text(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowRangeError(ctx, "Invalid measurement font size or weight");
     }
     float w = 0, h = 0;
-    pu_text_measure(s ? s : "", (float)fs, weight, 0, NULL, 0, &w, &h);
+    const char *family;
+    if (!measurement_family(ctx, argc, argv, &family)) { if (s) JS_FreeCString(ctx, s); return JS_EXCEPTION; }
+    pu_text_measure(s ? s : "", (float)fs, weight, 0, family, 0, &w, &h);
+    if (family) JS_FreeCString(ctx, family);
     if (s) JS_FreeCString(ctx, s);
     return JS_NewFloat64(ctx, w);
 }
@@ -1338,8 +1412,11 @@ static JSValue js_layout_text(JSContext *ctx, JSValueConst self, int argc, JSVal
     size_t length;
     const char *text = JS_ToCStringLen(ctx, &length, argv[0]);
     if (!text) return JS_EXCEPTION;
+    const char *family;
+    if (!measurement_family(ctx, argc, argv, &family)) { JS_FreeCString(ctx, text); return JS_EXCEPTION; }
     PuTextLayout layout;
-    int ok = pu_text_layout(text, length, (float)size, weight, 0, NULL, &layout);
+    int ok = pu_text_layout(text, length, (float)size, weight, 0, family, &layout);
+    if (family) JS_FreeCString(ctx, family);
     JS_FreeCString(ctx, text);
     if (!ok) return JS_ThrowInternalError(ctx, "Cannot shape text");
     JSValue result = JS_NewObject(ctx), clusters = JS_NewArray(ctx);
@@ -1949,8 +2026,14 @@ PuBridge *pu_bridge_install(JSContext *ctx)
         return NULL;
     }
     JS_SetPropertyStr(ctx, global, "document", JS_DupValue(ctx, b->document));
-    JS_SetPropertyStr(ctx, global, "measureText",
-                      JS_NewCFunction(ctx, js_measure_text, "measureText", 2));
+    JSValue measure = JS_NewCFunction(ctx, js_measure_text, "measureText", 2);
+    if (JS_IsException(measure) ||
+        JS_DefinePropertyValueStr(ctx, measure, "supportsFontFamily", JS_TRUE, JS_PROP_ENUMERABLE) < 0) {
+        JS_FreeValue(ctx, measure); JS_FreeValue(ctx, global); pu_bridge_free(b); return NULL;
+    }
+    if (JS_SetPropertyStr(ctx, global, "measureText", measure) < 0) {
+        JS_FreeValue(ctx, global); pu_bridge_free(b); return NULL;
+    }
     JSValue create_bitmap = JS_NewCFunction(ctx, js_create_bitmap, "createBitmap", 2);
     if (JS_IsException(create_bitmap) || JS_SetPropertyStr(ctx, global, "createBitmap", create_bitmap) < 0) {
         JS_FreeValue(ctx, global);
@@ -1959,7 +2042,14 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     }
 #if defined(PU_COMPLEX_TEXT)
     JS_SetPropertyStr(ctx, global, "textBoundaries", JS_NewCFunction(ctx, js_text_boundaries, "textBoundaries", 1));
-    JS_SetPropertyStr(ctx, global, "layoutText", JS_NewCFunction(ctx, js_layout_text, "layoutText", 2));
+    JSValue layout_text = JS_NewCFunction(ctx, js_layout_text, "layoutText", 2);
+    if (JS_IsException(layout_text) ||
+        JS_DefinePropertyValueStr(ctx, layout_text, "supportsFontFamily", JS_TRUE, JS_PROP_ENUMERABLE) < 0) {
+        JS_FreeValue(ctx, layout_text); JS_FreeValue(ctx, global); pu_bridge_free(b); return NULL;
+    }
+    if (JS_SetPropertyStr(ctx, global, "layoutText", layout_text) < 0) {
+        JS_FreeValue(ctx, global); pu_bridge_free(b); return NULL;
+    }
 #endif
     JS_FreeValue(ctx, global);
 

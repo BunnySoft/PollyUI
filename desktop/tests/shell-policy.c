@@ -102,6 +102,12 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(privileged.workspace && privileged.workspace_toplevel && privileged.shortcuts);
     CHECK(privileged.output && privileged.output_guard && privileged.status);
     CHECK(!privileged.input_method && !privileged.virtual_keyboard);
+    if (!strcmp(mode, "--old-shortcuts")) {
+        struct wl_proxy *old = wl_registry_bind(registry, privileged.shortcuts, &shortcuts_interface, 1);
+        CHECK(old && wl_display_roundtrip(trusted) < 0 && wl_display_get_error(trusted) == EPROTO);
+        wl_proxy_destroy(old); wl_registry_destroy(registry); wl_display_disconnect(trusted);
+        return true;
+    }
     if (strcmp(mode, "--ignore-term") == 0) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct wl_proxy *capability = wl_registry_bind(
         registry, privileged.restricted, &restricted_interface, 1);
@@ -232,6 +238,9 @@ static bool suite(char *self)
         CHECK(wait_shell());
         CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0);
     }
+    args[1] = "--old-shortcuts";
+    CHECK(pu_desktop_spawn_shell(&desktop, args) && wait_shell());
+    CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0);
     args[1] = "--wait";
     CHECK(pu_desktop_spawn_shell(&desktop, args));
     CHECK(wait_binding());

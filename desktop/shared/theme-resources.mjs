@@ -185,6 +185,12 @@ export function createThemeResources(authorize, decode) {
       pixels += bitmap.width * bitmap.height;
       return bitmap.key;
     },
+    getThemeAssetBitmap(...args) {
+      authorize();
+      if (args.length !== 1 || typeof args[0] !== 'string' || !assets.has(args[0]))
+        throw new TypeError('A live owned theme asset key is required');
+      return assets.get(args[0]);
+    },
     releaseThemeAsset(...args) {
       authorize();
       if (args.length !== 1 || typeof args[0] !== 'string') throw new TypeError('A live theme asset key is required');

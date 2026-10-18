@@ -1,4 +1,5 @@
-import { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
+import { dockSurfaceWidth, dockBackdropMaterial, shellBackdropMaterial,
+  applicationMenuPlacement, applicationMenuHeight, layoutPickerPlacement, systemMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
@@ -7,7 +8,8 @@ import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher, applicationForWindow } from './desktop/shell/applications.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
-import { programsPlacement, programCategories, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
+import { programsPlacement, programCategories, categoryEntries, programCategoryId,
+  programFolderContents, programFolderId } from './desktop/shell/programs-menu.mjs';
 import { surfaceStyle } from './desktop/shared/ui/surface-primitives.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
@@ -19,7 +21,8 @@ import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createSessionExitController, createLogoutSurface } from './desktop/shell/session-exit.mjs';
 import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { bodyFont, preflightBodyFont } from './desktop/shared/ui/body-font.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { SETTINGS_APPLICATION_ID } from './desktop/shell/settings.mjs';
@@ -29,9 +32,13 @@ import { createDesktopInteraction, bindDesktopInteraction } from './desktop/shel
 import { desktopView, desktopMenuView } from './desktop/shell/desktop-view.mjs';
 import { windowTasks, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
+import { createMaterialSource } from './desktop/shell/material-source.mjs';
+import { validateUserProfile } from './desktop/shared/user-profile.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
-  native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
+  native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null, displayProfile = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
+  if (displayProfile !== null) displayProfile = validateUserProfile(displayProfile);
+  if (displayProfile?.error) report('[shell] Local display profile unavailable: ' + displayProfile.error);
   const bundles = new Map();
   let themeId = DEFAULT_DESKTOP_THEME;
   let themeAsset = '';
@@ -44,8 +51,77 @@ export function createDesktopShell({ host = window, configuration, report = cons
   let lastServicePoll = 0;
   let timer = null;
   let menu = null;
+  let pickerEnabled = false, previousPickerChanged = null, pickerScope = null, pickerChanged = null;
+  let pickerTheme = null, pickerOutputs = '';
+  let systemMenuEnabled = false, systemMenuTheme = null, systemMenuOutputs = '';
+  let systemMenuScope = null, systemMenuChanged = null, previousSystemMenuChanged = null;
+  let systemMenuSerial = 0;
+  function configureSystemMenu(enabled) {
+    systemMenuEnabled = false;
+    if (typeof native?.systemMenuCapability !== 'function' || native.systemMenuCapability() !== true) return;
+    native.enableSystemMenuRequests(enabled);
+    systemMenuEnabled = enabled;
+  }
+  function receiveSystemMenu(scope) {
+    if (!running || scope !== systemMenuScope) return;
+    try {
+      const request = native.takeSystemMenuRequest();
+      if (!request || !Number.isInteger(request.serial) || request.serial <= systemMenuSerial) return;
+      systemMenuSerial = request.serial;
+      if (!systemMenuEnabled || getDesktopTheme(themeId).window.systemMenu !== true ||
+          native.systemMenuCapability() !== true) return;
+      const outputs = host.displays().filter(output => output.x === request.outputX && output.y === request.outputY &&
+        output.width === request.outputWidth && output.height === request.outputHeight);
+      const named = outputs.filter(output => (output.name ?? bundles.get(output.id)?.identity?.name) === request.outputName);
+      const matches = named.length ? named : outputs;
+      if (matches.length > 1) throw new Error('Native system-menu output projection is ambiguous');
+      const output = matches[0];
+      const workspace = native.workspaces().find(workspace => workspace.active);
+      const target = native.windows().find(window => window.id === request.windowId &&
+        window.workspaceId === workspace?.id);
+      if (!output || !bundles.has(output.id) || !target || target.minimized || target.fullscreen ||
+          target.placement === undefined || target.placementPending ||
+          !['title', 'keyboard'].includes(request.origin)) return;
+      if (menu?.mode === 'windows' && menu.windowId === target.id && menu.output === output.id) return;
+      openMenu(output.id, 'windows', target.id, { systemMenuRequest: request });
+    } catch (failure) { windowFailure(failure); errorKind = 'placement'; }
+  }
+  function configurePicker(enabled) {
+    pickerEnabled = false;
+    if (typeof native?.layoutPickerCapability !== 'function' || native.layoutPickerCapability() !== true) return;
+    native.enableLayoutPicker(enabled);
+    pickerEnabled = enabled;
+  }
+  function receivePicker(scope) {
+    if (!running || scope !== pickerScope) return;
+    try {
+      const offer = native.layoutPickerOffer();
+      if (menu?.mode === 'layout-picker' && menu.pickerOffer?.token !== offer?.token) closeMenu();
+      if (!pickerEnabled || !offer || menu) return;
+      const output = host.displays().find(output => output.x === offer.outputX && output.y === offer.outputY &&
+        output.width === offer.outputWidth && output.height === offer.outputHeight);
+      const target = native.windows().find(window => window.id === offer.windowId);
+      if (!output || !target || target.placement === undefined) {
+        native.dismissLayoutPicker(offer.token);
+        return;
+      }
+      openMenu(output.id, 'layout-picker', target.id, { pickerOffer: offer });
+    } catch (failure) { windowFailure(failure); errorKind = 'placement'; }
+  }
   let settingsBridge = null, settingsReady = null, settingsStartupError = null, settingsScope = {};
   let appearanceRevision = 0;
+  const materialSource = createMaterialSource({
+    document() {
+      if (!running) throw new Error('Shell material source is stopped');
+      const surface = [...bundles.values()].find(bundle => !bundle.surfaces.wallpaper.window.closed)?.surfaces.wallpaper;
+      if (!surface) throw new Error('No live wallpaper document is available');
+      return surface.window.document;
+    },
+    bitmap: key => {
+      if (typeof native?.getThemeAssetBitmap !== 'function') throw new Error('Owned wallpaper bitmap projection is unavailable');
+      return native.getThemeAssetBitmap(key);
+    },
+  });
   let switcher = null;
   let displayConfirmation = null;
   let pendingDisplayToken = 0;
@@ -120,6 +196,32 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (typeof previousSessionExit === 'function') previousSessionExit();
   };
   let previousExit = null;
+  let previousBackdropStatus = null;
+  let backdropStatusChanged = null, backdropScope = null, materialError = '';
+  function receiveBackdropStatus(scope) {
+    if (!running || scope !== backdropScope) return;
+    const message = native.backdropError();
+    const retired = typeof native.shellBackdropRetired === 'function' ? native.shellBackdropRetired() : 0;
+    const retiredTarget = surface => surface?.backdropIndex !== null && surface?.backdropIndex !== undefined &&
+      (retired & (1 << surface.backdropIndex));
+    let recipientsChanged = false;
+    const retire = surface => {
+      if (!retiredTarget(surface) || !surface.backdropActive) return;
+      surface.backdropActive = false;
+      recipientsChanged = true;
+    };
+    retire(menu);
+    for (const bundle of bundles.values()) retire(bundle.surfaces.panel);
+    const messageChanged = message !== materialError;
+    if (!messageChanged && !recipientsChanged) return;
+    if (messageChanged) {
+      materialError = message;
+      if (message) report('[shell] ' + message);
+    }
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+    if (messageChanged && typeof previousBackdropStatus === 'function') previousBackdropStatus();
+  }
   const exited = event => {
     if (!running) return;
     settingsBridge?.exited(event);
@@ -166,22 +268,54 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
 
   function releaseSurface(surface) {
+    if (surface.backdropFrame !== undefined && surface.backdropFrame !== null)
+      cancelAnimationFrame(surface.backdropFrame);
+    surface.backdropFrame = null;
     surface.desktopBinding?.stop();
     surface.desktopBinding = null;
     for (const remove of surface.listeners.splice(0)) remove();
-    surface.window.document.activeElement?.blur();
+    if (!surface.window.closed) surface.window.document.activeElement?.blur();
     surface.displayInputs?.clear();
   }
 
   function releaseMenu(surface) {
     if (!surface || surface !== menu) return false;
     menu = null;
+    if (surface.backdropAppearance) {
+      surface.backdropAppearance = null;
+      surface.backdropActive = false;
+      if (running) {
+        try {
+          const theme = getDesktopTheme(themeId);
+          const outputs = new Set(host.displays().map(output => output.id));
+          const plans = [...bundles.values()].filter(plan =>
+            outputs.has(plan.output.id) && !plan.surfaces.panel.window.closed);
+          native.configureAppearance(theme, encodeDecorationLayout(theme), appearanceTargets(theme, plans));
+          setBackdropIndices(theme, plans);
+          clearMaterialFailure();
+        } catch (failure) { materialFailure('Could not retire Start material: ', failure); }
+      }
+    }
+    if (surface.placementEpoch) {
+      const epoch = surface.placementEpoch;
+      surface.placementEpoch = null;
+      try { native.closeWindowMenu(epoch); }
+      catch (failure) {
+        error = 'Could not retire window menu: ' + String(failure);
+        errorKind = 'placement';
+        report('[shell] ' + error);
+      }
+      if (surface.pickerOffer) {
+        try { native.dismissLayoutPicker(surface.pickerOffer.token); }
+        catch (failure) { windowFailure(failure); errorKind = 'placement'; }
+      }
+    }
     const editor = workspaceEditor;
     workspaceEditor = null;
-    editor?.input.root.blur();
+    if (!surface.window.closed) editor?.input.root.blur();
     const search = surface.search;
     surface.search = null;
-    if (search) {
+    if (search && !surface.window.closed) {
       search.input.root.cancelComposition();
       search.input.root.blur();
       search.input.value = '';
@@ -225,7 +359,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function newSurface(output, kind, options) {
     const nativeWindow = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
     const surface = { output: output.id, kind, window: nativeWindow, signature: JSON.stringify(options),
-      expectedClose: false, listeners: [] };
+      size: { width: options.width, height: options.height }, expectedClose: false, listeners: [] };
     if (['wallpaper', 'panel', 'dock'].includes(kind)) listen(surface, 'keydown', event => {
       if (running && event.ctrlKey && event.altKey && !event.shiftKey && event.key.toLowerCase() === 'l') {
         event.preventDefault();
@@ -303,6 +437,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height,
         ...(dock && (theme.panel.menuBarOpacityPercent ?? 100) < 100 ? { transparent: true } : {}) },
     };
+    if (theme.panel.taskbarBackdrop) result.panel.transparent = true;
     if (dock) result.dock = {
       layer: 'top', width: dockSurfaceWidth(theme, displayTasks(theme).length, output.width), height: theme.panel.height,
       anchors: ['bottom'], margins: { bottom: theme.panel.inset }, exclusiveZone: theme.panel.height,
@@ -566,17 +701,20 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (entry && desktopImages.has(entry.id)) taskImages.set(task.id, desktopImages.get(entry.id));
     }
     if (!panel.window.closed) render(panelView(theme, clock(), surfaceAction(panel, () => showApplications(bundle.output.id)),
-      error || serviceError, surfaceAction(panel, () => showSystemSettings(bundle.output.id)), listed,
+      [error || serviceError, materialError].filter(Boolean).join(' | '),
+      surfaceAction(panel, () => showSystemSettings(bundle.output.id)), listed,
       taskCallback(bundle, panel, false), taskCallback(bundle, panel, true), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: surfaceAction(panel, notifications.show) } : null,
       { items: tray.items(), error: tray.error(), activate: surfaceAction(panel, (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
-          bundle.output.height - theme.panel.height : 0))), scroll: surfaceAction(panel, tray.scroll) }, taskImages),
+          bundle.output.height - theme.panel.height : 0))), scroll: surfaceAction(panel, tray.scroll) }, taskImages,
+      !!panel.backdropActive),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, surfaceAction(dock, () => showSystemSettings(bundle.output.id)),
       surfaceAction(dock, () => showSystemSettings(bundle.output.id, 'about')),
       surfaceAction(dock, () => showApplications(bundle.output.id)), listed,
-      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages), dock.window.document.body);
+      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages,
+      !!dock.backdropAppearance), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
       const body = surface.window.document.body;
@@ -591,7 +729,30 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled) {
     const theme = getDesktopTheme(nextTheme);
+    const regional = theme.panel.kind === 'dock' && theme.panel.regionalBackdrop;
+    if (regional && (typeof native?.backdropCapability !== 'function' ||
+        native.backdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
+      throw new Error('The active compositor does not support real regional Dock backdrops');
+    const shellRegional = !!theme.panel.taskbarBackdrop;
+    if (shellRegional && (typeof native?.shellBackdropCapability !== 'function' ||
+        native.shellBackdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
+      throw new Error('The active compositor does not support paired regional Shell backdrops (appearance v8)');
+    if (theme.panel.startBackdrop?.standardHeight === true &&
+        (typeof native?.startBackdropCapability !== 'function' || native.startBackdropCapability() !== true))
+      throw new Error('The active compositor does not support standard-height Start backdrops (appearance v9)');
+    preflightBodyFont(theme);
     const outputs = host.displays();
+    const pickerSignature = JSON.stringify(outputs);
+    const pickerReconfigured = pickerTheme !== theme || pickerOutputs !== pickerSignature;
+    const systemMenuReconfigured = systemMenuTheme !== theme || systemMenuOutputs !== pickerSignature;
+    if (systemMenuReconfigured) {
+      if (menu?.systemMenuRequest) closeMenu();
+      if (systemMenuEnabled) configureSystemMenu(false);
+    }
+    if (pickerReconfigured) {
+      if (menu?.mode === 'layout-picker') closeMenu();
+      if (pickerEnabled) configurePicker(false);
+    }
     const staged = [];
     const plans = [];
     const previousAppearance = compositorAppearance, previousTheme = appliedTheme ?? getDesktopTheme(themeId);
@@ -625,8 +786,19 @@ export function createDesktopShell({ host = window, configuration, report = cons
         } else if (output.name) identity = outputIdentity(output);
         plans.push({ output, surfaces, identity });
       }
-      if (compositorAppearance !== appearance && typeof native?.configureAppearance === 'function') {
-        native.configureAppearance(theme, encodeDecorationLayout(theme));
+      for (const plan of plans)
+        if (shellRegional && staged.includes(plan.surfaces.panel))
+          render(h('view', { style: { width: '100%', height: '100%', backgroundColor: theme.panel.from } }),
+            plan.surfaces.panel.window.document.body);
+      if ((compositorAppearance !== appearance || (regional || shellRegional) &&
+          plans.some(plan => {
+            const surface = regional ? plan.surfaces.dock : plan.surfaces.panel;
+            return surface.backdropAppearance !== appearance || shellRegional &&
+              surface.backdropGeometry !== panelBackdropGeometry(plan);
+          })) &&
+          typeof native?.configureAppearance === 'function') {
+        native.configureAppearance(theme, encodeDecorationLayout(theme), appearanceTargets(theme, plans));
+        setBackdropIndices(theme, plans);
         compositorAppearance = appearance;
         configured = true;
       }
@@ -642,7 +814,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
       for (const surface of staged) closeSurface(surface);
       if (configured) {
         try {
-          native.configureAppearance(previousTheme, encodeDecorationLayout(previousTheme));
+          native.configureAppearance(previousTheme, encodeDecorationLayout(previousTheme),
+            appearanceTargets(previousTheme, [...bundles.values()], menu?.backdropActive ? menu : null));
+          setBackdropIndices(previousTheme, [...bundles.values()], menu?.backdropActive ? menu : null);
           compositorAppearance = previousAppearance;
         } catch (rollback) {
           throw new Error(String(failure) + '; could not restore native appearance: ' + String(rollback));
@@ -651,6 +825,20 @@ export function createDesktopShell({ host = window, configuration, report = cons
       throw failure;
     }
     const retained = new Set(plans.flatMap(plan => Object.values(plan.surfaces)));
+    for (const plan of plans) if (plan.surfaces.dock)
+      plan.surfaces.dock.backdropAppearance = regional ? appearance : null;
+    for (const plan of plans) {
+      plan.surfaces.panel.backdropAppearance = shellRegional ? appearance : null;
+      if (configured) {
+        plan.surfaces.panel.backdropActive = shellRegional;
+        plan.surfaces.panel.backdropGeometry = shellRegional ? panelBackdropGeometry(plan) : null;
+      }
+    }
+    if (configured && menu?.backdropAppearance) {
+      menu.backdropAppearance = null;
+      menu.backdropActive = false;
+      repaintMenu();
+    }
     for (const bundle of bundles.values())
       for (const surface of Object.values(bundle.surfaces)) if (!retained.has(surface)) closeSurface(surface);
     bundles.clear();
@@ -667,7 +855,67 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (previousAsset && previousAsset !== asset) releaseThemeAsset(previousAsset);
     }
     lastFailure = '';
+    if (pickerReconfigured) {
+      configurePicker(theme.window.layoutPicker === true);
+      pickerTheme = theme;
+      pickerOutputs = pickerSignature;
+    }
+    if (systemMenuReconfigured) {
+      configureSystemMenu(theme.window.systemMenu === true);
+      systemMenuTheme = theme;
+      systemMenuOutputs = pickerSignature;
+    }
     if (publicationFailure) throw publicationFailure;
+  }
+
+  function appearanceTargets(theme, plans, applicationMenu = null) {
+    if (theme.panel.kind === 'dock' && theme.panel.regionalBackdrop) return plans.map(plan => {
+      const dock = plan.surfaces.dock;
+      const { width, height } = dock.window.state ?? dock.size;
+      return [dock.window, dockBackdropMaterial(theme, width, height)];
+    });
+    if (!theme.panel.taskbarBackdrop) return [];
+    const targets = plans.map(plan => {
+      const panel = plan.surfaces.panel;
+      const { width, height } = panel.window.state ?? { width: plan.output.width, height: theme.panel.height };
+      return [panel.window, shellBackdropMaterial(theme, 2, width, height), panel.window];
+    });
+    if (applicationMenu && theme.panel.startBackdrop && currentMenu(applicationMenu)) {
+      const panel = plans.find(plan => plan.output.id === applicationMenu.output)?.surfaces.panel;
+      if (!panel) throw new Error('Start material has no current paired taskbar');
+      const { width, height } = applicationMenu.window.state ?? applicationMenu.size;
+      targets.push([applicationMenu.window, shellBackdropMaterial(theme, 3, width, height), panel.window]);
+    }
+    return targets;
+  }
+
+  function panelBackdropGeometry(plan) {
+    const { width, height } = plan.surfaces.panel.window.state ?? plan.surfaces.panel.size;
+    return JSON.stringify([plan.output.x, plan.output.y, plan.output.width, plan.output.height, width, height]);
+  }
+
+  function setBackdropIndices(theme, plans, applicationMenu = null) {
+    let index = 0;
+    for (const plan of plans) {
+      plan.surfaces.panel.backdropIndex = null;
+      if (plan.surfaces.dock) plan.surfaces.dock.backdropIndex = null;
+      const surface = theme.panel.kind === 'dock' && theme.panel.regionalBackdrop ? plan.surfaces.dock :
+        theme.panel.taskbarBackdrop ? plan.surfaces.panel : null;
+      if (surface) surface.backdropIndex = index++;
+    }
+    if (menu) menu.backdropIndex = applicationMenu && theme.panel.startBackdrop ? index : null;
+  }
+
+  function materialFailure(prefix, failure) {
+    materialError = prefix + String(failure);
+    report('[shell] ' + materialError);
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+  }
+
+  function clearMaterialFailure() {
+    if (materialError.startsWith('Could not ')) materialError =
+      typeof native?.backdropError === 'function' ? native.backdropError() : '';
   }
 
   function releaseThemeAsset(asset) {
@@ -696,7 +944,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function selectTheme(id) {
     if (!running) throw new Error('Shell is not running');
-    getDesktopTheme(id);
+    preflightBodyFont(getDesktopTheme(id));
     appearanceStatus = 'Applying and saving appearance...';
     repaintMenu();
     try {
@@ -719,6 +967,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const previous = { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES };
     const selected = catalog.themes.some(theme => theme.id === themeId) ? themeId : enabled ? null : DEFAULT_DESKTOP_THEME;
     if (!selected) throw new Error('The active theme is missing; restore a packaged theme before removing it');
+    preflightBodyFont(catalog.themes.find(theme => theme.id === selected));
     let installed = false;
     try {
       installThemeCatalog(catalog); installed = true;
@@ -788,14 +1037,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
     record.submit = submit; record.focused = focused;
     if (record.input.value !== current.query) record.input.value = current.query;
     if (record.theme !== theme) {
-      record.input.setAppearance(inputAppearance(theme));
+      setInputAppearance(record.input, inputAppearance(theme));
       record.theme = theme;
     }
     record.input.root.style.height = String(style.height);
     return h('view', { id: 'shell-app-search-slot', style: { ...style, position: 'relative' },
       onMount: node => node.insertBefore(record.input.root, node.firstChild) },
     h('view', { id: 'shell-app-search-hint', 'aria-hidden': 'true', style: { position: 'absolute', top: 4, left: 4,
-      color: theme.colors.muted, fontSize: theme.layout.fontSize, pointerEvents: 'none',
+      color: theme.colors.muted, fontSize: theme.layout.fontSize, ...bodyFont(theme), pointerEvents: 'none',
       display: current.query || record.composing ? 'none' : 'flex' } }, placeholder));
   }
 
@@ -807,7 +1056,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     };
     const close = scoped(() => closeMenu(current));
     if (current.mode === 'workspaces') {
-      if (workspaceEditor) workspaceEditor.input.setAppearance(inputAppearance(getDesktopTheme(themeId)));
+      if (workspaceEditor) setInputAppearance(workspaceEditor.input, inputAppearance(getDesktopTheme(themeId)));
       render(workspacesView(getDesktopTheme(themeId), workspaces,
         scoped(id => workspaceAction('activateWorkspace', id)), scoped(id => workspaceAction('removeWorkspace', id)),
         scoped(() => workspaceAction('createWorkspace')), close, error,
@@ -819,12 +1068,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
         } : null), current.window.document.body);
       return;
     }
-    if (current.mode === 'windows') {
+    if (current.mode === 'windows' || current.mode === 'layout-picker') {
       const selected = visibleWindows().find(window => window.id === current.windowId);
       if (!selected) { closeMenu(); return; }
       render(windowActionsView(getDesktopTheme(themeId), selected,
-        scoped(action => windowAction(selected.id, action)), close, error, workspaces,
-        scoped(id => moveWindow(selected.id, id))), current.window.document.body);
+        scoped(action => ['tileLeft', 'tileRight', 'restoreFloating', 'cascade', 'tileHorizontal', 'tileVertical'].includes(action) ?
+          windowPlacementAction(current, selected.id, action) : windowAction(selected.id, action)), close, error, workspaces,
+        scoped(id => moveWindow(selected.id, id)), !!current.placementEpoch && !current.placementSubmitted,
+        current.mode === 'layout-picker'), current.window.document.body);
       return;
     }
     if (current.mode === 'window-group') {
@@ -885,22 +1136,34 @@ export function createDesktopShell({ host = window, configuration, report = cons
         current.programsSlots = [];
         current.programsView = 'all';
         current.programsCategory = null;
+        current.programsFolder = '';
       }
       const programsEpoch = current.programsEpoch ?? 0;
       const programsView = current.programsView ?? 'all', programsCategory = current.programsCategory ?? null;
+      const programsFolder = current.programsFolder ?? '';
       const programsLive = () => currentMenu(current) && current.programsOpen &&
         current.programsEpoch === programsEpoch && (current.programsView ?? 'all') === programsView &&
-        (current.programsCategory ?? null) === programsCategory;
-      const programEntries = () => programsView === 'categories' ? [] : programsView === 'category' ?
+        (current.programsCategory ?? null) === programsCategory && (current.programsFolder ?? '') === programsFolder;
+      const programEntries = () => programsView === 'folders' ? programFolderContents(desktopCatalog(), programsFolder).entries :
+        programsView === 'categories' ? [] : programsView === 'category' ?
         categoryEntries(desktopCatalog(), programsCategory) : desktopCatalog();
-      const navigatePrograms = (view, category = null, focus = 'first') => {
-        if (!programsLive() || !['all', 'categories', 'category'].includes(view)) return false;
+      const navigatePrograms = (view, category = null, focus = 'first', folder = '') => {
+        if (!programsLive() || !['all', 'categories', 'category', 'folders'].includes(view)) return false;
         if (view === 'category') {
           if (!reloadApplications()) return false;
           if (!programsLive() || !programCategories(desktopCatalog()).some(item => item.tag === category)) return false;
         }
+        if (view === 'folders') {
+          const returning = programsView === 'folders' && programsFolder &&
+            folder === programsFolder.split('/').slice(0, -1).join('/');
+          if (!returning) {
+            if (!reloadApplications()) return false;
+            if (!programsLive() || !programFolderContents(desktopCatalog(), folder).exists) return false;
+          }
+        }
         current.programsView = view;
         current.programsCategory = view === 'category' ? category : null;
+        current.programsFolder = view === 'folders' ? folder : '';
         current.programsEpoch = programsEpoch + 1;
         current.programsSlots = [];
         repaintMenu();
@@ -917,7 +1180,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         });
         return true;
       };
-      const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
+      const applicationMenu = ['classic', 'luna'].includes(surfaceStyle(menuTheme, 'panel')) ? startMenuView : applicationsView;
       syncShellIcons(menuTheme);
       const searchFocused = current.search?.input.root === current.window.document.activeElement;
       render(applicationMenu(menuTheme, desktopCatalog(), current.query,
@@ -929,12 +1192,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
           remove: scoped(id => removeDesktopShortcuts([id])),
         }, {
           open: current.programsOpen === true,
-          view: programsView, category: programsCategory, epoch: programsEpoch,
+          view: programsView, category: programsCategory, folder: programsFolder, epoch: programsEpoch,
           slots: current.programsSlots ??= [],
           placement: current.programsPlacement,
           navigate: navigatePrograms,
+          navigateFolder: (folder, focus = 'first') => navigatePrograms('folders', null, focus, folder),
           back: () => {
             if (!programsLive()) return false;
+            if (programsView === 'folders') return programsFolder ?
+              navigatePrograms('folders', null, programFolderId(programsFolder), programsFolder.split('/').slice(0, -1).join('/')) :
+              navigatePrograms('categories', null, 'shell-program-source-folders');
             if (programsView === 'category') return navigatePrograms('categories', null, programCategoryId(programsCategory));
             if (programsView === 'categories') return navigatePrograms('all', null, 'shell-program-categories');
             return false;
@@ -966,6 +1233,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
               current.programsSlots = [];
               current.programsView = 'all';
               current.programsCategory = null;
+              current.programsFolder = '';
             }
             repaintMenu();
             const epoch = current.programsEpoch;
@@ -987,7 +1255,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
           change: scoped((id, expected) => host.displays().some(output => output.id === current.output) &&
             configuration.snapshot.launchers.applications.includes(id) === expected ?
             changeLauncherPin(id, !expected) : false),
-        } : null),
+        } : null, displayProfile, !!current.backdropActive),
         current.window.document.body);
       const search = current.search?.input.root;
       const slot = current.window.document.getElementById('shell-app-search-slot');
@@ -1042,6 +1310,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
         layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
         height: applicationMenuHeight(theme, height),
         ...applicationMenuPlacement(theme, width),
+        ...(mode === 'layout-picker' ? layoutPickerPlacement(theme, initial?.pickerOffer) : {}),
+        ...(mode === 'windows' && initial?.systemMenuRequest ? systemMenuPlacement(theme, initial.systemMenuRequest) : {}),
         // Placement already includes panel/menu-bar offsets in full-output coordinates.
         exclusiveZone: -1,
         keyboard: 'exclusive', transparent: true,
@@ -1059,10 +1329,28 @@ export function createDesktopShell({ host = window, configuration, report = cons
     menu.about = mode === 'about';
     menu.query = '';
     const current = menu;
+    if (mode === 'windows' || mode === 'layout-picker') {
+      const selected = visibleWindows().find(window => window.id === windowId);
+      current.windowAppId = selected?.appId;
+      current.windowWorkspaceId = selected?.workspaceId;
+      if (selected?.placement !== undefined && typeof native.openWindowMenu === 'function') {
+        try {
+          const epoch = mode === 'layout-picker' ? native.openLayoutPicker(current.pickerOffer.token, current.window) :
+            native.openWindowMenu(windowId, current.window);
+          if (!Number.isInteger(epoch) || epoch <= 0 || epoch > 0xffffffff)
+            throw new Error('Window menu registration did not return a valid epoch');
+          current.placementEpoch = epoch;
+        }
+        catch (failure) {
+          windowFailure(failure); errorKind = 'placement';
+          if (mode === 'layout-picker') { closeMenu(current); return null; }
+        }
+      }
+    }
     const body = current.window.document.body;
     body.tabIndex = 0;
     listen(current, 'keydown', event => {
-      if (!currentMenu(current)) return;
+      if (!currentMenu(current) || event.isComposing) return;
       if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
         event.preventDefault(); event.stopPropagation(); closeMenu(current, current.mode === 'window-group');
@@ -1070,6 +1358,29 @@ export function createDesktopShell({ host = window, configuration, report = cons
     });
     body.focus();
     repaintMenu();
+    if (mode === 'applications' && theme.panel.startBackdrop && currentMenu(current))
+      current.backdropFrame = requestAnimationFrame(() => {
+        current.backdropFrame = requestAnimationFrame(() => {
+          current.backdropFrame = null;
+          if (!currentMenu(current) || getDesktopTheme(themeId) !== theme) return;
+          try {
+            native.configureAppearance(theme, encodeDecorationLayout(theme),
+              appearanceTargets(theme, [...bundles.values()], current));
+            setBackdropIndices(theme, [...bundles.values()], current);
+            if (currentMenu(current)) {
+              if (typeof native.shellBackdropRetired === 'function' &&
+                  (native.shellBackdropRetired() & (1 << current.backdropIndex)))
+                throw new Error('Start recipient retired during appearance commit');
+              current.backdropAppearance = compositorAppearance;
+              current.backdropActive = true;
+              clearMaterialFailure();
+              repaintMenu();
+            }
+          } catch (failure) {
+            if (currentMenu(current)) materialFailure('Could not enable Start material; solid retained: ', failure);
+          }
+        });
+      });
     if (mode === 'applications' && currentMenu(current))
       current.window.document.getElementById('shell-app-search').focus();
     if (mode === 'window-group' && currentMenu(current))
@@ -1107,6 +1418,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function startSettingsBridge() {
     const scope = settingsScope;
     const handlers = { native, network: native, domains, appearance: appearanceSnapshot, about: aboutSnapshot,
+      materialSource: () => materialSource.read({ themeId, revision: appearanceRevision, asset: themeAsset }),
       select: selectTheme, reload: reloadThemes, restore: restoreThemes,
       managed(page) {
         return showSystemSettings(host.displays()[0]?.id, page);
@@ -1236,7 +1548,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const body = displayConfirmation.window.document.body;
       body.tabIndex = 0;
       listen(current, 'keydown', event => {
-        if (!running || displayConfirmation !== current || current.window.closed || pendingDisplayToken !== token) return;
+        if (!running || displayConfirmation !== current || current.window.closed ||
+            pendingDisplayToken !== token || event.isComposing) return;
         if (event.key === 'Escape' || event.key === 'Enter') {
           event.preventDefault(); finishDisplayChange(token, event.key === 'Enter');
         }
@@ -1309,6 +1622,46 @@ export function createDesktopShell({ host = window, configuration, report = cons
       closeMenu();
       return true;
     } catch (failure) { windowFailure(failure); return false; }
+  }
+
+  function windowPlacementAction(current, id, action) {
+    if (!currentMenu(current) || !['windows', 'layout-picker'].includes(current.mode) || current.windowId !== id ||
+        !current.placementEpoch || current.placementSubmitted) return false;
+    const arrangement = action === 'tileHorizontal' ? 'horizontal' : action === 'tileVertical' ? 'vertical' : null;
+    const batch = action === 'cascade' || arrangement !== null;
+    if (batch && current.mode !== 'windows') return false;
+    if (current.mode === 'layout-picker' || batch) current.placementSubmitted = true;
+    try {
+      if (!host.displays().some(output => output.id === current.output))
+        throw new Error('Window menu display is no longer available');
+      const workspace = typeof native.workspaces === 'function' ?
+        native.workspaces().find(workspace => workspace.active)?.id : undefined;
+      const selected = native.windows().find(window => window.id === id);
+      if (!selected || selected.appId !== current.windowAppId ||
+          selected.workspaceId !== current.windowWorkspaceId ||
+          workspace !== current.windowWorkspaceId) throw new Error('Window menu target or workspace is no longer current');
+      const bit = action === 'tileLeft' ? 1 : action === 'tileRight' ? 2 : 4;
+      if (selected.fullscreen || selected.minimized || selected.placementPending ||
+          (arrangement ? selected.arrangementSupported !== true :
+           action === 'cascade' ? selected.cascadeSupported !== true : !(selected.placementCapabilities & bit)))
+        throw new Error(selected.placementMessage || 'Window placement is unavailable');
+      const result = arrangement ? native.arrangeWindows(id, arrangement, current.placementEpoch) :
+        action === 'cascade' ? native.cascadeWindows(id, current.placementEpoch) :
+        action === 'restoreFloating' ? native.restoreFloatingWindow(id, current.placementEpoch) :
+        native.tileWindow(id, action === 'tileLeft' ? 'left' : 'right', current.placementEpoch);
+      if (!result || typeof result !== 'object' || result.admitted !== true || Object.keys(result).length !== 1)
+        throw new Error('Window placement was not acknowledged; outcome is unknown');
+      if (currentMenu(current)) {
+        if (errorKind === 'placement' || errorKind === 'windows') { error = ''; errorKind = ''; }
+        closeMenu(current);
+      }
+      return true;
+    } catch (failure) {
+      if (currentMenu(current)) { windowFailure(failure); errorKind = 'placement'; }
+      else report('[shell] Window placement failed: ' + String(failure));
+      if (current.mode === 'layout-picker') closeMenu(current);
+      return false;
+    }
   }
 
   function toggleWindow(id) {
@@ -1389,7 +1742,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const input = workspaceEditor?.input || createTextInput({ document: menu.window.document, value: selected.name,
         width: Math.max(1, menu.window.document.body.offsetWidth - theme.layout.compactPadding * 2),
         fontSize: theme.layout.fontSize, color: theme.colors.text, background: theme.colors.surface });
-      input.setAppearance(inputAppearance(theme));
+      setInputAppearance(input, inputAppearance(theme));
       input.root.id = 'shell-workspace-name';
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', 'Workspace name');
@@ -1556,7 +1909,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
         for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
         return;
       }
-      if (menu && !outputs.some(output => output.id === menu.output)) closeMenu();
+      if (menu && !outputs.some(output => output.id === menu.output &&
+          JSON.stringify(output) === JSON.stringify(bundles.get(menu.output)?.output))) closeMenu();
       reconcile(themeId, false);
         if (errorKind === 'display') {
         error = ''; errorKind = '';
@@ -1577,8 +1931,39 @@ export function createDesktopShell({ host = window, configuration, report = cons
     start() {
       if (running) throw new Error('Shell is already running');
       host.close();
-      running = true;
       if (launcher) reloadApplications();
+      running = true;
+      systemMenuScope = {};
+      systemMenuSerial = 0;
+      if (typeof native?.systemMenuCapability === 'function' && native.systemMenuCapability() === true) {
+        const scope = systemMenuScope;
+        previousSystemMenuChanged = native.onSystemMenuRequested;
+        const previous = previousSystemMenuChanged;
+        systemMenuChanged = () => {
+          if (!running || scope !== systemMenuScope) return;
+          receiveSystemMenu(scope);
+          if (typeof previous === 'function') {
+            try { previous(); }
+            catch (failure) { report('[shell] Previous system-menu observer failed: ' + String(failure)); }
+          }
+        };
+        native.onSystemMenuRequested = systemMenuChanged;
+      }
+      pickerScope = {};
+      if (typeof native?.layoutPickerOffer === 'function') {
+        const scope = pickerScope;
+        previousPickerChanged = native.onLayoutPickerChanged;
+        const previous = previousPickerChanged;
+        pickerChanged = () => {
+          if (!running || scope !== pickerScope) return;
+          receivePicker(scope);
+          if (typeof previous === 'function') {
+            try { previous(); }
+            catch (failure) { report('[shell] Previous caption picker observer failed: ' + String(failure)); }
+          }
+        };
+        native.onLayoutPickerChanged = pickerChanged;
+      }
       sessionExit.start();
       if (native && typeof native.beginSessionExit === 'function') {
         previousSessionExit = native.onSessionExitRequested;
@@ -1589,9 +1974,25 @@ export function createDesktopShell({ host = window, configuration, report = cons
       try { reconcile(themeId, false); }
       catch (failure) {
         compositorAppearance = null;
-        running = false; throw failure;
+        running = false;
+        if (systemMenuEnabled) {
+          try { configureSystemMenu(false); }
+          catch (cleanup) { report('[shell] Cannot retire failed system-menu startup: ' + String(cleanup)); }
+        }
+        systemMenuScope = null;
+        if (systemMenuChanged && native?.onSystemMenuRequested === systemMenuChanged)
+          native.onSystemMenuRequested = previousSystemMenuChanged;
+        systemMenuChanged = null;
+        systemMenuTheme = null; systemMenuOutputs = '';
+        throw failure;
       }
       timer = setInterval(refresh, 1000);
+      if (typeof native?.backdropError === 'function') {
+        previousBackdropStatus = native.onBackdropStatusChanged;
+        const scope = backdropScope = {};
+        backdropStatusChanged = () => receiveBackdropStatus(scope);
+        native.onBackdropStatusChanged = backdropStatusChanged;
+      }
       if (native) { previousExit = native.onExit; native.onExit = exited; }
       if (typeof native?.windows === 'function') {
         workspacePersistence.start();
@@ -1616,11 +2017,30 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return this;
     },
     stop() {
+      if (systemMenuEnabled) {
+        try { configureSystemMenu(false); }
+        catch (failure) { report('[shell] Cannot stop native system-menu input: ' + String(failure)); }
+      }
+      systemMenuScope = null;
+      if (systemMenuChanged && native?.onSystemMenuRequested === systemMenuChanged)
+        native.onSystemMenuRequested = previousSystemMenuChanged;
+      systemMenuChanged = null;
+      systemMenuTheme = null; systemMenuOutputs = '';
+      if (pickerEnabled) {
+        try { configurePicker(false); }
+        catch (failure) { report('[shell] Cannot stop caption picker: ' + String(failure)); }
+      }
+      pickerScope = null;
+      if (native?.onLayoutPickerChanged === pickerChanged) native.onLayoutPickerChanged = previousPickerChanged;
+      pickerChanged = null;
+      pickerTheme = null; pickerOutputs = '';
       running = false;
+      backdropScope = null; materialError = '';
       compositorAppearance = null;
       iconScope = {};
       settingsScope = {};
       settingsBridge?.close(); settingsBridge = null; settingsReady = null;
+      materialSource.close();
       applicationLaunchScope = {};
       serviceMonitor.reset(); serviceError = '';
       notifications.stop();
@@ -1636,6 +2056,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;
+      if (backdropStatusChanged && native?.onBackdropStatusChanged === backdropStatusChanged)
+        native.onBackdropStatusChanged = previousBackdropStatus;
+      backdropStatusChanged = null;
       if (native && native.onWindowsChanged === windowsChanged) native.onWindowsChanged = previousWindowsChanged;
       if (native && native.onWorkspacesChanged === workspacesChanged) native.onWorkspacesChanged = previousWorkspacesChanged;
       if (native && native.onShortcutsChanged === shortcutsChanged) native.onShortcutsChanged = previousShortcutsChanged;
@@ -1668,7 +2091,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     getSettingsState: () => settingsBridge?.getState() || { pid: 0, connected: false, error: String(settingsStartupError || '') },
     getState() {
       const services = serviceMonitor.snapshot();
-      return { themeId, error: error || services.error,
+      return { themeId, error: error || services.error, materialError,
         services, outputs: [...bundles.keys()], running, themeFilesEnabled, themeRevision: THEME_REVISION };
     },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },

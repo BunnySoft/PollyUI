@@ -24,6 +24,7 @@ export const SETTINGS_METHODS = Object.freeze({
   Open: { signature: 's', replySignature: 'u' },
   Connect: { signature: '', replySignature: 'uus' },
   GetAppearance: { signature: '', replySignature: 's' },
+  GetMaterialSource: { signature: '', replySignature: 's' },
   GetAbout: { signature: '', replySignature: 's' },
   GetNetwork: { signature: '', replySignature: 's' },
   NetworkAction: { signature: 's', replySignature: 's' },
@@ -102,13 +103,50 @@ export function parseAppearance(text) {
   if (!catalog.themes.some(theme => theme.id === value.themeId)) throw new TypeError('Active theme is absent');
   return freezeTheme({ ...value, catalog });
 }
+export const MATERIAL_SOURCE_LIMIT = 128 * 1024;
+const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+export function parseMaterialSource(text) {
+  boundedText(text, MATERIAL_SOURCE_LIMIT + 1024, 'material source', false);
+  const value = JSON.parse(text);
+  fields(value, ['version', 'revision', 'generation', 'themeId', 'width', 'height', 'dataURL'], 'material source');
+  if (value.version !== 1) throw new TypeError('Unsupported material source version');
+  integer(value.revision, 'material revision'); integer(value.generation, 'material owner generation');
+  if (!value.generation) throw new TypeError('Invalid material owner generation');
+  settingsThemeId(value.themeId);
+  for (const key of ['width', 'height'])
+    if (!Number.isInteger(value[key]) || value[key] < 1 || value[key] > 128)
+      throw new TypeError('Invalid material source dimensions');
+  const prefix = 'data:image/png;base64,', data = value.dataURL;
+  if (typeof data !== 'string' || data.length > MATERIAL_SOURCE_LIMIT || !data.startsWith(prefix))
+    throw new TypeError('Material source must be a bounded PNG data URL');
+  const encoded = data.slice(prefix.length);
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded) ||
+      encoded.length < 44 || (encoded.endsWith('==') && (base64Alphabet.indexOf(encoded.at(-3)) & 15)) ||
+      (encoded.endsWith('=') && !encoded.endsWith('==') && (base64Alphabet.indexOf(encoded.at(-2)) & 3)))
+    throw new TypeError('Invalid material PNG base64');
+  const header = [];
+  for (let i = 0; i < 44; i += 4) {
+    const word = [...encoded.slice(i, i + 4)].reduce((n, c) => (n << 6) | Math.max(0, base64Alphabet.indexOf(c)), 0);
+    header.push(word >>> 16 & 255, word >>> 8 & 255, word & 255);
+  }
+  const u32 = offset => header.slice(offset, offset + 4).reduce((n, byte) => n * 256 + byte, 0);
+  if (header.slice(0, 8).join() !== '137,80,78,71,13,10,26,10' || u32(8) !== 13 ||
+      header.slice(12, 16).join() !== '73,72,68,82' || u32(16) !== value.width || u32(20) !== value.height)
+    throw new TypeError('Material PNG header does not match its dimensions');
+  return freezeTheme(value);
+}
+export function matchMaterialSource(value, appearance, generation) {
+  if (value.generation !== generation || value.themeId !== appearance.themeId || value.revision !== appearance.revision)
+    throw new Error('Material source does not match the current appearance or owned Settings generation');
+  return value;
+}
 export function parseAbout(text) {
   const value = payload(text);
   fields(value, ['version', 'services', 'outputs', 'themeId', 'applicationId', 'profiles', 'build'], 'about snapshot');
   if (value.version !== 1) throw new TypeError('Unsupported Settings snapshot version');
   validateBuild(value.build);
-  fields(value.services, ['inputMethod', 'audio', 'message', 'error'], 'service snapshot');
-  for (const key of ['inputMethod', 'audio'])
+  fields(value.services, ['inputMethod', 'audio', 'decorations', 'message', 'error'], 'service snapshot');
+  for (const key of ['inputMethod', 'audio', 'decorations'])
     if (!['unavailable', 'disabled', 'starting', 'ready', 'failed'].includes(value.services[key]))
       throw new TypeError('Invalid session service state');
   boundedText(value.services.message, 16384, 'service message');

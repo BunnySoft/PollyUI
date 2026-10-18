@@ -3,6 +3,11 @@
 Power uses the existing theme typography and bounded, wheel-scrollable client
 area. Application-close coordination, cancellation, permission checks and the
 explicit final shutdown/restart confirmation remain unchanged.
+Its existing unframed content pane uses the shared themed overlay scrollbar and
+focus reveal, keeping later Cancel/Refresh controls reachable below a long
+waiting inventory or in a low window. Manual wheel position survives unchanged
+refreshes; closing releases the shared viewport only after the original
+cancellation decision, without changing when a request can be sent or cancelled.
 
 # Notifications
 
@@ -11,6 +16,12 @@ scrolling. Long message bodies scroll vertically; action strips scroll
 horizontally without consuming an application's notification action. Available
 width is shared with the application label so Dismiss remains accessible.
 Notification identities, revisions, expiry and action dispatch remain unchanged.
+Only the center opts into the shared themed overlay scrollbar and bounded focus
+reveal, keeping later Dismiss/action buttons visible when tabbing in a low window.
+It retains transparent gaps, zero outer padding and the existing card order,
+not a Settings-style frame/fill. A manual wheel position survives an unchanged
+refresh; closing releases the center's shared scrolling/focus lifecycle. Toasts
+keep their original keyboard mode, geometry, count and More action.
 
 # Desktop popup menus
 
@@ -20,6 +31,50 @@ theme typography. Workspace action rows wrap on narrow surfaces; the native
 name field and all management callbacks retain their existing ownership.
 Tray menus use the same scrolling surface and shared enabled/selection-ink
 commands. Tray item wheel events still go to the offering application.
+The existing window-action, workspace and tray menus opt into the same themed
+overlay scrollbar without changing their frames, command widths or order.
+Paging and dragging use the existing SDK controller alongside shared focus
+reveal; tray spacing remains its own `trayGap`. Retiring a tray menu releases
+that view's scrolling lifecycle before its original close route, with no extra
+native action.
+
+# Applications and logout lists
+
+The generic/Mac applications list uses the shared focus-revealing viewport and
+themed overlay scrollbar inside its original flex allocation, with zero padding,
+transparent fill and its existing `windowGap`. Search, header, footer, match cap,
+launch and the two independent pin actions keep their original slots and rules.
+Native Tab traversal keeps its existing tree order without a fixed candidate cap,
+so all 100 application rows and both pin actions remain keyboard-reachable.
+The existing logout pane also opts into that scrollbar without changing its
+frame or inventory/confirmation content. A user close releases the view only
+after cancellation succeeds; external close and owner stop preserve their
+original cancellation order while retiring queued scrolling work. Committed
+operations still refuse user close and are never cancelled or replayed by cleanup.
+
+# Local session display profile
+
+The production Shell entry reads one local display snapshot at startup from real
+uid/euid and the fixed, trusted `/etc/passwd` record. Classic/XP two-column Start
+headers can show that record's display name and actual username/UID inside their
+existing 40px/64px header. Names use the shared theme font projection and retain
+their complete accessible labels; long Unicode text is clipped, not rewritten or
+shrunk. The existing original generic avatar is not a claimed account photograph.
+A zero-height header override or a non-two-column menu does not create a profile
+area. Older view/Shell callers that do not explicitly supply a profile keep the
+original PollyDesktop brand and header markup.
+
+The immutable snapshot is display metadata only, not authentication, NSS/directory
+service authority, an account-management capability or a login-session claim.
+No environment username/home guess, password action, account switcher, Recent
+history or new preference/IPC is added. Root/mixed-ID sessions and unsafe, absent,
+ambiguous or malformed local records remain explicitly unavailable under the
+existing filesystem restrictions. A known numeric ID displays **User &lt;uid&gt;**;
+otherwise the label is **User unavailable**, with **Local name unavailable** below.
+The sanitized diagnostic is reported once when the Shell is created, without
+overwriting service/action errors or rereading passwd on every clock/menu update.
+It does not block desktop startup, change window/launcher authority or replace
+Search, Programs/source folders, either pin domain or logout.
 
 # Classic All Programs
 
@@ -37,6 +92,37 @@ categories with current catalog members are listed. All apps is always available
 from the category index or a leaf, and root Search/Pin/Refresh/logout are unchanged.
 This does not manufacture Windows programs, accounts, recent documents or paths,
 or implement an installed directory hierarchy or XDG menu XML tree.
+
+When the final catalog includes qualified nested desktop-entry sources, the
+category index also offers **Source folders >**, separate from any identically
+named metadata tag. This is a merged tree of the actual recursive registration
+sources, not a filesystem browser or a Windows Programs directory. A source
+qualifies only when its absolute `entry.path` has valid nonempty path segments
+(no dot/dot-dot segments, backslashes, controls or invalid Unicode), and the
+tail of exactly `entry.id.length` characters starts after a slash and produces
+that exact `.desktop` ID when its slashes are replaced by dashes. This follows
+the native scanner's length-preserving ID projection; it never splits a
+hyphenated ID to guess folders or assumes a particular XDG installation root.
+Only the final override winner's path is used. Virtual Settings entries, managed
+bundles and any unverifiable sources stay available in All apps but do not gain
+invented source paths. No nested qualified sources means no Source folders entry.
+
+Each source view shows direct subfolders and directly registered applications;
+identical relative folders from different actual roots merge. Enter/Right opens
+a subfolder. Back/Left/Escape walks its parent folders, then the merged source
+root, category index, flat All Programs and finally the Start trigger. Every
+level retains All apps. Folder state is menu-local and separate from category
+tags; transitions change the existing navigation epoch. Entry/folder activation
+requires a successful fresh catalog read and rechecks the exact current folder
+or direct membership, so moving the same ID across a slash/hyphen boundary does
+not preserve an old leaf's authority. A removed directory can remain as an empty
+view with Back/All apps rather than redirecting a held action. Returning to an
+already-owned direct parent needs no new catalog read, so Back/Left/Escape remain
+safe exits during an I/O failure. That retained display does not clear the error
+or authorize launch/Pin; entering a new folder and every application action still
+require a successful fresh membership check. This does not scan
+directories, expose empty/unregistered filesystem folders, add XDG menu XML,
+change application identity/launch routing, or persist another preference.
 
 When space permits the submenu occupies the right-hand area beside its trigger.
 Otherwise it overlays existing content below the trigger, bounded by the same
@@ -81,6 +167,10 @@ retain their existing command-navigation path. Short lists hide/disable the bar.
 Same-DOM retheming keeps the controller and current drag, and leaving cancels
 pending bounded layout work, capture and listeners. This does not add a popup,
 new input authority or an idle animation/observer loop.
+Composing keyboard events remain untouched throughout the ancestor chain:
+desktop selection, menu navigation/dismissal and trusted display Keep/Revert
+shortcuts do not reinterpret them after a child control returns. Ordinary
+navigation and token-bound confirmation retain their existing behavior.
 
 `desktop/tests/classic-programs-render.mjs` exports the bounded actual GUI and
 native-client geometry fixtures. `desktop/tests/menu-host.mjs` covers the real
@@ -88,7 +178,7 @@ Shell controller's callback lifetime, launch and existing menu authority seams.
 
 # Application tasks and Dock groups
 
-The Tiger, Lion and Big Sur Dock presets use `panel.materialOpacityPercent: 88`
+For legacy Dock material without `regionalBackdrop`, the Tiger, Lion and Big Sur presets use `panel.materialOpacityPercent: 88`
 for their passive bottom material only. This is a configurable Polly default,
 not a measured OS opacity. The optional schema-version-1 field accepts integer
 percentages 0..100; missing or 100 preserves the original opaque colors and
@@ -96,10 +186,43 @@ rendering path, and an override of 100 restores solid material. At 0 the bottom
 material is transparent while icons, registered bitmaps, focus, running markers,
 badges and separators retain their own original colors and opacity.
 
-The existing transparent Dock layer can show the scene behind these RGBA fills.
+Without `panel.regionalBackdrop`, the existing transparent Dock layer can show the scene behind these RGBA fills.
 The Dock parent is not faded, geometry/input are unchanged, and no background
 pixels are sampled. This is alpha composition, not Acrylic, vibrancy or blur;
-Lion reflection/Dock shadow and Big Sur wallpaper tint/live blur remain absent.
+Lion reflection/Dock shadow remain absent.
+
+The production Big Sur Dock additionally opts into
+`panel.regionalBackdrop: { sigma: 8, tint: "#e7e7e7", opacityPercent: 28 }`.
+This is a real paired effects4/Pixman lower-scene regional Gaussian underlay, not these
+RGBA fills and not a wallpaper-derived base. The client omits only its passive
+gradient after successful native publication; foreground, border, hitbox, scroll,
+hover and actions are unchanged. These are Polly design parameters, not measured
+macOS vibrancy. Optional schema-1 data permits sigma 1..32, RGB tint and integer
+opacity 0..100, independent of the legacy `materialOpacityPercent`. Removing the
+field restores the previous Dock path and its opacity policy. The menu bar
+does not opt in.
+
+Active selection queries the actual regional capability before creating surfaces
+or publishing appearance. Appearance7 stages numeric material against the current
+owned/mapped Dock `wl_surface`, reserves old-plus-candidate/kernel peak resources,
+and revalidates count, owner, generation, commit sequence and geometry on commit.
+Its private numeric material schema 2 carries radius in thousandths of a logical
+pixel. JS projects the requested radius to both axes of the current configured
+footprint (including half-pixel radii); it never rewrites explicit theme dimensions.
+Retained material data is inactive when the panel is not a Dock.
+Failure preserves the last committed state; it does not silently substitute alpha.
+Inactive catalog/data lookup does not query capabilities. GLES explicitly rejects
+this new capability but retains its existing radius/shadow support. Live regional
+failures are reported to the Shell and hold the last output frame until new scene
+damage permits a retry. Material status has independent `getState().materialError`
+and the existing visible needs-attention indicator: its failure/recovery never
+overwrites business/service errors, repeated messages are not re-reported, and
+callbacks from stopped or previous Shell lifecycles are ignored.
+The native adapter retains bounded Window handles, not raw surface pointers,
+across getters, serialization and roundtrips. It rechecks live ownership after
+those boundaries and reacquires each surface immediately before marshaling;
+retired candidates explicitly fail/cancel without touching the committed Dock.
+No screenshot/readback or foreign-target API is exposed.
 
 Big Sur also selects `panel.menuBarOpacityPercent: 88` for the menu bar's passive
 background gradient. This separate optional integer 0..100 field defaults to 100;
@@ -160,8 +283,8 @@ In explicit `applications` or `windows-launchers` mode, each Apps entry has a se
 or Dock+/Dock- control. Its accessible name says which application and destination
 it changes. This is independent of the existing desktop Pin/Unpin control: removing
 a taskbar or Dock launcher never deletes a desktop shortcut. The ordered list of
-at most 32 unique catalog IDs persists in Shell configuration v3's version-1
-`launchers` domain. Existing v1/v2 configurations migrate atomically without losing
+at most 32 unique catalog IDs persists in Shell configuration v4's version-1
+`launchers` domain. Existing v1/v2/v3 configurations migrate atomically without losing
 their other domains; see `desktop/SHELL-CONFIGURATION.md`.
 
 Pins occupy the first display slots in saved order. In `applications` mode a uniquely associated running
@@ -187,7 +310,7 @@ Pin/Unpin when its real
 catalog association is unambiguous. Held launcher-to-running transitions and
 changed membership/workspaces invalidate the old gesture. Pin write errors are
 reported and the UI follows the actually committed configuration snapshot,
-including durability failures. There is no drag ordering, MRU, magnification,
+including durability failures. There is no drag ordering, MRU,
 process-wide close, new native API or extra bitmap cache. Classic and custom
 `windows` mode keep the original per-window behavior and do not display launchers.
 
@@ -214,25 +337,35 @@ for a single known application. Unknown windows and explicit per-window mode kee
 the old actions. The three fixed Dock entries, running markers, icon sizing,
 natural gap/fitting math and inner/outer scrolling are unchanged.
 
-## Bounded Dock hover emphasis
+## Bounded Dock distance magnification
 
-Mac-style `tiger`, `lion` and `bigsur` Dock surfaces can emphasize only the
-pointer-hovered glyph or registered bitmap. Optional schema-version-1 theme
-`icons.dockHoverPercent` accepts integer 100-125; missing or 100 keeps the original
-size, and the three packaged/recovery Mac-style presets explicitly use 120.
-An override can disable it without a new preference or native setting.
+Mac-style `tiger`, `lion` and `bigsur` Dock surfaces emphasize glyphs and registered
+bitmaps without moving their slots. Optional schema-version-1 theme
+`icons.dockHoverPercent` still accepts integer 100-125; missing or 100 disables
+enlargement. Optional `icons.dockMagnificationRadius` accepts integer 0-3:
+missing/0 retains the exact previous single-hover behavior, while a positive
+radius weights visible neighbors continuously by pointer distance. The three
+packaged/recovery Mac presets select peak 120 and radius 2. Fixed Apps/Settings/
+About and the visible window strip form one adjacent sequence; the separator
+does not become an action or interrupt that sequence.
 
 Scaling is center-based paint only, limited by the actual slot, clipping
 ancestors and the native client body's visible viewport. A normally 40px
 artwork can paint at 48px with enough room, less when space is restricted,
 or remain unscaled if it is already clipped. Slot/tile sizes, hit testing,
 running indicators, counts, fixed actions and window dimensions never expand;
-bitmaps retain their original color. Leave or pointer cancellation restores
-the original art. Clock reconciliation and retheming reuse existing control
-state and bounded Dock layout settling, without a polling/animation loop.
+bitmaps retain their original color. Entry, movement and leave use a 140ms
+smoothstep transition with a finite 24-callback safety bound; settled state has
+no animation frames. Leave or pointer cancellation restores every affected icon
+exactly to scale 1. Clock reconciliation and immutable retheming preserve the
+physical pointer and per-instance state without restarting unchanged transitions.
+Wheel/focus/layout settling recomputes actual clipping bounds; clipped artwork
+cannot magnify. Retirement cancels pending layout and animation work through
+the existing owner checks, including ownerless ancestor removal.
 Keyboard focus keeps its existing outline and does not trigger magnification.
-This first stage is hover emphasis, not neighboring-icon displacement or full
-animated macOS magnification; those remain separate work.
+This is bounded artwork magnification, not neighboring-slot displacement, a
+larger native input/surface region, or full commercial macOS magnification/MRU
+qualification. It adds no compositor, animation framework or preference service.
 
 The chooser occupies the existing bounded RootMenu client window, not Alt+Tab or
 a native popup. Its passive outer chrome consumes the shared `panelAppearance`
@@ -253,6 +386,20 @@ including notification-before/after workspace and membership guards. The exporte
 `desktop/tests/window-group-render.mjs` cover actual renderer/input and native
 client geometry respectively. They use explicitly nonempty app-ID fixture
 snapshots, not evidence of compositor permissions, physical DPI or native MRU.
+
+The original `desktop-window-shell-raster` and `desktop-workspace-shell-raster`
+fullflows use real native input and independent applications through both initial
+and reconnect phases. Workspace tasks follow `windowTasks` and exact app IDs on
+both outputs; a single-window Mac Dock group activates/restores, rather than
+minimizing an active window. Classic search checks retained input text, focus,
+caret/selection editing and actual filtered rows, not SDK-internal child indexes.
+The Shell has no decoration queue or frame submission API. The original four
+submission negatives (inexact strips, unknown revision, mismatched generation and
+duplicate accepted revision) run in the existing decorator lifecycle fixture's
+`frame-policy` mode, on a real independent windowless renderer using production
+painting/submission. Its original seven modes remain, alongside live same-ID
+theme geometry/pixel and invalid-geometry preservation checks in the window
+fullflow. These headless checks do not qualify physical hardware.
 
 Start and generic Apps menus reuse the same bounded bitmap cache as desktop
 shortcuts and taskbar/Dock tasks. Only the current filtered list (up to 100

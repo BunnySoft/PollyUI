@@ -32,7 +32,8 @@ export async function startSettingsRuntime({ args = application.arguments, onSto
       const shellPeer = await settingsPeer(rawClient, shellOwner);
       if (shellPeer.pid !== shellPid || shellPeer.uid !== environment.uid)
         throw new Error('Settings handshake does not match the native Shell service PID');
-      app = createSettingsApp({ client, host, page: settingsPage(handshake[2]),
+      client.bindMaterialOwner(shellOwner, handshake[1]);
+      app = createSettingsApp({ client, host, page: settingsPage(handshake[2]), optInMaterial: true,
         onStop: () => { cleanup(); onStop(); window.quit(); } }).start();
       let pending = false;
       timer = setInterval(() => {

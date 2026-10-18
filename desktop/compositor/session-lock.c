@@ -1,5 +1,6 @@
 #include "session-lock.h"
 #include "server.h"
+#include "decoration.h"
 #include "private-process.h"
 #include "output-control.h"
 #include <errno.h>
@@ -42,10 +43,9 @@ struct PuSessionLock {
     struct wlr_scene_tree *tree;
     struct wl_client *client;
     pid_t pid;
-    struct wl_event_source *exit;
     struct wl_list outputs, surfaces;
     struct wl_listener new_lock, new_surface, unlock, destroy, client_destroy;
-    bool active, acknowledged, unlocking, client_succeeded;
+    bool active, acknowledged, unlocking, client_succeeded, finishing;
 };
 static void unlisten(struct wl_listener *listener)
 {
@@ -252,6 +252,8 @@ static void unlocked(struct wl_listener *listener, void *data)
     struct PuSessionLock *lock = wl_container_of(listener, lock, unlock);
     if (!lock->acknowledged || wl_resource_get_client(lock->session->resource) != lock->client) return;
     lock->unlocking = true; lock->active = false;
+    lock->desktop->backdrop_epoch++;
+    wlr_scene_backdrop_clear(lock->desktop->scene);
     wlr_scene_node_set_enabled(&lock->tree->node, false);
     pu_desktop_isolate_input(lock->desktop);
     pu_desktop_restore_input(lock->desktop);
@@ -299,19 +301,25 @@ static bool reap(struct PuSessionLock *lock, int options)
     if (lock->client) wl_client_destroy(lock->client);
     return true;
 }
-static int exited(int signal, void *data) { (void)signal; reap(data, WNOHANG); return 0; }
+static void exited(struct PuDesktop *desktop)
+{ if (desktop->session_lock) reap(desktop->session_lock, WNOHANG); }
 bool pu_session_lock_spawn(struct PuDesktop *desktop, char *const argv[])
 {
     struct PuSessionLock *lock = desktop->session_lock;
-    if (!lock || desktop->stopping || lock->client || lock->pid || lock->session) return false;
-    if (!lock->exit) lock->exit = wl_event_loop_add_signal(wl_display_get_event_loop(desktop->display), SIGCHLD, exited, lock);
-    if (!lock->exit) { wlr_log_errno(WLR_ERROR, "Cannot watch lock process"); return false; }
+    if (!lock || desktop->stopping || lock->finishing || lock->client || lock->pid || lock->session) return false;
+    if (!pu_private_process_watch(desktop, PU_PRIVATE_SESSION_LOCK, exited)) return false;
     pu_output_control_locking(desktop);
     lock->client_destroy.notify = client_destroyed;
-    if (!pu_spawn_private(desktop, argv, "session lock", &lock->client, &lock->pid, &lock->client_destroy)) return false;
+    if (!pu_spawn_private(desktop, argv, "session lock", &lock->client, &lock->pid, &lock->client_destroy)) {
+        pu_private_process_unwatch(desktop, PU_PRIVATE_SESSION_LOCK);
+        return false;
+    }
     bool recovering = lock->active;
     lock->client_succeeded = false;
     lock->active = true; lock->acknowledged = false; lock->unlocking = false;
+    desktop->backdrop_epoch++;
+    wlr_scene_backdrop_clear(desktop->scene);
+    pu_decorations_validate_shell_backdrops(desktop);
     struct LockOutput *output;
     wl_list_for_each(output, &lock->outputs, link) if (!recovering) {
         output->presented = output->pending = false;
@@ -338,7 +346,9 @@ bool pu_session_lock_init(struct PuDesktop *desktop)
 void pu_session_lock_finish(struct PuDesktop *desktop)
 {
     struct PuSessionLock *lock = desktop->session_lock;
-    if (!lock) return;
+    if (!lock || lock->finishing) return;
+    lock->finishing = true;
+    pu_private_process_unwatch(desktop, PU_PRIVATE_SESSION_LOCK);
     if (lock->client) wl_client_destroy(lock->client);
     if (!reap(lock, WNOHANG)) {
         if (kill(lock->pid, SIGTERM) < 0 && errno != ESRCH) wlr_log_errno(WLR_ERROR, "Cannot stop lock process");
@@ -350,7 +360,6 @@ void pu_session_lock_finish(struct PuDesktop *desktop)
             else reap(lock, 0);
         }
     }
-    if (lock->exit) wl_event_source_remove(lock->exit);
     if (lock->session) wlr_session_lock_v1_destroy(lock->session);
     struct LockSurface *surface, *next_surface;
     wl_list_for_each_safe(surface, next_surface, &lock->surfaces, link) surface_destroyed(&surface->destroy, NULL);

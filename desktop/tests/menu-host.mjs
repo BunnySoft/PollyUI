@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 
 // Run: node --test .\desktop\tests\menu-host.mjs
 register('./menu-host-loader.mjs', import.meta.url);
@@ -12,8 +13,14 @@ const { applicationsView } = await import('./desktop/shell/views.mjs');
 const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs');
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
 const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
-const { programCategories, categoryEntries, programCategoryId } = await import('./desktop/shell/programs-menu.mjs');
+const { programCategories, categoryEntries, programCategoryId, programSourcePath,
+  programFolderContents, programFolderId } = await import('./desktop/shell/programs-menu.mjs');
+const { applicationCatalog } = await import('./desktop/shell/applications.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
+const { startMenuView } = await import('./desktop/shell/start-menu.mjs');
+const { parseLocalUserProfile } = await import('./desktop/shared/user-profile.mjs');
+const { layoutPickerPlacement, systemMenuPlacement } = await import('./desktop/shared/ui/theme-layout.mjs');
+const { validateTheme } = await import('./desktop/shared/ui/theme-schema.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -223,6 +230,21 @@ function fixture(configure = () => {}) {
   const clone = value => JSON.parse(JSON.stringify(value));
   const original = () => calls.push(['previous-windows']);
   const native = {
+    backdropCapability: () => true,
+    shellBackdropCapability: () => true,
+    startBackdropCapability: () => true,
+    configureAppearance(theme, words, targets = []) {
+      assert.equal(words[0], 7);
+      const paired = !!theme.panel.taskbarBackdrop;
+      const start = targets.filter(([, material]) => material[1] === 3);
+      assert.equal(targets.length, theme.panel.kind === 'dock' && theme.panel.regionalBackdrop || paired ?
+        state.outputs.length + start.length : 0);
+      for (const [window, material, peer] of targets) {
+        assert.equal(window.options.layer, material[1] === 3 ? 'overlay' : 'top');
+        assert.equal(material[0], paired ? material[1] === 3 && theme.panel.startBackdrop?.standardHeight ? 4 : 3 : 2);
+        if (paired) assert.ok(peer && !peer.closed);
+      }
+    },
     onWindowsChanged: original,
     windows: () => clone(state.windows),
     workspaces: () => clone(state.workspaces),
@@ -276,8 +298,9 @@ function fixture(configure = () => {}) {
       return window;
     },
   };
-  configure({ native, state, calls, saved });
-  const shell = createDesktopShell({ host, native, configuration: saved, report: value => warnings.push(value),
+  configure({ native, state, calls, saved, expectedWarnings });
+  const shell = createDesktopShell({ host, native, configuration: saved, displayProfile: state.displayProfile,
+    report: value => warnings.push(value),
     settingsFactory(handlers) {
       state.settingsHandlers = handlers;
       return { open(page) { calls.push(['settings-open', page]); return 123; },
@@ -295,7 +318,7 @@ function fixture(configure = () => {}) {
       assert.deepEqual(warnings, expectedWarnings);
     } finally { Object.assign(globalThis, previous); }
   };
-  return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings, flushFrames };
+  return { shell, native, state, calls, created, surface, done, timers, saved, warnings, expectedWarnings, flushFrames };
 }
 function scenario(name, run, configure) {
   test(name, async () => {
@@ -303,6 +326,832 @@ function scenario(name, run, configure) {
     try { await run(f); } finally { f.done(); }
   });
 }
+
+scenario('standard Start explicitly selects schema4 at full unchanged 640/660 height, taskbars remain schema3', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+  installThemeCatalog(optional);
+  try {
+    f.state.outputs[1].height = 800;
+    assert.equal(f.shell.selectTheme('modern'), true);
+    const original = f.native.configureAppearance, targets = [];
+    f.native.configureAppearance = (...args) => { targets.push(args[2]); return original(...args); };
+    for (const [id, height] of [[1, 640], [2, 660]]) {
+      f.surface('wallpaper', id).document.body.offsetHeight = f.state.outputs.find(output => output.id === id).height;
+      const menu = f.shell.showApplications(id);
+      assert.equal(menu.options.width, 640);
+      assert.equal(menu.options.height, height);
+      assert.equal(find(menu, 'shell-applications').style.backgroundColor, '#f3f3f3');
+      f.flushFrames();
+      const actual = targets.at(-1);
+      assert.deepEqual(actual.slice(0, 2).map(([, material]) => material[0]), [3, 3]);
+      assert.equal(actual[2][0], menu);
+      assert.deepEqual(actual[2][1], [4, 3, 8000, 16, 0xf3f3f3, 72]);
+      assert.equal(actual[2][2], f.surface('panel', id));
+      assert.equal(find(menu, 'shell-applications').style.backgroundColor, 'transparent');
+      menu.close();
+      assert.equal(menu.closeCount, 1);
+    }
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+});
+
+scenario('old provider rejects standard-height opt-in before surfaces, preferences, appearance or foreground mutation', f => {
+  assert.equal(f.shell.selectTheme('modern'), true);
+  const menu = f.shell.showApplications(1);
+  const created = f.created.length, focus = menu.document.activeElement;
+  const saved = JSON.parse(JSON.stringify(f.saved.snapshot)), calls = f.calls.length;
+  const originalWindows = f.shell.getSurfaces().map(surface => surface.window);
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+  installThemeCatalog(optional);
+  try {
+    f.native.configureAppearance = () => assert.fail('Unsupported opt-in cannot stage appearance');
+    assert.equal(f.shell.selectTheme('modern'), false);
+    assert.match(f.shell.getState().error, /appearance v9/);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.equal(f.created.length, created);
+    assert.equal(menu.closed, false);
+    assert.equal(menu.document.activeElement, focus);
+    assert.ok(originalWindows.every(window => !window.closed));
+    assert.deepEqual(f.saved.snapshot, saved);
+    assert.equal(f.calls.length, calls);
+    f.native.configureAppearance = () => {};
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+}, ({ native }) => { native.startBackdropCapability = () => false; });
+
+scenario('standard Start pending callback cannot revive material after close, retheme or stop', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+  installThemeCatalog(optional);
+  try {
+    assert.equal(f.shell.selectTheme('modern'), true);
+    const original = f.native.configureAppearance, appearances = [];
+    f.native.configureAppearance = (...args) => { appearances.push(args[2]); return original(...args); };
+    for (const action of ['close', 'retheme', 'stop']) {
+      const menu = f.shell.showApplications(1);
+      if (action === 'close') menu.close();
+      else if (action === 'retheme') assert.equal(f.shell.selectTheme('xp'), true);
+      else f.shell.stop();
+      f.flushFrames();
+      assert.ok(appearances.every(targets => targets.every(([window]) => window !== menu)));
+      assert.equal(menu.closed, true);
+      assert.equal(menu.closeCount, 1);
+      if (action === 'retheme') assert.equal(f.shell.selectTheme('modern'), true);
+    }
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+});
+
+scenario('paired Start publication stays solid on failure and retains taskbars on close without polling', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 };
+  installThemeCatalog(optional);
+  assert.equal(f.shell.selectTheme('modern'), true);
+  const original = f.native.configureAppearance;
+  const attempts = [];
+  let reject = true;
+  f.native.configureAppearance = (theme, words, targets) => {
+    attempts.push(targets);
+    if (reject) throw new Error('peak budget rejected');
+    return original(theme, words, targets);
+  };
+  const panels = [f.surface('panel', 1), f.surface('panel', 2)];
+  const solid = f.shell.showApplications(1);
+  f.flushFrames();
+  assert.equal(find(solid, 'shell-applications').style.backgroundColor, '#f3f3f3');
+  assert.match(f.shell.getState().materialError, /solid retained/);
+  assert.equal(f.shell.getState().error, '');
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().materialError);
+  solid.close();
+  reject = false;
+  const menu = f.shell.showApplications(1);
+  f.flushFrames();
+  const targets = attempts.at(-1);
+  assert.deepEqual(targets.slice(0, 2).map(([window, , peer]) => [window, peer]),
+    panels.map(panel => [panel, panel]));
+  assert.equal(targets.length, 3);
+  assert.equal(targets[2][0], menu);
+  assert.equal(targets[2][2], panels[0]);
+  assert.deepEqual(targets[2][1], [3, 3, 8000, 12, 0xf3f3f3, 72]);
+  assert.equal(find(menu, 'shell-applications').style.backgroundColor, 'transparent');
+  menu.close();
+  assert.equal(attempts.at(-1).length, 2);
+  assert.ok(panels.every(panel => !panel.closed));
+  const reopened = f.shell.showApplications(2);
+  f.flushFrames();
+  assert.notEqual(reopened, menu);
+  assert.equal(attempts.at(-1)[2][2], panels[1]);
+  installThemeCatalog(BUILTIN_THEME_CATALOG);
+});
+
+scenario('cumulative retirement repaints each target without repeating the same material diagnostic', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 };
+  installThemeCatalog(optional);
+  try {
+    assert.equal(f.shell.selectTheme('modern'), true);
+    const menu = f.shell.showApplications(1);
+    f.flushFrames();
+    const panels = [f.surface('panel', 1), f.surface('panel', 2)];
+    const views = [...panels.map(panel => find(panel, 'shell-panel')), find(menu, 'shell-applications')];
+    const owners = [...panels, menu];
+    assert.deepEqual(views.map(view => view.style.backgroundColor), ['transparent', 'transparent', 'transparent']);
+    const callback = f.native.onBackdropStatusChanged, calls = f.calls.length, created = f.created.length;
+    const preferences = JSON.parse(JSON.stringify(f.saved.snapshot));
+    const focus = menu.document.activeElement;
+    const message = 'Shell taskbar backdrop retired; solid material required';
+    f.state.materialMessage = message;
+    f.expectedWarnings.push('[shell] ' + message);
+    for (const [mask, colors] of [
+      [1, ['#f3f3f3', 'transparent', 'transparent']],
+      [3, ['#f3f3f3', '#f3f3f3', 'transparent']],
+      [7, ['#f3f3f3', '#f3f3f3', '#f3f3f3']],
+    ]) {
+      f.state.retiredMask = mask;
+      callback();
+      assert.deepEqual(views.map(view => view.style.backgroundColor), colors,
+        'newly retired ordinal immediately repaints despite the unchanged diagnostic: mask ' + mask);
+      const rendered = owners.map(owner => owner.document.body.__vnode);
+      callback();
+      assert.ok(owners.every((owner, index) => owner.document.body.__vnode === rendered[index]),
+        'an identical retirement notification does not repaint again');
+      assert.deepEqual(f.warnings, f.expectedWarnings, 'same message is reported only once');
+      assert.deepEqual(f.calls.slice(calls), [['previous-backdrop']],
+        'recipient-only changes preserve the previous callback message-change contract and admit no actions');
+      assert.equal(f.created.length, created);
+      assert.equal(menu.closed, false);
+      assert.equal(menu.document.activeElement, focus);
+      assert.deepEqual(f.saved.snapshot, preferences);
+    }
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+}, ({ native, state, calls }) => {
+  const publish = native.configureAppearance;
+  native.configureAppearance = (...args) => { calls.push(['appearance']); return publish(...args); };
+  state.materialMessage = '';
+  state.retiredMask = 0;
+  native.backdropError = () => state.materialMessage;
+  native.shellBackdropRetired = () => state.retiredMask;
+  native.onBackdropStatusChanged = () => calls.push(['previous-backdrop']);
+});
+
+function placementFixture({ native, state, calls }) {
+  Object.assign(state.windows[0], { placement: 'floating', placementPending: false,
+    placementCapabilities: 3, placementMessage: '' });
+  native.openWindowMenu = (id, menu) => { calls.push(['open-window-menu', id, menu]); return 41; };
+  native.closeWindowMenu = epoch => calls.push(['close-window-menu', epoch]);
+  native.tileWindow = (id, side, epoch) => { calls.push(['place', id, side, epoch]); return { admitted: true }; };
+  native.restoreFloatingWindow = (id, epoch) => { calls.push(['place', id, 'floating', epoch]); return { admitted: true }; };
+}
+
+function cascadeFixture(options) {
+  placementFixture(options);
+  options.state.windows[0].cascadeSupported = true;
+  options.native.cascadeWindows = (id, epoch) => {
+    options.calls.push(['cascade', id, epoch]);
+    return { admitted: true };
+  };
+}
+
+scenario('cascade is a single ordinary-menu admission without activation or preference changes', f => {
+  const preferences = JSON.stringify(f.saved.snapshot);
+  const menu = f.shell.showWindowActions(1, 10);
+  const node = find(menu, 'shell-window-cascade'), held = callback(node, 'click');
+  click(node); held(event('click', { currentTarget: node }));
+  assert.deepEqual(f.calls.filter(call => ['cascade', 'place', 'activate'].includes(call[0])), [['cascade', 10, 41]]);
+  assert.equal(menu.closed, true);
+  assert.equal(JSON.stringify(f.saved.snapshot), preferences);
+  const replacement = f.shell.showWindowActions(1, 10);
+  held(event('click', { currentTarget: node }));
+  assert.equal(replacement.closed, false);
+  find(replacement, 'shell-window-cascade').focus(); key(replacement, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'cascade').length, 2);
+}, cascadeFixture);
+
+scenario('old v3/v4 cascade capability is explicitly false despite the new API and preserves old commands', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  assert.equal(menu.document.getElementById('shell-window-cascade'), null);
+  click(find(menu, 'shell-window-tile-left'));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 41]]);
+  assert.equal(f.calls.some(call => call[0] === 'cascade'), false);
+}, options => { cascadeFixture(options); options.state.windows[0].cascadeSupported = false; });
+
+scenario('cascade capability does not leak into the caption layout-only picker', f => {
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  assert.equal(menu.document.getElementById('shell-window-cascade'), null);
+  assert.ok(menu.document.getElementById('shell-window-tile-left'));
+}, options => { pickerFixture(options); options.state.windows[0].cascadeSupported = true; });
+
+scenario('cascade denial and unknown admission report once and cannot replay a retained gesture', f => {
+  for (const failure of [new Error('Client size limits do not fit'), null]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    f.native.cascadeWindows = () => {
+      f.calls.push(['cascade-attempt']);
+      if (failure) throw failure;
+      return { admitted: true, affected: 3 };
+    };
+    const node = find(menu, 'shell-window-cascade'), held = callback(node, 'click');
+    click(node); held(event('click', { currentTarget: node }));
+    assert.equal(menu.closed, false);
+    assert.match(f.shell.getState().error, failure ? /Client size limits/ : /outcome is unknown/);
+    assert.equal(find(menu, 'shell-window-cascade').tabIndex, -1);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    key(menu, 'Escape');
+  }
+  assert.equal(f.calls.filter(call => call[0] === 'cascade-attempt').length, 2);
+}, cascadeFixture);
+
+scenario('cascade rechecks target identity, workspace and provider capability before submission', f => {
+  for (const change of [
+    () => { f.state.windows[0].appId = 'replacement'; },
+    () => { f.state.workspaces[0].active = false; f.state.workspaces[1].active = true; },
+    () => { f.state.windows[0].cascadeSupported = false; },
+  ]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    change();
+    click(find(menu, 'shell-window-cascade'));
+    assert.ok(f.shell.getState().error);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.equal(f.calls.some(call => call[0] === 'cascade'), false);
+    key(menu, 'Escape');
+    delete f.state.windows[0].appId;
+    f.state.windows[0].cascadeSupported = true;
+    f.state.workspaces[0].active = true; f.state.workspaces[1].active = false;
+    f.native.onWindowsChanged();
+  }
+}, cascadeFixture);
+
+function arrangementFixture(options) {
+  cascadeFixture(options);
+  options.state.windows[0].arrangementSupported = true;
+  options.native.arrangeWindows = (id, direction, epoch) => {
+    options.calls.push(['arrange', id, direction, epoch]);
+    return { admitted: true };
+  };
+}
+
+scenario('both traditional arrangements admit exactly once and reject retained old callbacks', f => {
+  const preferences = JSON.stringify(f.saved.snapshot);
+  for (const direction of ['horizontal', 'vertical']) {
+    const menu = f.shell.showWindowActions(1, 10);
+    const node = find(menu, 'shell-window-tile-' + direction), held = callback(node, 'click');
+    if (direction === 'horizontal') click(node);
+    else { node.focus(); key(menu, 'Enter'); }
+    held(event('click', { currentTarget: node }));
+    assert.equal(menu.closed, true);
+    const replacement = f.shell.showWindowActions(1, 10);
+    held(event('click', { currentTarget: node }));
+    assert.equal(replacement.closed, false);
+    key(replacement, 'Escape');
+  }
+  assert.deepEqual(f.calls.filter(call => ['arrange', 'place', 'cascade', 'activate'].includes(call[0])),
+    [['arrange', 10, 'horizontal', 41], ['arrange', 10, 'vertical', 41]]);
+  assert.equal(JSON.stringify(f.saved.snapshot), preferences);
+}, arrangementFixture);
+
+scenario('v3 v4 v5 without the new capability hide both arrangements but retain v5 Cascade', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  for (const direction of ['horizontal', 'vertical'])
+    assert.equal(menu.document.getElementById('shell-window-tile-' + direction), null);
+  click(find(menu, 'shell-window-cascade'));
+  assert.deepEqual(f.calls.filter(call => ['arrange', 'cascade'].includes(call[0])), [['cascade', 10, 41]]);
+}, options => { arrangementFixture(options); options.state.windows[0].arrangementSupported = false; });
+
+scenario('new arrangement capability never adds batch commands to Maxhover layoutOnly', f => {
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  for (const id of ['cascade', 'tile-horizontal', 'tile-vertical'])
+    assert.equal(menu.document.getElementById('shell-window-' + id), null);
+  assert.ok(menu.document.getElementById('shell-window-tile-left'));
+}, options => { pickerFixture(options); options.state.windows[0].arrangementSupported = true; });
+
+scenario('arrangement denial or unknown result is visible and cannot replay through either batch command', f => {
+  for (const failure of [new Error('Client size limits do not fit'), null]) {
+    f.native.arrangeWindows = () => {
+      f.calls.push(['arrange-attempt']);
+      if (failure) throw failure;
+      return { admitted: true, affectedCount: 3 };
+    };
+    const menu = f.shell.showWindowActions(1, 10);
+    const node = find(menu, 'shell-window-tile-horizontal'), held = callback(node, 'click');
+    click(node); held(event('click', { currentTarget: node }));
+    click(find(menu, 'shell-window-tile-vertical'));
+    assert.equal(menu.closed, false);
+    assert.match(f.shell.getState().error, failure ? /Client size limits/ : /outcome is unknown/);
+    for (const direction of ['horizontal', 'vertical'])
+      assert.equal(find(menu, 'shell-window-tile-' + direction).tabIndex, -1);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    key(menu, 'Escape');
+  }
+  assert.equal(f.calls.filter(call => call[0] === 'arrange-attempt').length, 2);
+}, arrangementFixture);
+
+scenario('arrangement rechecks target identity workspace and capability before dispatch', f => {
+  for (const change of [
+    () => { f.state.windows[0].appId = 'replacement'; },
+    () => { f.state.workspaces[0].active = false; f.state.workspaces[1].active = true; },
+    () => { f.state.windows[0].arrangementSupported = false; },
+    () => { f.state.windows[0].placementPending = true; },
+  ]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    change();
+    click(find(menu, 'shell-window-tile-vertical'));
+    assert.ok(f.shell.getState().error);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.equal(f.calls.some(call => call[0] === 'arrange'), false);
+    key(menu, 'Escape');
+    delete f.state.windows[0].appId;
+    f.state.windows[0].arrangementSupported = true;
+    f.state.windows[0].placementPending = false;
+    f.state.workspaces[0].active = true; f.state.workspaces[1].active = false;
+    f.native.onWindowsChanged();
+  }
+}, arrangementFixture);
+
+scenario('both arrangement commands stay in the shared short-menu focus and scroll surface', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  const viewport = find(menu, 'shell-window-actions-viewport');
+  viewport.offsetHeight = 100; viewport.scrollHeight = 900;
+  const ids = [];
+  menu.document.body.focus();
+  for (let i = 0; i < 30; i++) { key(menu, 'Tab'); ids.push(menu.document.activeElement?.id); }
+  for (const direction of ['horizontal', 'vertical']) {
+    const id = 'shell-window-tile-' + direction;
+    assert.ok(ids.includes(id));
+    assert.ok(descendants(viewport).includes(find(menu, id)));
+  }
+  const focus = menu.document.activeElement;
+  key(menu, 'Tab', { shiftKey: true });
+  assert.notEqual(menu.document.activeElement, focus);
+  assert.ok(find(menu, 'shell-window-actions-viewport-scrollbar'));
+}, arrangementFixture);
+
+function pickerFixture(options) {
+  placementFixture(options);
+  const { native, state, calls } = options;
+  native.layoutPickerCapability = () => state.pickerSupported !== false;
+  native.enableLayoutPicker = enabled => { calls.push(['picker-enabled', enabled]); state.offer = null; };
+  native.layoutPickerOffer = () => state.offer;
+  native.openLayoutPicker = (token, menu) => { calls.push(['picker-open', token, menu]); return 42; };
+  native.dismissLayoutPicker = token => { calls.push(['picker-dismiss', token]); if (state.offer?.token === token) state.offer = null; };
+  state.previousPickerObserver = () => {
+    calls.push(['previous-picker']);
+    if (state.previousPickerThrows) throw new Error('fixture picker observer failure');
+  };
+  native.onLayoutPickerChanged = state.previousPickerObserver;
+}
+
+function systemMenuFixture(options) {
+  arrangementFixture(options);
+  const { native, state, calls } = options;
+  native.systemMenuCapability = () => state.systemMenuSupported !== false;
+  native.enableSystemMenuRequests = enabled => {
+    calls.push(['system-menu-enabled', enabled]);
+    state.menuRequest = null;
+  };
+  native.takeSystemMenuRequest = () => {
+    calls.push(['take-system-menu']);
+    const request = state.menuRequest;
+    state.menuRequest = null;
+    return request;
+  };
+  state.previousSystemMenuObserver = () => {
+    calls.push(['previous-system-menu']);
+    if (state.previousSystemMenuThrows) throw new Error('fixture system-menu observer failure');
+  };
+  native.onSystemMenuRequested = state.previousSystemMenuObserver;
+}
+function requestSystemMenu(f, serial = 1, extra = {}) {
+  f.state.menuRequest = { serial, windowId: 10, origin: 'title', x: 350, y: 40, width: 1, height: 1,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1', ...extra };
+  f.native.onSystemMenuRequested();
+  return f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-actions'));
+}
+scenario('native system menu uses the ordinary registered menu once, retains batch commands and retires action callbacks', f => {
+  const preferences = JSON.stringify(f.saved.snapshot);
+  const menu = requestSystemMenu(f);
+  assert.ok(menu);
+  assert.equal(menu.document.getElementById('shell-layout-picker'), null);
+  assert.ok(menu.document.getElementById('shell-window-cascade'));
+  assert.ok(menu.document.getElementById('shell-window-tile-horizontal'));
+  assert.ok(f.calls.some(call => call[0] === 'open-window-menu' && call[1] === 10));
+  assert.deepEqual(menu.options.anchors, ['top', 'left']);
+  assert.equal(menu.options.margins.left, 350);
+  const count = f.created.length;
+  f.native.onSystemMenuRequested();
+  requestSystemMenu(f, 1);
+  requestSystemMenu(f, 2, { origin: 'keyboard' });
+  assert.equal(menu.closed, false);
+  assert.equal(f.created.length, count, 'duplicate or same-target request does not toggle or replace the live menu');
+  const left = find(menu, 'shell-window-tile-left'), held = callback(left, 'click');
+  click(left); held(event('click', { currentTarget: left }));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 41]]);
+  assert.equal(menu.closed, true);
+  f.native.onSystemMenuRequested();
+  assert.equal(f.created.length, count, 'a consumed request cannot reopen after action or close');
+  assert.equal(JSON.stringify(f.saved.snapshot), preferences);
+}, systemMenuFixture);
+
+scenario('system-menu opt-in is stable across refresh and all Windows presets; Mac presets remain neutral', f => {
+  for (const id of ['xp', 'server2003', 'modern']) {
+    assert.equal(f.shell.selectTheme(id), true);
+    assert.deepEqual(f.calls.filter(call => call[0] === 'system-menu-enabled').at(-1), ['system-menu-enabled', true]);
+    const start = f.calls.length;
+    f.shell.refresh(true); f.shell.refresh(); f.native.onWindowsChanged();
+    assert.equal(f.calls.slice(start).some(call => call[0] === 'system-menu-enabled'), false);
+  }
+  const menu = requestSystemMenu(f);
+  for (const id of ['aqua', 'lion', 'bigsur']) {
+    assert.equal(f.shell.selectTheme(id), true);
+    assert.equal(menu.closed, true);
+    assert.deepEqual(f.calls.filter(call => call[0] === 'system-menu-enabled').at(-1), ['system-menu-enabled', false]);
+    assert.equal(requestSystemMenu(f, 5), undefined);
+  }
+}, systemMenuFixture);
+
+scenario('old provider receives neither system-menu subscription nor unsupported requests, ordinary taskbar actions survive', f => {
+  assert.equal(f.native.onSystemMenuRequested, f.state.previousSystemMenuObserver);
+  f.shell.selectTheme('xp'); f.shell.selectTheme('modern');
+  assert.equal(f.calls.some(call => call[0] === 'system-menu-enabled'), false);
+  const menu = f.shell.showWindowActions(1, 10);
+  click(find(menu, 'shell-window-cascade'));
+  assert.equal(f.calls.filter(call => call[0] === 'cascade').length, 1);
+}, options => { systemMenuFixture(options); options.state.systemMenuSupported = false; });
+
+scenario('system-menu current-start scope and previous observer survive null, disabled, open and restarted notifications', f => {
+  f.native.onSystemMenuRequested();
+  const menu = requestSystemMenu(f);
+  const retired = f.native.onSystemMenuRequested;
+  f.native.onSystemMenuRequested();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-system-menu').length, 3);
+  const error = f.shell.getState().error;
+  f.state.previousSystemMenuThrows = true;
+  f.native.onSystemMenuRequested();
+  f.expectedWarnings.push('[shell] Previous system-menu observer failed: Error: fixture system-menu observer failure');
+  assert.equal(f.shell.getState().error, error);
+  f.state.previousSystemMenuThrows = false;
+  f.shell.selectTheme('aqua');
+  f.native.onSystemMenuRequested();
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.filter(call => call[0] === 'previous-system-menu').length, 5);
+  f.shell.stop();
+  assert.equal(f.native.onSystemMenuRequested, f.state.previousSystemMenuObserver);
+  f.shell.start(); f.shell.selectTheme('modern');
+  f.state.menuRequest = { serial: 8, windowId: 10, origin: 'keyboard', x: 1, y: 1, width: 1, height: 1,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1' };
+  const count = f.calls.length;
+  retired();
+  assert.equal(f.calls.length, count);
+  f.native.onSystemMenuRequested();
+  assert.ok(f.created.some(window => !window.closed && window.document.getElementById('shell-window-actions')));
+}, systemMenuFixture);
+
+scenario('system-menu consumption rechecks target workspace, state and live output before opening', f => {
+  for (const invalid of [{ windowId: 999 }, { outputX: -100 }, { outputWidth: 1 }, { origin: 'picker' }])
+    assert.equal(requestSystemMenu(f, ++f.state.requestSerial, invalid), undefined);
+  for (const invalid of [{ minimized: true }, { fullscreen: true }, { placementPending: true }, { workspaceId: 9 }]) {
+    const previous = { ...f.state.windows[0] };
+    Object.assign(f.state.windows[0], invalid);
+    assert.equal(requestSystemMenu(f, ++f.state.requestSerial), undefined);
+    f.state.windows[0] = previous;
+  }
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+}, options => { systemMenuFixture(options); options.state.requestSerial = 0; });
+
+scenario('system-menu output projection rejects ambiguous mirrored geometry with a visible diagnostic', f => {
+  f.state.outputs[1] = { ...f.state.outputs[0], id: 2 };
+  f.shell.refresh(true);
+  assert.equal(requestSystemMenu(f), undefined);
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+  assert.match(f.shell.getState().error, /output projection is ambiguous/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, systemMenuFixture);
+
+test('system-menu schema is strict optional, Windows-only in byte-equivalent builtin/fallback catalogs and clamps its own popup', () => {
+  const builtin = JSON.parse(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url)));
+  const fallback = JSON.parse(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url)));
+  assert.deepEqual(builtin, fallback);
+  for (const theme of builtin.themes)
+    assert.equal(theme.window.systemMenu === true, ['xp', 'server2003', 'modern'].includes(theme.id));
+  const legacy = JSON.parse(JSON.stringify(getDesktopTheme('modern')));
+  delete legacy.window.systemMenu;
+  assert.doesNotThrow(() => validateTheme(legacy));
+  for (const value of [true, false]) assert.doesNotThrow(() => validateTheme({
+    ...legacy, window: { ...legacy.window, systemMenu: value },
+  }));
+  for (const value of [0, 1, 'true', null, {}]) assert.throws(() => validateTheme({
+    ...legacy, window: { ...legacy.window, systemMenu: value },
+  }));
+  for (const [width, height, x, y] of [[1280, 720, 1200, 700], [320, 241, 310, 230], [1, 1, -8, -8]]) {
+    const result = systemMenuPlacement(legacy, { x, y, width: 1, height: 1,
+      outputX: -2000, outputY: -400, outputWidth: width, outputHeight: height });
+    assert.ok(result.width <= width && result.height <= height);
+    assert.ok(result.margins.left >= 0 && result.margins.left + result.width <= width);
+    assert.ok(result.margins.top >= 0 && result.margins.top + result.height <= height);
+  }
+});
+function offerPicker(f, token = 1, extra = {}) {
+  f.state.offer = { token, windowId: 10, x: 1200, y: 0, width: 46, height: 33,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1', ...extra };
+  f.native.onLayoutPickerChanged();
+  return f.created.findLast(window => !window.closed && window.document.getElementById('shell-layout-picker'));
+}
+scenario('caption picker uses explicit theme opt-in and a native grant, admits once and retires held callbacks', f => {
+  assert.equal(f.shell.selectTheme('xp'), true);
+  assert.deepEqual(f.calls.filter(call => call[0] === 'picker-enabled').at(-1), ['picker-enabled', false]);
+  assert.equal(f.shell.selectTheme('modern'), true);
+  const menu = offerPicker(f);
+  assert.ok(menu);
+  const registered = f.calls.length;
+  f.shell.refresh(true);
+  f.shell.refresh();
+  f.native.onWindowsChanged();
+  assert.equal(menu.closed, false, 'ordinary refresh cannot retire the active picker');
+  assert.equal(f.calls.slice(registered).some(call => call[0] === 'picker-enabled'), false);
+  assert.deepEqual(menu.options.anchors, ['top', 'left']);
+  assert.deepEqual(menu.options.margins, { left: 966, top: 33 });
+  assert.equal(menu.document.getElementById('shell-window-maximize'), null);
+  const left = find(menu, 'shell-window-tile-left'), held = callback(left, 'click');
+  click(left);
+  held(event('click', { currentTarget: left }));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 42]]);
+  assert.equal(menu.closed, true);
+  assert.ok(f.calls.some(call => call[0] === 'picker-dismiss' && call[1] === 1));
+  assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+}, pickerFixture);
+
+scenario('caption picker old-provider capability hides entry without issuing v4 requests', f => {
+  f.shell.selectTheme('modern');
+  assert.equal(f.calls.some(call => call[0] === 'picker-enabled'), false);
+  assert.equal(offerPicker(f), undefined);
+  const menu = f.shell.showWindowActions(1, 10);
+  click(find(menu, 'shell-window-tile-left'));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 41]]);
+}, options => { pickerFixture(options); options.state.pickerSupported = false; });
+
+scenario('caption picker revocation, replacement, Escape, disabled Restore and retheme preserve scopes', f => {
+  f.shell.selectTheme('modern');
+  let menu = offerPicker(f);
+  const held = callback(find(menu, 'shell-window-tile-left'), 'click');
+  assert.equal(find(menu, 'shell-window-restore-floating').tabIndex, -1);
+  key(menu, 'Tab');
+  assert.equal(menu.document.activeElement.id, 'shell-window-tile-left');
+  key(menu, 'Tab', { shiftKey: true });
+  key(menu, 'Escape');
+  assert.equal(menu.closed, true);
+  menu = offerPicker(f, 2);
+  held(event('click'));
+  assert.equal(menu.closed, false);
+  f.state.offer = null; f.native.onLayoutPickerChanged();
+  assert.equal(menu.closed, true);
+  menu = offerPicker(f, 3);
+  f.shell.selectTheme('xp');
+  assert.equal(menu.closed, true);
+  assert.ok(!f.calls.some(call => call[0] === 'place'));
+  f.native.onLayoutPickerChanged();
+  assert.ok(f.created.every(window => window.closed || !window.document.getElementById('shell-layout-picker')));
+}, pickerFixture);
+
+scenario('caption picker failed or unknown admission is visible, closes and never retries', f => {
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  f.native.tileWindow = () => { f.calls.push(['unknown']); throw new Error('Transport outcome is unknown'); };
+  const left = find(menu, 'shell-window-tile-left'), held = callback(left, 'click');
+  click(left); held(event('click', { currentTarget: left }));
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.filter(call => call[0] === 'unknown').length, 1);
+  assert.match(f.shell.getState().error, /Transport outcome is unknown/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, pickerFixture);
+
+scenario('caption picker retained callbacks from a stopped owner cannot process a restarted Shell offer', f => {
+  const retired = f.native.onLayoutPickerChanged;
+  f.shell.stop();
+  f.shell.start();
+  f.shell.selectTheme('modern');
+  f.state.offer = { token: 42, windowId: 10, x: 1200, y: 0, width: 46, height: 33,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1' };
+  const count = f.calls.length;
+  retired();
+  assert.equal(f.calls.length, count);
+  assert.ok(!f.created.some(window => !window.closed && window.document.getElementById('shell-layout-picker')));
+  f.native.onLayoutPickerChanged();
+  assert.ok(f.created.some(window => !window.closed && window.document.getElementById('shell-layout-picker')));
+}, pickerFixture);
+
+scenario('caption picker chains current prior observers for null, open and disabled notifications without consuming business errors', f => {
+  f.state.offer = null; f.native.onLayoutPickerChanged();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-picker').length, 1);
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  f.native.onLayoutPickerChanged();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-picker').length, 3);
+  const error = f.shell.getState().error;
+  f.state.previousPickerThrows = true;
+  f.native.onLayoutPickerChanged();
+  f.expectedWarnings.push('[shell] Previous caption picker observer failed: Error: fixture picker observer failure');
+  assert.equal(menu.closed, false);
+  assert.equal(f.shell.getState().error, error);
+  f.state.previousPickerThrows = false;
+  f.shell.selectTheme('xp');
+  f.native.onLayoutPickerChanged();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-picker').length, 5);
+  f.shell.stop();
+  assert.equal(f.native.onLayoutPickerChanged, f.state.previousPickerObserver);
+}, pickerFixture);
+
+test('caption picker projection clamps output-local logical anchors including negative origins and tiny outputs', () => {
+  const theme = getDesktopTheme('modern');
+  for (const [width, height, x, y] of [[1280, 720, 1260, 0], [200, 140, 190, 130], [1, 1, -8, -8]]) {
+    const result = layoutPickerPlacement(theme, { x, y, width: 46, height: 33,
+      outputX: -2000, outputY: -400, outputWidth: width, outputHeight: height });
+    assert.ok(result.width <= width && result.height <= height);
+    assert.ok(result.margins.left >= 0 && result.margins.left + result.width <= width);
+    assert.ok(result.margins.top >= 0 && result.margins.top + result.height <= height);
+  }
+  const legacy = JSON.parse(JSON.stringify(theme));
+  delete legacy.window.layoutPicker;
+  assert.doesNotThrow(() => validateTheme(legacy));
+  for (const value of [0, 1, 'true', null]) {
+    const invalid = JSON.parse(JSON.stringify(legacy));
+    invalid.window.layoutPicker = value;
+    assert.throws(() => validateTheme(invalid));
+  }
+});
+
+scenario('window placement commands use an acknowledged live menu and never activate before admission', f => {
+  const configuration = JSON.stringify(f.saved.snapshot);
+  const menu = f.shell.showWindowActions(1, 10);
+  for (const id of ['tile-left', 'tile-right', 'restore-floating'])
+    assert.ok(menu.document.getElementById('shell-window-' + id), id);
+  click(find(menu, 'shell-window-tile-left'));
+  assert.deepEqual(f.calls.filter(call => ['place', 'activate'].includes(call[0])), [['place', 10, 'left', 41]]);
+  assert.equal(menu.closed, true);
+  assert.equal(JSON.stringify(f.saved.snapshot), configuration);
+}, placementFixture);
+
+scenario('window placement capability is actual provider state, not function presence', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  assert.equal(menu.document.getElementById('shell-window-tile-left'), null);
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+  click(find(menu, 'shell-window-close'));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'close-window'), [['close-window', 10]]);
+}, options => {
+  placementFixture(options);
+  for (const key of ['placement', 'placementPending', 'placementCapabilities', 'placementMessage'])
+    delete options.state.windows[0][key];
+});
+
+scenario('denied or transport-unknown placement retains the menu and reports no rollback', f => {
+  for (const failure of [new Error('Input is grabbed'), null]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    f.native.tileWindow = () => { if (failure) throw failure; };
+    click(find(menu, 'shell-window-tile-left'));
+    assert.equal(menu.closed, false);
+    assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+    assert.match(f.shell.getState().error, failure ? /Input is grabbed/ : /outcome is unknown/);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    key(menu, 'Escape');
+  }
+}, placementFixture);
+
+scenario('window placement rechecks workspace and retired callbacks do not admit requests', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  const node = find(menu, 'shell-window-tile-left'), retired = callback(node, 'click');
+  f.state.workspaces[0].active = false; f.state.workspaces[1].active = true;
+  click(node);
+  assert.match(f.shell.getState().error, /workspace is no longer current/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(menu.closed, false);
+  key(menu, 'Escape');
+  f.state.workspaces[0].active = true; f.state.workspaces[1].active = false;
+  f.native.onWindowsChanged();
+  const replacement = f.shell.showWindowActions(1, 10);
+  retired(event('click', { currentTarget: node }));
+  assert.equal(replacement.closed, false);
+  assert.equal(f.calls.some(call => call[0] === 'place'), false);
+}, placementFixture);
+
+scenario('held window rows retain identity when capability arrives, state changes, or the menu rethemes', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  const close = find(menu, 'shell-window-close');
+  press(close);
+  Object.assign(f.state.windows[0], { placement: 'floating', placementPending: false, placementCapabilities: 3 });
+  f.native.onWindowsChanged();
+  assert.equal(find(menu, 'shell-window-close'), close);
+  domEvent(close, 'click');
+  assert.deepEqual(f.calls.filter(call => call[0] === 'close-window'), [['close-window', 10]]);
+  const next = f.shell.showWindowActions(1, 10), left = find(next, 'shell-window-tile-left');
+  press(left);
+  f.state.windows[0].placementPending = true;
+  f.native.onWindowsChanged();
+  assert.equal(find(next, 'shell-window-tile-left'), left);
+  domEvent(left, 'click');
+  assert.equal(f.calls.some(call => call[0] === 'place'), false);
+  assert.equal(next.closed, false);
+  f.state.windows[0].placementPending = false;
+  f.native.onWindowsChanged();
+  press(left);
+  f.shell.selectTheme('xp');
+  domEvent(left, 'click');
+  assert.equal(f.calls.filter(call => call[0] === 'place').length, 0);
+  assert.equal(next.closed, true, 'existing theme changes retire rather than repurpose a held menu');
+  const replacement = f.shell.showWindowActions(1, 10);
+  find(replacement, 'shell-window-tile-left').focus(); key(replacement, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'place').length, 1);
+}, options => {
+  placementFixture(options);
+  delete options.state.windows[0].placement;
+});
+
+scenario('fullscreen and pending layout disable placement while preserving old commands and Close menu', f => {
+  f.state.windows[0].fullscreen = true;
+  f.native.onWindowsChanged();
+  const menu = f.shell.showWindowActions(1, 10);
+  for (const id of ['tile-left', 'tile-right', 'restore-floating']) {
+    const node = find(menu, 'shell-window-' + id);
+    assert.equal(node.getAttribute('aria-disabled'), 'true');
+    assert.equal(node.tabIndex, -1);
+    click(node); node.focus(); key(menu, 'Enter');
+  }
+  assert.equal(f.calls.some(call => call[0] === 'place'), false);
+  assert.equal(menu.closed, false);
+  find(menu, 'shell-window-menu-close').focus(); key(menu, 'Enter');
+  assert.equal(menu.closed, true);
+}, placementFixture);
+
+test('Start display profile: real metadata or explicit unavailable labels do not replace brand defaults, search or menu authority', async () => {
+  const name = '\u7231\u4e3d\u4e1d \ud83d\udc30 ' + '\u957f\u540d'.repeat(20);
+  const available = parseLocalUserProfile('alice:x:1000:1000:' + name + ',Unused:/not-returned:/not-returned\n', 1000);
+  for (const displayProfile of [undefined, available, parseLocalUserProfile('', 1000), parseLocalUserProfile('', undefined)]) {
+    const f = fixture(context => {
+      sourcePrograms(context);
+      context.state.displayProfile = displayProfile;
+      if (displayProfile?.error)
+        context.expectedWarnings.push('[shell] Local display profile unavailable: ' + displayProfile.error);
+    });
+    try {
+      for (const theme of ['xp', 'server2003']) {
+        f.shell.selectTheme(theme);
+        const menu = f.shell.showApplications(1), header = find(menu, 'shell-start-profile');
+        const search = find(menu, 'shell-app-search');
+        const expectedName = !displayProfile ? 'PollyDesktop' : !displayProfile.error ? name :
+          displayProfile.uid === null ? 'User unavailable' : 'User ' + displayProfile.uid;
+        if (displayProfile) {
+          assert.equal(find(menu, 'shell-start-user-name').getAttribute('aria-label'), expectedName);
+          assert.equal(text(find(menu, 'shell-start-user-detail')).trim(), displayProfile.error ?
+            'Local name unavailable' : 'alice | UID 1000');
+          assert.equal(find(menu, 'shell-start-user').tabIndex, -1, 'profile is not an account management command');
+        } else {
+          assert.equal(text(header).trim(), expectedName, 'legacy Shell caller retains original brand');
+          assert.equal(menu.document.getElementById('shell-start-user'), null);
+        }
+        search.focus(); domEvent(search, 'textinput', { data: 'Editor' });
+        assert.ok(find(menu, 'shell-app-a-b-editor.desktop'));
+        click(find(menu, 'shell-app-pin-a-b-editor.desktop'));
+        assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['a-b-editor.desktop']);
+        if (theme === 'xp') {
+          click(find(menu, 'shell-app-launcher-a-b-editor.desktop'));
+          assert.deepEqual(f.saved.snapshot.launchers.applications, ['a-b-editor.desktop']);
+        }
+        for (const timer of [...f.timers]) timer();
+        assert.ok(find(menu, 'shell-start-profile') === header && find(menu, 'shell-app-search') === search,
+          'clock and pin repaint retain the original header and root input');
+        search.focus(); key(menu, 'a', { ctrlKey: true }); key(menu, 'Backspace');
+        find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+        click(find(menu, 'shell-program-categories')); f.flushFrames();
+        click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+        click(find(menu, programFolderId('a'))); f.flushFrames();
+        const launches = f.calls.filter(call => call[0] === 'launch').length;
+        click(find(menu, 'shell-program-a-b-editor.desktop'));
+        assert.equal(f.calls.filter(call => call[0] === 'launch').length, launches + 1);
+        assert.equal(menu.closed, true, 'original launch policy closes only the live menu');
+        assert.equal(f.shell.getState().error, '', 'display diagnostics do not overwrite service/action status');
+        f.saved.update({ desktop: { version: 1, shortcuts: [] }, launchers: { version: 1, applications: [] } });
+      }
+      const menu = f.shell.showApplications(1), reader = f.native.applicationFiles;
+      f.native.applicationFiles = () => { throw new Error('fixture independent catalog failure'); };
+      click(find(menu, 'shell-app-refresh'));
+      assert.match(f.shell.getState().error, /independent catalog failure/);
+      f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+      f.native.applicationFiles = reader;
+      click(find(menu, 'shell-app-refresh'));
+      assert.equal(f.warnings.filter(value => value.startsWith('[shell] Local display profile unavailable:')).length,
+        displayProfile?.error ? 1 : 0, 'open/clock/retheme never repeats profile diagnostics');
+      await Promise.resolve();
+    } finally { f.done(); }
+  }
+  const theme = getDesktopTheme('xp'), noop = () => {};
+  const tree = startMenuView({ ...theme, layout: { ...theme.layout, menuHeaderHeight: 0 } },
+    [], '', noop, noop, noop, noop, '', null, null, null, null, null, null, available);
+  const flatten = node => [node, ...(node.children ?? []).flatMap(flatten)];
+  assert.equal(flatten(tree).some(node => node.props?.id === 'shell-start-profile'), false,
+    'explicit header-height zero does not manufacture a profile area');
+});
 
 test('menu-bar alpha uses existing transparent surface creation and retires replaced callbacks', () => {
   const f = fixture(({ native, state }) => {
@@ -314,7 +1163,8 @@ test('menu-bar alpha uses existing transparent surface creation and retires repl
   });
   try {
     const select = id => { assert.equal(f.state.settingsHandlers.select(id), true); return f.surface('panel'); };
-    assert.equal(f.surface('panel').options.transparent, undefined, 'Taskbar stays opaque even with explicit zero');
+    assert.equal(f.surface('panel').options.transparent, true,
+      'Modern regional material, not unrelated menu-bar opacity, opts this taskbar into an alpha buffer');
     for (const id of ['aqua', 'lion']) {
       assert.equal(select(id).options.transparent, undefined, 'Unchanged menu bar does not add a surface option');
       assert.equal(f.surface('dock').options.transparent, true, 'Existing transparent Dock is unchanged');
@@ -390,6 +1240,10 @@ scenario('Menu scrollbar: shared overlay follows wheel/focus, retains capture on
   }
   f.flushFrames();
   assert.equal(track.tabIndex, 0);
+  track.focus();
+  const composingEnd = domEvent(track, 'keydown', { key: 'End', isComposing: true });
+  assert.equal(composingEnd.defaultPrevented, false);
+  assert.ok(owner.activeElement === track, 'Menu navigation must not reinterpret a composing scrollbar key');
   domEvent(list, 'wheel', { deltaY: 100000 });
   assert.equal(Number(track.getAttribute('aria-valuenow')), Number(list.scrollTop));
   assert.ok(Number(thumb.style.top) > 0);
@@ -1317,12 +2171,235 @@ scenario('Classic Programs category selection rejects a removed tag before refre
   assert.ok(find(next, 'shell-program-categories'), 'a replacement RootMenu starts with flat All Programs');
 }, categorizedPrograms);
 
+test('Programs source folders qualify exact native suffix mappings without inferring directories from IDs', () => {
+  const source = (id, path) => Object.freeze({ id, path });
+  const first = source('a-b-editor.desktop', '/arbitrary/root/a/b-editor.desktop');
+  const moved = source(first.id, '/another-root/a-b/editor.desktop');
+  const unicode = source('\u5de5\u5177-\u6587\u6863-my-editor.desktop', '/user-selected/applications/\u5de5\u5177/\u6587\u6863/my-editor.desktop');
+  const sibling = source('a-tools-helper.desktop', '/independent-root/a/tools/helper.desktop');
+  const flat = source('flat-tool.desktop', '/root-with-hyphen/flat-tool.desktop');
+  const entries = Object.freeze([first, unicode, sibling, flat]);
+  assert.equal(programSourcePath(first), 'a/b-editor.desktop');
+  assert.equal(programSourcePath(moved), 'a-b/editor.desktop', 'slash-to-dash preserves identity when a source changes folders');
+  assert.equal(programSourcePath(unicode), '\u5de5\u5177/\u6587\u6863/my-editor.desktop');
+  assert.equal(programSourcePath(flat), 'flat-tool.desktop');
+  assert.deepEqual(programFolderContents(entries).folders.map(item => item.folder), ['a', '\u5de5\u5177']);
+  assert.deepEqual(programFolderContents(entries).entries, [flat], 'a hyphenated filename is not a directory');
+  assert.deepEqual(programFolderContents(entries, 'a').folders.map(item => item.folder), ['a/tools']);
+  assert.deepEqual(programFolderContents(entries, 'a').entries, [first]);
+  assert.deepEqual(programFolderContents(entries, 'a/tools').entries, [sibling]);
+  assert.equal(programFolderContents([flat]).exists, false, 'flat qualified records alone do not create a folders entry');
+  assert.equal(programFolderContents(entries, 'absent').exists, false);
+  assert.deepEqual(programFolderContents([...entries].reverse()).folders, programFolderContents(entries).folders);
+  assert.notEqual(programFolderId('a-b'), programFolderId('a/b'));
+  assert.notEqual(programFolderId('Source folders'), programCategoryId('Source folders'));
+  assert.notEqual(programFolderId('x.desktop'), 'shell-program-source-folder-x.desktop',
+    'folder command IDs contain a slash that qualified desktop application IDs cannot contain');
+  for (const entry of [
+    source(first.id, '/apps/not/a/b-editor.desktop.extra'), source(first.id, '/apps/xa/b-editor.desktop'),
+    source(first.id, 'apps/a/b-editor.desktop'), source(first.id, '/apps/../a/b-editor.desktop'),
+    source(first.id, '/apps/./a/b-editor.desktop'), source(first.id, '/apps//a/b-editor.desktop'),
+    source(first.id, '/apps/a\\b-editor.desktop'), source(first.id, '/apps/\0/a/b-editor.desktop'),
+    source(first.id, '/apps/\ud800/a/b-editor.desktop'), source('a-.desktop', '/apps/a/.desktop'),
+    source('bundle:a-b-editor.desktop', '/apps/bundle:a/b-editor.desktop'),
+    { id: 'org.pollyui.settings' }, source('unqualified.desktop', '/apps/other.desktop'),
+  ]) assert.equal(programSourcePath(entry), null, 'unqualified paths are excluded instead of guessed');
+  const file = entry => ({ ...entry, contents: '[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\n' });
+  const final = applicationCatalog([file(moved), file(first)]);
+  assert.equal(final.length, 1);
+  assert.deepEqual(programFolderContents(final).folders.map(item => item.folder), ['a-b'],
+    'only the winning override registration supplies the folder source');
+});
+
+function sourcePrograms({ native, state }) {
+  state.windows = [];
+  state.sourceFiles = [
+    { id: 'a-b-editor.desktop', path: '/apps/a/b-editor.desktop', name: 'Editor', tags: ['Source folders'] },
+    { id: 'a-sub-view.desktop', path: '/other-root/a/sub/view.desktop', name: 'Viewer', tags: ['Utility'] },
+    { id: 'a-one.desktop', path: '/another-root/a/one.desktop', name: 'Another', tags: [] },
+    { id: 'top.desktop', path: '/custom-root/top.desktop', name: 'Top-level', tags: [] },
+    { id: 'orphan.desktop', path: '/unqualified/something-else.desktop', name: 'Unqualified source', tags: [] },
+  ];
+  native.applicationFiles = () => {
+    if (state.sourceReadFailed) throw new Error('fixture source catalog read failed');
+    return state.sourceFiles.map(entry => ({ id: entry.id, path: entry.path,
+      contents: '[Desktop Entry]\nType=Application\nName=' + entry.name + '\nExec=fixture\nCategories=' +
+        entry.tags.join(';') + ';\n' }));
+  };
+}
+function openSources(f, theme = 'server2003') {
+  f.shell.selectTheme(theme);
+  const menu = f.shell.showApplications(1);
+  find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+  return menu;
+}
+
+scenario('Programs sources: Classic and XP browse direct folders and apps, retain All apps, and return through every parent', f => {
+  f.state.sourceFiles.push(
+    { id: 'x.desktop-child.desktop', path: '/apps/x.desktop/child.desktop', name: 'Nested child', tags: [] },
+    { id: 'source-folder-x.desktop', path: '/apps/source-folder-x.desktop', name: 'Root application', tags: [] });
+  assert.equal(programSourcePath(f.state.sourceFiles.at(-2)), 'x.desktop/child.desktop');
+  assert.equal(programSourcePath(f.state.sourceFiles.at(-1)), 'source-folder-x.desktop');
+  for (const theme of ['server2003', 'xp']) {
+    const menu = openSources(f, theme), search = find(menu, 'shell-app-search');
+    assert.ok(find(menu, programFolderId('a')));
+    assert.ok(find(menu, 'shell-program-top.desktop'));
+    assert.equal(menu.document.getElementById('shell-program-a-b-editor.desktop'), null, 'root does not flatten nested sources');
+    assert.equal(menu.document.getElementById('shell-program-orphan.desktop'), null, 'unqualified source is not invented in this tree');
+    find(menu, programFolderId('a')).focus(); key(menu, 'ArrowRight'); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-a-b-editor.desktop'));
+    assert.ok(find(menu, 'shell-program-a-one.desktop'), 'different real roots merge the same relative source folder');
+    assert.ok(find(menu, programFolderId('a/sub')));
+    assert.equal(menu.document.getElementById('shell-program-a-sub-view.desktop'), null);
+    click(find(menu, programFolderId('a/sub'))); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-a-sub-view.desktop'));
+    click(find(menu, 'shell-program-pin-a-sub-view.desktop')); f.flushFrames();
+    assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['a-sub-view.desktop']);
+    assert.deepEqual(f.saved.snapshot.launchers.applications, [], 'source-tree Pin is still desktop-only');
+    key(menu, 'Escape'); f.flushFrames();
+    assert.ok(menu.document.activeElement === find(menu, programFolderId('a/sub')));
+    key(menu, 'ArrowLeft'); f.flushFrames();
+    assert.ok(menu.document.activeElement === find(menu, programFolderId('a')));
+    click(find(menu, 'shell-program-back')); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-source-folders'));
+    assert.ok(find(menu, programCategoryId('Source folders')), 'same-named tag has a separate exact metadata command');
+    key(menu, 'Escape'); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-orphan.desktop'), 'All apps retains unqualified registrations');
+    key(menu, 'Escape'); f.flushFrames();
+    assert.ok(menu.document.activeElement === find(menu, 'shell-all-programs'));
+    assert.ok(find(menu, 'shell-app-search') === search);
+    find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+    click(find(menu, 'shell-program-categories')); f.flushFrames();
+    click(find(menu, programCategoryId('Source folders'))); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-a-b-editor.desktop'), 'literal tag remains a normal category, not the directory tree');
+    click(find(menu, 'shell-program-all')); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-orphan.desktop'));
+    click(find(menu, 'shell-program-categories')); f.flushFrames();
+    click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+    const folder = find(menu, programFolderId('x.desktop'));
+    const rootApp = find(menu, 'shell-program-source-folder-x.desktop');
+    assert.ok(folder !== rootApp && folder.parentNode === rootApp.parentNode,
+      'qualified source folder and previously colliding root application coexist');
+    const beforeLaunch = f.calls.filter(call => call[0] === 'launch').length;
+    press(folder);
+    click(find(menu, 'shell-app-refresh')); f.flushFrames();
+    assert.ok(find(menu, programFolderId('x.desktop')) === folder, 'refresh retains the held directory command');
+    domEvent(folder, 'mouseup'); domEvent(folder, 'click'); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-x.desktop-child.desktop'));
+    assert.equal(menu.document.getElementById(rootApp.id), null, 'directory activation enters only its direct child view');
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, beforeLaunch);
+    key(menu, 'ArrowLeft'); f.flushFrames();
+    click(find(menu, 'shell-program-source-folder-x.desktop'));
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, beforeLaunch + 1,
+      'root application activation launches once instead of entering the same-named folder');
+    assert.equal(f.calls.filter(call => call[0] === 'launch').at(-1)[3], 'source-folder-x.desktop');
+    assert.equal(menu.closed, true);
+    f.saved.update({ desktop: { version: 1, shortcuts: [] } });
+  }
+}, sourcePrograms);
+
+scenario('Programs sources: fresh path moves, navigation epochs and catalog read failures reject stale direct-source actions', f => {
+  const menu = openSources(f), snapshots = [];
+  click(find(menu, programFolderId('a'))); f.flushFrames();
+  const row = find(menu, 'shell-program-a-b-editor.desktop'), pin = find(menu, 'shell-program-pin-a-b-editor.desktop');
+  const oldLaunch = callback(row, 'click'), oldPin = callback(pin, 'click');
+  press(row);
+  f.state.sourceFiles[0].path = '/apps/a-b/editor.desktop';
+  assert.equal(oldLaunch(event('click', { currentTarget: row })), false, 'same native ID has moved to another qualified folder');
+  assert.equal(oldPin(event('click', { currentTarget: pin })), false);
+  assert.equal(programSourcePath(f.state.sourceFiles[0]), 'a-b/editor.desktop');
+  assert.equal(menu.document.getElementById('shell-program-a-b-editor.desktop'), null);
+  assert.ok(find(menu, 'shell-program-a-one.desktop'));
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  const folder = find(menu, programFolderId('a-b')), oldFolder = callback(folder, 'click');
+  f.state.sourceReadFailed = true;
+  assert.equal(oldFolder(event('click', { currentTarget: folder })), false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.match(f.shell.getState().error, /source catalog read failed/);
+  assert.ok(find(menu, programFolderId('a-b')), 'read failure retains the current source index without entering it');
+  f.state.sourceReadFailed = false;
+  click(find(menu, programFolderId('a-b'))); f.flushFrames();
+  const moved = find(menu, 'shell-program-a-b-editor.desktop'), movedLaunch = callback(moved, 'click'),
+    movedPin = callback(find(menu, 'shell-program-pin-a-b-editor.desktop'), 'click');
+  f.state.sourceReadFailed = true;
+  snapshots.push(f.saved.snapshot);
+  press(moved);
+  assert.equal(movedLaunch(event('click', { currentTarget: moved })), false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(movedPin(event('click')), false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.ok(f.saved.snapshot === snapshots[0], 'no preferences publish while fresh membership is unavailable');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  const retainedError = f.shell.getState().error;
+  key(menu, 'Escape'); f.flushFrames();
+  assert.ok(find(menu, programFolderId('a-b')), 'Escape returns to the known source root while reads still fail');
+  oldFolder(event('click'));
+  assert.equal(menu.document.getElementById('shell-program-a-b-editor.desktop'), null, 'old directory epoch cannot reenter a leaf');
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-source-folders'), 'Back reaches the category index without reading the failed catalog');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-orphan.desktop'), 'another Back reaches retained All apps');
+  assert.equal(f.shell.getState().error, retainedError, 'retreat does not clear or suppress the catalog failure');
+  assert.ok(f.saved.snapshot === snapshots[0]);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  f.state.sourceReadFailed = false;
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+  click(find(menu, programFolderId('a-b'))); f.flushFrames();
+  oldLaunch(event('click', { currentTarget: row }));
+  movedLaunch(event('click', { currentTarget: moved }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'returning to the same leaf does not revive callbacks');
+  click(find(menu, 'shell-program-a-b-editor.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+}, sourcePrograms);
+
+scenario('Programs sources: removed folders keep a safe empty view and stale folder gestures never become app commands', f => {
+  const menu = openSources(f), branch = find(menu, programFolderId('a')), oldBranch = callback(branch, 'click');
+  press(branch);
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  domEvent(branch, 'mouseup'); domEvent(branch, 'click');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  oldBranch(event('click'));
+  assert.ok(find(menu, 'shell-program-orphan.desktop'));
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+  click(find(menu, programFolderId('a'))); f.flushFrames();
+  click(find(menu, programFolderId('a/sub'))); f.flushFrames();
+  f.state.sourceFiles = f.state.sourceFiles.filter(entry => !entry.id.startsWith('a-'));
+  click(find(menu, 'shell-app-refresh')); f.flushFrames();
+  assert.match(text(find(menu, 'shell-program-list')), /No applications or subfolders in this source folder/);
+  key(menu, 'Escape'); f.flushFrames();
+  assert.match(find(menu, 'shell-program-menu').getAttribute('aria-label'), /source folders: a$/);
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-top.desktop'));
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.document.getElementById('shell-program-source-folders'), null, 'no qualified nested registrations means no entry');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-orphan.desktop'));
+  f.shell.showApplications(2);
+  oldBranch(event('click'));
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+}, sourcePrograms);
+
 scenario('XP Programs: real catalog and categories reuse bounded RootMenu navigation while search and both pin domains stay independent', f => {
   f.shell.selectTheme('xp');
   const menu = f.shell.showApplications(1), search = find(menu, 'shell-app-search');
   assert.ok(find(menu, 'shell-app-launcher-editor.desktop'));
   const trigger = find(menu, 'shell-all-programs');
   trigger.focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  const composingFocus = menu.document.activeElement;
+  for (const name of ['ArrowDown', 'Home', 'End', 'ArrowLeft', 'Escape']) {
+    assert.equal(key(menu, name, { isComposing: true }).defaultPrevented, false);
+    assert.ok(menu.document.activeElement === composingFocus);
+    assert.ok(menu.document.getElementById('shell-program-overlay'), 'Composing navigation leaves Programs open');
+    assert.equal(menu.closed, false);
+  }
   assert.ok(find(menu, 'shell-program-editor.desktop'));
   assert.ok(find(menu, 'shell-program-categories'));
   click(find(menu, 'shell-program-categories')); f.flushFrames();
@@ -1706,6 +2783,8 @@ scenario('internal pointer/focus/scroll and a consumed child Escape do not dismi
   assert.equal(key(menu, 'Escape').defaultPrevented, true);
   assert.equal(menu.closed, false);
   child.removeEventListener('keydown', callback(child, 'keydown'));
+  assert.equal(key(menu, 'Escape', { isComposing: true }).defaultPrevented, false);
+  assert.equal(menu.closed, false, 'An unconsumed composing Escape must not dismiss the RootMenu');
   key(menu, 'Escape');
   assert.equal(menu.closed, true);
   assert.ok(menu.document.activeElement === null, 'closed menu releases DOM focus');
@@ -1932,6 +3011,11 @@ scenario('retired display confirmation callbacks cannot finish a replacement tra
   assert.equal(f.state.output.pendingToken, 2);
   assert.equal(replacement.closed, false);
   assert.equal(first.document.body.listeners.get('keydown').length, 0);
+  for (const name of ['Escape', 'Enter']) {
+    assert.equal(key(replacement, name, { isComposing: true }).defaultPrevented, false);
+    assert.equal(replacement.closed, false);
+    assert.equal(f.state.output.pendingToken, 2, 'Composing keys cannot Keep or Revert a trusted display transaction');
+  }
   key(replacement, 'Enter');
   assert.equal(replacement.closed, true);
   assert.equal(f.state.output.pendingToken, 0);

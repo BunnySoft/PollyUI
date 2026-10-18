@@ -57,6 +57,12 @@ test('legacy geometry, 28px minimum, page/42px key step and capture path remain 
   assert.deepEqual(controller.update(), { height: 200, content: 4200, maximum: 4000,
     value: 0, thumbHeight: 28, travel: 172, top: 0 });
   assert.equal(f.track.childNodes.length, 1);
+  let composingConsumed = 0;
+  for (const key of ['ArrowDown', 'PageDown', 'Home', 'End', 'Escape'])
+    fire(f.track, 'keydown', { key, isComposing: true,
+      preventDefault() { composingConsumed++; }, stopPropagation() { composingConsumed++; } });
+  assert.equal(f.viewport.scrollTop, 0, 'Composing keys must not scroll the viewport');
+  assert.equal(composingConsumed, 0, 'Scrollbar keys must leave composing events untouched');
   fire(f.track, 'keydown', { key: 'ArrowDown' }); assert.equal(f.viewport.scrollTop, 42);
   fire(f.track, 'keydown', { key: 'End' }); assert.equal(f.viewport.scrollTop, 4000);
   fire(f.track, 'keydown', { key: 'Home' });

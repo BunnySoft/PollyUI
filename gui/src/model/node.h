@@ -41,6 +41,7 @@ typedef struct PuStyle {
 typedef struct PuListener {
     char   *type;
     JSValue func;
+    uint64_t serial;
 } PuListener;
 
 struct PuNode {
@@ -88,6 +89,7 @@ struct PuNode {
     PuListener *listeners;
     int         listener_count;
     int         listener_cap;
+    uint64_t    listener_serial; /* Never reset by clear: in-flight dispatches retain old boundaries. */
 
     /* Bridge wrappers — weak handles managed by bridge.c. */
     JSValue js_wrapper;  bool has_wrapper;
@@ -125,8 +127,8 @@ const char *pu_style_get(const PuStyle *s, const char *name);
 void        pu_style_remove(PuStyle *s, const char *name);
 
 /* --- events --- */
-/* Add a listener; takes ownership of `func` (caller must have duped it). */
-void    pu_node_add_listener(PuNode *n, const char *type, JSValue func);
+/* On success, takes ownership of `func`; on allocation/identity exhaustion, returns false without taking it. */
+bool    pu_node_add_listener(PuNode *n, const char *type, JSValue func);
 /* Remove the first listener matching (type, func). */
 void    pu_node_remove_listener(PuNode *n, const char *type, JSValueConst func);
 void pu_node_clear_listeners(PuNode *node);

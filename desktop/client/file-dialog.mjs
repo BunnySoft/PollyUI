@@ -1,9 +1,10 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
 import { createFileDialogController } from './desktop/client/file-dialog-controller.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 import { desktopCommand, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
@@ -113,10 +114,11 @@ export function showFileDialog({ parent = window, files,
   }
   function label(id, caption, color, size = 13) {
     if (theme && ['selected', 'error', 'notice', 'theme-error', 'overwrite-question', 'overwrite-detail'].includes(id)) {
-      const minWidth = String(caption).split(/\s+/).reduce((width, word) => Math.max(width, measureText(word, size)), 0);
+      const minWidth = String(caption).split(/\s+/).reduce((width, word) => Math.max(width,
+        theme.layout.fontFamily === undefined ? measureText(word, size) : measureText(word, size, 400, theme.layout.fontFamily)), 0);
       return detailLabel({ id, caption, color, size, minWidth });
     }
-    return h('view', { id: prefix + '-' + id, style: { color, fontSize: size, flexShrink: 0,
+    return h('view', { id: prefix + '-' + id, style: { color, ...bodyFont(theme), fontSize: size, flexShrink: 0,
       ...(theme ? { minWidth: 0, maxWidth: '100%' } : {}) },
       ...(optInTheme ? { onUpdate: node => { node.scrollLeft = 0; } } : {}) }, caption);
   }
@@ -137,7 +139,7 @@ export function showFileDialog({ parent = window, files,
         scrollDesktop({ currentTarget: event.currentTarget, deltaX: delta, preventDefault: () => event.preventDefault() }, true);
         event.stopPropagation();
       },
-    }, h('view', { style: { color, fontSize: size, flexShrink: 1, minWidth: Math.ceil(minWidth) } }, caption));
+    }, h('view', { style: { color, ...bodyFont(theme), fontSize: size, flexShrink: 1, minWidth: Math.ceil(minWidth) } }, caption));
   }
   function paint() {
     if (finished || !overlay.parentNode || parent.closed) return;
@@ -149,7 +151,7 @@ export function showFileDialog({ parent = window, files,
     const usable = hasFiles && !blocked && !!state.directory &&
       !['idle', 'unavailable', 'error', 'loading'].includes(state.phase);
     for (const input of [location, filename]) {
-      input.setAppearance(inputAppearance(theme, 14, { color: colors.text, background: colors.surface,
+      setInputAppearance(input, inputAppearance(theme, 14, { color: colors.text, background: colors.surface,
         borderColor: colors.border, selectionColor: colors.accent, focusColor: '#2563eb', borderRadius: 6, fontSize: 14 }));
       const enabled = hasFiles && !blocked && (input === location ? !!state.locations :
         ['ready', 'validating'].includes(state.phase));

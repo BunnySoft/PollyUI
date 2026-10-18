@@ -2,7 +2,7 @@ import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { displaysView } from './desktop/apps/settings/ui/displays.mjs';
 import { readDisplayDraft } from './desktop/apps/settings/ui/display-inputs.mjs';
 import { displayDraft } from './desktop/client/settings-domains-contract.mjs';
-import { desktopText } from './desktop/shared/ui/presentation.mjs';
+import { themedText } from './desktop/shared/ui/presentation.mjs';
 
 export function createDisplayPage() {
   let draft = null, inputs = new Map(), root = null, mode = '', error = '';
@@ -21,9 +21,9 @@ export function createDisplayPage() {
       if (!snapshot.available || snapshot.pendingToken) {
         render(h('view', { id: 'settings-display-status', role: 'status',
           style: { padding: theme.layout.contentPadding, gap: theme.layout.contentGap } },
-          desktopText(snapshot.pendingToken ? 'Display changes await trusted confirmation' : 'Displays unavailable',
+          themedText(theme, snapshot.pendingToken ? 'Display changes await trusted confirmation' : 'Displays unavailable',
             theme.colors.text, theme.layout.headingFontSize, { minWidth: 0 }),
-          desktopText(snapshot.pendingToken ? 'Use the trusted Keep / Revert prompt. Automatic rollback in ' +
+          themedText(theme, snapshot.pendingToken ? 'Use the trusted Keep / Revert prompt. Automatic rollback in ' +
             Math.ceil(snapshot.remainingMs / 1000) + ' seconds. Closing Settings does not confirm or reset that deadline.' :
             snapshot.status, theme.colors.muted, theme.layout.fontSize, { flexShrink: 1, minWidth: 0 })), root);
         return;

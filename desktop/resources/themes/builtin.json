@@ -55,6 +55,7 @@
       },
       "window": {
         "surfaceStyle": "luna",
+        "systemMenu": true,
         "radius": 7,
         "border": "#00138c",
         "borderWidth": 3,
@@ -237,6 +238,7 @@
         "focus": "#000000"
       },
       "window": {
+        "systemMenu": true,
         "radius": 0,
         "border": "#404040",
         "borderWidth": 4,
@@ -523,6 +525,7 @@
         "radius": 0,
         "dockTiles": false,
         "dockHoverPercent": 120,
+        "dockMagnificationRadius": 2,
         "desktopLabelStyle": "shadow"
       },
       "button": {
@@ -1696,7 +1699,8 @@
         "size": 48,
         "radius": 0,
         "dockTiles": false,
-        "dockHoverPercent": 120
+        "dockHoverPercent": 120,
+        "dockMagnificationRadius": 2
       },
       "button": {
         "from": "#ffffff",
@@ -1920,6 +1924,7 @@
         "radius": 10,
         "dockTiles": true,
         "dockHoverPercent": 120,
+        "dockMagnificationRadius": 2,
         "desktopLabelStyle": "shadow"
       },
       "button": {
@@ -1942,6 +1947,7 @@
         "surfaceStyle": "bigsur",
         "menuBarOpacityPercent": 88,
         "materialOpacityPercent": 88,
+        "regionalBackdrop": { "sigma": 8, "tint": "#e7e7e7", "opacityPercent": 28 },
         "taskGrouping": "applications"
       },
       "layout": {
@@ -2080,6 +2086,9 @@
       },
       "window": {
         "surfaceStyle": "fluent",
+        "systemMenu": true,
+        "clientMaterial": "wallpaper",
+        "layoutPicker": true,
         "nativeEffects": "rounded",
         "radius": 8,
         "border": "#a0a0a0",
@@ -2144,6 +2153,7 @@
       },
       "panel": {
         "surfaceStyle": "fluent",
+        "taskbarBackdrop": { "sigma": 8, "tint": "#f3f3f3", "opacityPercent": 72 },
         "taskGrouping": "applications",
         "kind": "taskbar",
         "from": "#f3f3f3",

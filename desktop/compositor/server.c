@@ -53,6 +53,8 @@ struct PuDesktopOutput {
     struct wlr_scene_rect *boot_background, *boot_logo[5], *boot_dots[3];
     uint32_t boot_sequence;
     bool boot_pending, boot_presented;
+    bool backdrop_stalled;
+    uint64_t backdrop_failure_revision;
 };
 
 struct PuDesktopKeyboard {
@@ -80,6 +82,7 @@ struct PuDesktopPopup {
 static void end_grab(struct PuDesktop *desktop);
 static void set_view_state(struct PuDesktopView *view, bool maximized, bool fullscreen,
                            struct wlr_output *preferred);
+static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile);
 static void constrain_popups(struct PuDesktopView *view);
 static void popup_reposition(struct wl_listener *listener, void *data);
 static void process_motion(struct PuDesktop *desktop, uint32_t time);
@@ -179,6 +182,8 @@ void pu_desktop_restore_input(struct PuDesktop *desktop)
 
 void pu_desktop_isolate_input(struct PuDesktop *desktop)
 {
+    pu_workspaces_system_menu_cancel(desktop);
+    pu_workspaces_picker_cancel(desktop);
     pu_shortcuts_cancel(desktop);
     pu_data_device_cancel_drag(desktop);
     end_grab(desktop);
@@ -207,12 +212,14 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 {
     if (pu_session_lock_active(desktop)) { pu_session_lock_focus(desktop); return; }
     if (desktop->focused_layer == layer) return;
+    if (layer && desktop->grab_title) end_grab(desktop);
     if (layer) pu_shortcuts_cancel(desktop);
     desktop->focused_layer = layer;
     if (desktop->focused)
         wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, !layer);
     enter_keyboard(desktop);
     sync_foreign(desktop);
+    pu_decorations_validate_shell_backdrops(desktop);
 }
 
 static struct PuDesktopView *modal_target(struct PuDesktopView *view)
@@ -252,6 +259,7 @@ static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
     }
     if (!exclusive_layer(desktop->focused_layer)) desktop->focused_layer = NULL;
     if (desktop->focused != view) {
+        if (desktop->grab_title) end_grab(desktop);
         if (desktop->focused)
             wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, false);
         desktop->focused = view;
@@ -342,6 +350,13 @@ void pu_desktop_shortcut_action(struct PuDesktop *desktop, int action, bool reve
             set_view_state(view, view->maximized, !view->fullscreen, NULL);
         }
         return;
+    case PU_SHORTCUT_TILE_LEFT:
+    case PU_SHORTCUT_TILE_RIGHT:
+    case PU_SHORTCUT_RESTORE_FLOATING:
+        if (desktop->focused)
+            set_view_tile(desktop->focused, action == PU_SHORTCUT_TILE_LEFT ? PU_TILE_LEFT :
+                action == PU_SHORTCUT_TILE_RIGHT ? PU_TILE_RIGHT : PU_TILE_NONE);
+        return;
     default: return;
     }
 }
@@ -351,6 +366,8 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     struct PuDesktopKeyboard *entry = wl_container_of(listener, entry, key);
     struct wlr_keyboard_key_event *event = data;
     struct PuDesktop *desktop = entry->desktop;
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+        pu_workspaces_picker_input(desktop, desktop->seat->keyboard_state.focused_surface);
     wlr_seat_set_keyboard(desktop->seat, entry->keyboard);
     if (pu_session_lock_active(desktop)) {
         bool consumed = event->keycode < KEY_CNT && entry->consumed[event->keycode];
@@ -388,8 +405,13 @@ static void keyboard_key(struct wl_listener *listener, void *data)
             } else if (pu_data_device_drag_active(desktop) && syms[i] == XKB_KEY_Escape) {
                 pu_data_device_cancel_drag(desktop);
                 handled = true;
-            } else if (!wlr_seat_keyboard_has_grab(desktop->seat))
+            } else if (!wlr_seat_keyboard_has_grab(desktop->seat)) {
                 handled = pu_shortcuts_key(desktop, entry->keyboard, syms[i]);
+                uint32_t modifiers = wlr_keyboard_get_modifiers(entry->keyboard) &
+                    (WLR_MODIFIER_SHIFT | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO);
+                if (!handled && syms[i] == XKB_KEY_space && modifiers == WLR_MODIFIER_ALT)
+                    handled = pu_workspaces_system_menu_key(desktop->focused);
+            }
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = handled;
         }
     }
@@ -465,6 +487,7 @@ static void end_grab(struct PuDesktop *desktop)
         wlr_xdg_toplevel_set_resizing(desktop->grabbed->toplevel, false);
     desktop->grab = PU_DESKTOP_PASSTHROUGH;
     desktop->grabbed = NULL;
+    desktop->grab_title = desktop->grab_title_moved = desktop->grab_title_restored = false;
     if (active) pu_cursor_cancel(desktop);
 }
 
@@ -562,8 +585,19 @@ static struct wlr_box view_box(struct PuDesktopView *view)
     return box;
 }
 
+static struct wlr_box presented_view_box(struct PuDesktopView *view)
+{
+    struct wlr_box box = view->presented_box;
+    /* Interactive moves update scene position without a client configure. */
+    box.x = view->tree->node.x;
+    box.y = view->tree->node.y;
+    return box;
+}
+
 static void sync_foreign(struct PuDesktop *desktop)
 {
+    pu_workspaces_system_menu_validate(desktop);
+    pu_workspaces_picker_validate(desktop);
     if (!desktop->layout) return;
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop->views, link) {
@@ -581,6 +615,7 @@ static void sync_foreign(struct PuDesktop *desktop)
         wlr_foreign_toplevel_handle_v1_set_fullscreen(handle, view->fullscreen);
         wlr_foreign_toplevel_handle_v1_set_activated(handle,
             desktop->focused == view && !desktop->focused_layer && !view->minimized);
+        pu_workspaces_placement_changed(view);
         struct wlr_foreign_toplevel_handle_v1 *parent = NULL;
         struct PuDesktopView *candidate;
         wl_list_for_each(candidate, &desktop->views, link)
@@ -648,6 +683,7 @@ void pu_desktop_workspaces_changed(struct PuDesktop *desktop, struct PuDesktopVi
     pu_data_device_cancel_drag(desktop);
     pu_shortcuts_cancel(desktop);
     bool switched = desktop->visible_workspace != desktop->active_workspace;
+    if (switched) pu_workspaces_invalidate_menus(desktop, NULL);
     desktop->visible_workspace = desktop->active_workspace;
     if (desktop->grabbed && (switched || !pu_workspace_current(desktop->grabbed))) end_grab(desktop);
     if (switched || (desktop->decoration_pressed && !pu_workspace_current(desktop->decoration_pressed)))
@@ -708,6 +744,8 @@ static struct wlr_output *output_for_box(struct PuDesktop *desktop, const struct
 
 double pu_desktop_view_scale(struct PuDesktopView *view)
 {
+    /* This feeds caption requests, not the old frame's scene/output scale. */
+    if (view->drag_restore_pending && view->output) return view->output->scale;
     struct wlr_box box = view_box(view);
     struct wlr_output *output = output_for_box(view->desktop, &box);
     return output ? output->scale : 1;
@@ -745,17 +783,46 @@ static void fit_floating(struct PuDesktopView *view, struct wlr_box *box,
 
 static void present_view(struct PuDesktopView *view);
 
+static enum PuDesktopMode requested_mode(struct PuDesktopView *view)
+{
+    return view->fullscreen ? PU_DESKTOP_FULLSCREEN : view->maximized ? PU_DESKTOP_MAXIMIZED :
+        view->tile == PU_TILE_LEFT ? PU_DESKTOP_TILED_LEFT :
+        view->tile == PU_TILE_RIGHT ? PU_DESKTOP_TILED_RIGHT : PU_DESKTOP_FLOATING;
+}
+
+static bool tile_box(struct PuDesktopView *view, enum PuDesktopTile tile,
+                     const struct wlr_box *work, struct wlr_box *box)
+{
+    *box = *work;
+    int left = work->width / 2;
+    box->width = tile == PU_TILE_LEFT ? left : work->width - left;
+    if (tile == PU_TILE_RIGHT) box->x += left;
+    struct wlr_box outer = *box;
+    pu_decoration_inset(view, box, true);
+    struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
+    /* A half is an exact outer partition, not a clamped maximize suggestion. */
+    return outer.width > 0 && outer.height > 0 &&
+        box->width > 0 && box->height > 0 &&
+        box->x + box->width <= outer.x + outer.width &&
+        box->y + box->height <= outer.y + outer.height &&
+        box->width >= limits->min_width && box->height >= limits->min_height &&
+        (!limits->max_width || box->width <= limits->max_width) &&
+        (!limits->max_height || box->height <= limits->max_height);
+}
+
 static void present_geometry(struct PuDesktopView *view)
 {
     view->geometry_pending = false;
     pu_decoration_present(view);
-    view->mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
-                 view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
+    view->mode = requested_mode(view);
     view->presented_box = view->pending_box;
     struct wlr_box box = view->pending_box;
     if (view->mode == PU_DESKTOP_FLOATING) {
         box.width = view->toplevel->base->geometry.width;
         box.height = view->toplevel->base->geometry.height;
+        if (view->drag_restore_pending)
+            box.x += (int)(view->pending_box.width * view->drag_restore_anchor) -
+                (int)(box.width * view->drag_restore_anchor);
         struct wlr_box bounds;
         if (output_box(view->desktop, view->output, &bounds)) {
             use_work_area(view->output, &bounds);
@@ -764,33 +831,50 @@ static void present_geometry(struct PuDesktopView *view)
         }
     }
     wlr_scene_node_set_position(&view->tree->node, box.x, box.y);
+    view->presented_box = box;
+    if (view->drag_restore_pending && view->desktop->grabbed == view) {
+        view->desktop->grab_x = view->desktop->cursor->x - box.x;
+        view->desktop->grab_y = view->desktop->cursor->y - box.y;
+    }
+    view->drag_restore_pending = false;
+    if (view->pending_arrangement != PU_ARRANGE_CASCADE &&
+        (box.width != view->pending_box.width || box.height != view->pending_box.height))
+        wlr_log(WLR_ERROR, "Client declined exact %s window arrangement: window=%llu requested=%d,%d %dx%d presented=%d,%d %dx%d; retaining actual floating geometry",
+            view->pending_arrangement == PU_ARRANGE_HORIZONTAL ? "horizontal" : "vertical",
+            (unsigned long long)view->workspace_window,
+            view->pending_box.x, view->pending_box.y, view->pending_box.width, view->pending_box.height,
+            box.x, box.y, box.width, box.height);
+    view->pending_arrangement = PU_ARRANGE_CASCADE;
 }
 
-static void configure_view(struct PuDesktopView *view, struct wlr_box box,
-                           const struct wlr_box *bounds)
+static void configure_geometry(struct PuDesktopView *view, struct wlr_box box,
+                               const struct wlr_box *bounds)
 {
+    view->pending_arrangement = PU_ARRANGE_CASCADE;
     if (view->maximized && !view->fullscreen) {
         struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
         box.width = clamp_size(box.width, limits->min_width, limits->max_width);
         box.height = clamp_size(box.height, limits->min_height, limits->max_height);
     }
     struct wlr_xdg_surface *surface = view->toplevel->base;
-    enum PuDesktopMode mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
-                              view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
+    enum PuDesktopMode mode = requested_mode(view);
+    uint32_t tiled = !view->maximized && !view->fullscreen && view->tile != PU_TILE_NONE ?
+        WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT : 0;
     bool reuse_buffer = view->mapped && surface->surface->buffer &&
         !view->geometry_pending && !view->resize_pending &&
         view->mode == mode && !view->toplevel->current.resizing &&
         view->toplevel->current.maximized == view->maximized &&
         view->toplevel->current.fullscreen == view->fullscreen &&
+        view->toplevel->current.tiled == tiled &&
         box.width == surface->geometry.width && box.height == surface->geometry.height &&
         !pu_decoration_mode_pending(view);
-    if (view->desktop->grabbed == view) end_grab(view->desktop);
     view->resize_pending = false;
     view->pending_box = box;
     pu_decoration_schedule(view);
     wlr_xdg_toplevel_set_bounds(view->toplevel, bounds->width, bounds->height);
     wlr_xdg_toplevel_set_maximized(view->toplevel, view->maximized);
     wlr_xdg_toplevel_set_fullscreen(view->toplevel, view->fullscreen);
+    wlr_xdg_toplevel_set_tiled(view->toplevel, tiled);
     wlr_xdg_toplevel_set_resizing(view->toplevel, false);
     view->geometry_serial = wlr_xdg_toplevel_set_size(view->toplevel, box.width, box.height);
     view->geometry_pending = true;
@@ -802,6 +886,56 @@ static void configure_view(struct PuDesktopView *view, struct wlr_box box,
     } else pu_decoration_update(view);
 }
 
+static void configure_view(struct PuDesktopView *view, struct wlr_box box,
+                           const struct wlr_box *bounds)
+{
+    if (view->desktop->grabbed == view) end_grab(view->desktop);
+    view->drag_restore_pending = false;
+    configure_geometry(view, box, bounds);
+}
+
+static bool configure_restored_move(struct PuDesktopView *view, struct wlr_output *output)
+{
+    struct PuDesktop *desktop = view->desktop;
+    struct wlr_box box = desktop->grab_box;
+    struct wlr_box bounds;
+    if (box.width < 1 || box.height < 1 || !output_box(desktop, output, &bounds)) {
+        wlr_log(WLR_INFO, "Cannot drag-restore without saved floating geometry and an enabled output");
+        end_grab(desktop);
+        return false;
+    }
+    use_work_area(output, &bounds);
+    pu_decoration_inset(view, &bounds, true);
+    fit_floating(view, &box, &bounds);
+    desktop->grab_x = (int)(box.width * view->drag_restore_anchor);
+    box.x = (int)(desktop->cursor->x - desktop->grab_x);
+    box.y = (int)(desktop->cursor->y - desktop->grab_y);
+    keep_visible(&box, &bounds);
+    desktop->grab_x = desktop->cursor->x - box.x;
+    desktop->grab_y = desktop->cursor->y - box.y;
+    view->output = output;
+    view->maximized = false;
+    view->tile = PU_TILE_NONE;
+    view->drag_restore_pending = true;
+    /* Only this admitted title gesture survives its own configure. All other
+     * geometry changes still use configure_view and retire the grab. */
+    configure_geometry(view, box, &bounds);
+    sync_foreign(desktop);
+    return true;
+}
+
+static bool restore_title_move(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    double anchor = desktop->grab_x / desktop->grab_box.width;
+    if (anchor < 0) anchor = 0;
+    if (anchor > 1) anchor = 1;
+    view->drag_restore_anchor = anchor;
+    desktop->grab_box = view->tile != PU_TILE_NONE ? view->floating_box : view->restore_box;
+    desktop->grab_title_restored = true;
+    return configure_restored_move(view, initial_output(desktop));
+}
+
 static void set_view_state(struct PuDesktopView *view, bool maximized, bool fullscreen,
                            struct wlr_output *preferred)
 {
@@ -810,7 +944,7 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
     struct wlr_box box = view->geometry_pending ? view->pending_box : view_box(view);
     struct wlr_box bounds;
     struct wlr_output *output = preferred;
-    if (!maximized && !fullscreen && (view->maximized || view->fullscreen))
+    if (!maximized && !fullscreen && view->tile == PU_TILE_NONE && (view->maximized || view->fullscreen))
         output = output_for_box(desktop, &view->restore_box);
     if (!output_box(desktop, output, &bounds)) {
         output = view->output;
@@ -824,21 +958,382 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
     }
     if (!fullscreen) {
         use_work_area(output, &bounds);
+        if (!maximized && view->tile != PU_TILE_NONE && !tile_box(view, view->tile, &bounds, &box)) {
+            wlr_log(WLR_ERROR, "Cannot restore tiled window: client size limits do not fit the work area");
+            return;
+        }
         pu_decoration_inset(view, &bounds, true);
     }
     if ((maximized || fullscreen) && !view->maximized && !view->fullscreen)
-        view->restore_box = box;
+        view->restore_box = view->mapped && view->mode == PU_DESKTOP_FLOATING &&
+            view->tile == PU_TILE_NONE ? presented_view_box(view) : box;
     if (maximized || fullscreen) {
         box = bounds;
-    } else if (view->maximized || view->fullscreen) {
+    } else if (view->tile == PU_TILE_NONE && (view->maximized || view->fullscreen)) {
         box = view->restore_box;
     }
     view->output = output;
     view->maximized = maximized;
     view->fullscreen = fullscreen;
-    if (!maximized && !fullscreen) fit_floating(view, &box, &bounds);
+    if (!maximized && !fullscreen && view->tile == PU_TILE_NONE) fit_floating(view, &box, &bounds);
     configure_view(view, box, &bounds);
     sync_foreign(desktop);
+}
+
+static const char *placement_box(struct PuDesktopView *view, enum PuDesktopTile tile,
+    struct wlr_output *preferred, struct wlr_box *box, struct wlr_box *bounds,
+    struct wlr_output **output)
+{
+    struct PuDesktop *desktop = view->desktop;
+    if (tile < PU_TILE_NONE || tile > PU_TILE_RIGHT) return "Unknown window placement";
+    if (view->fullscreen || view->mode == PU_DESKTOP_FULLSCREEN)
+        return "Leave fullscreen before changing placement";
+    if (tile == PU_TILE_NONE && view->tile == PU_TILE_NONE) return "No floating layout to restore";
+    struct wlr_box actual = presented_view_box(view);
+    if (actual.width < 1 || actual.height < 1) return "Wait for the first presented window frame";
+    *output = preferred ? preferred : output_for_box(desktop, &actual);
+    if (!output_box(desktop, *output, bounds)) return "Window has no enabled output";
+    use_work_area(*output, bounds);
+    if (tile != PU_TILE_NONE) {
+        if (!tile_box(view, tile, bounds, box)) return "Client size limits do not fit the half-screen work area";
+    } else {
+        *box = view->floating_box;
+        if (box->width < 1 || box->height < 1) return "No presented floating layout to restore";
+        pu_decoration_inset(view, bounds, true);
+        fit_floating(view, box, bounds);
+    }
+    return NULL;
+}
+
+static const char *place_view(struct PuDesktopView *view, enum PuDesktopTile tile,
+    struct wlr_output *preferred)
+{
+    struct wlr_box bounds, box;
+    struct wlr_output *output;
+    const char *error = placement_box(view, tile, preferred, &box, &bounds, &output);
+    if (error) return error;
+    if (tile != PU_TILE_NONE && view->tile == PU_TILE_NONE)
+        view->floating_box = view->maximized ? view->restore_box : presented_view_box(view);
+    view->output = output;
+    view->tile = tile;
+    view->maximized = false;
+    configure_view(view, box, &bounds);
+    sync_foreign(view->desktop);
+    return NULL;
+}
+
+static const char *placement_admit(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    if (!view->mapped || !view->workspace_window) return "Window is closed";
+    if (view->minimized) return "Restore the minimized window first";
+    if (!pu_workspace_current(view)) return "Window is not in the current workspace";
+    if (modal_target(view) != view) return "A modal window owns this window family";
+    if (pu_session_lock_active(desktop) || desktop->session_exit_pending) return "Session is locked or exiting";
+    if (desktop->grab != PU_DESKTOP_PASSTHROUGH ||
+        wlr_seat_keyboard_has_grab(desktop->seat) || wlr_seat_pointer_has_grab(desktop->seat))
+        return "Input is grabbed";
+    if (pu_shortcuts_recording(desktop)) return "Shortcut recording is active";
+    if (view->geometry_pending || view->resize_pending) return "Wait for the presented layout";
+    return NULL;
+}
+
+const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDesktopTile tile)
+{
+    const char *error = placement_admit(view);
+    if (error) return error;
+    struct wlr_box bounds, box;
+    struct wlr_output *output;
+    return placement_box(view, tile, NULL, &box, &bounds, &output);
+}
+
+static const char *menu_input_check(struct PuDesktop *desktop, struct wlr_surface *surface)
+{
+    struct PuDesktopLayer *layer = desktop->focused_layer;
+    struct wlr_box bounds;
+    if (!layer || layer->surface->surface != surface || !layer->presented ||
+        !surface->mapped || !layer->tree->node.enabled ||
+        wl_resource_get_client(surface->resource) != desktop->shell_client ||
+        layer->surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
+        layer->surface->current.exclusive_zone != -1 || !exclusive_layer(layer) ||
+        desktop->seat->keyboard_state.focused_surface != surface ||
+        !output_box(desktop, layer->surface->output, &bounds))
+        return "The registered window menu does not own live input focus";
+    return NULL;
+}
+
+const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
+    struct wlr_surface *surface, enum PuDesktopTile tile)
+{
+    const char *error = pu_desktop_placement_check(view, tile);
+    if (!error) error = menu_input_check(view->desktop, surface);
+    return error ? error : place_view(view, tile, NULL);
+}
+
+static bool ordinary_application(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
+    return client != desktop->shell_client && !pu_decorator_allowed(desktop, client) &&
+        !pu_input_method_allowed(desktop, client) && !pu_session_lock_allowed(desktop, client);
+}
+
+static bool arrangement_application(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
+    if (!ordinary_application(view) || view->toplevel->parent || (view->dialog && view->dialog->modal)) return false;
+    struct PuDesktopView *child;
+    wl_list_for_each(child, &desktop->all_views, all_link)
+        if (child->toplevel->parent == view->toplevel &&
+            wl_resource_get_client(child->toplevel->resource) == client) return false;
+    return true;
+}
+
+static bool arrangement_candidate(struct PuDesktopView *view, struct wlr_output *output)
+{
+    struct wlr_box actual = presented_view_box(view);
+    return arrangement_application(view) && view->mapped && !view->minimized &&
+        pu_workspace_current(view) && view->tree->node.enabled && modal_target(view) == view &&
+        !view->fullscreen && view->mode != PU_DESKTOP_FULLSCREEN &&
+        !view->geometry_pending && !view->resize_pending && !view->drag_restore_pending &&
+        pu_decoration_layout_settled(view) && actual.width > 0 && actual.height > 0 &&
+        output_for_box(view->desktop, &actual) == output;
+}
+
+const char *pu_desktop_arrange_from_menu(struct PuDesktopView *target, struct wlr_surface *surface,
+    enum PuDesktopArrangement arrangement)
+{
+    if (arrangement < PU_ARRANGE_CASCADE || arrangement > PU_ARRANGE_VERTICAL)
+        return "Unknown window arrangement";
+    bool cascade = arrangement == PU_ARRANGE_CASCADE;
+    struct PuDesktop *desktop = target->desktop;
+    const char *error = placement_admit(target);
+    if (!error) error = menu_input_check(desktop, surface);
+    if (!error && (desktop->stopping || !arrangement_application(target) ||
+        target->fullscreen || target->mode == PU_DESKTOP_FULLSCREEN))
+        error = "Window arrangement requires a live ordinary application outside fullscreen";
+    struct wlr_box actual = presented_view_box(target), work;
+    struct wlr_output *output = output_for_box(desktop, &actual);
+    if (!error && !output_box(desktop, output, &work)) error = "Window has no enabled output";
+    if (error) return error;
+    use_work_area(output, &work);
+    struct ArrangementPlan { struct PuDesktopView *view; struct wlr_box box, bounds; };
+    size_t count = 0;
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop->views, link) {
+        if (!arrangement_candidate(view, output)) continue;
+        if (count == SIZE_MAX / sizeof(struct ArrangementPlan)) return "Too many windows to arrange";
+        count++;
+    }
+    if (!count) return "No presented application windows are eligible for arrangement";
+    int axis = arrangement == PU_ARRANGE_HORIZONTAL ? work.height : work.width;
+    if (!cascade && (axis < 1 || count > (size_t)axis))
+        return "Too many windows for nonempty arrangement cells";
+    struct ArrangementPlan *plans = calloc(count, sizeof(*plans));
+    if (!plans) return "Cannot allocate the window arrangement plan";
+    size_t index = 0;
+    int offset = 0;
+    struct wlr_scene_node *node;
+    /* Bottom-to-top scene order exposes earlier captions without raising or focusing windows. */
+    wl_list_for_each(node, &desktop->windows->children, link) {
+        struct PuDesktopOwner *owner = node->data;
+        view = owner ? owner->view : NULL;
+        if (!view || !arrangement_candidate(view, output)) continue;
+        if (index == count) { error = "Window arrangement scene membership changed"; break; }
+        struct wlr_box bounds = work;
+        pu_decoration_inset(view, &bounds, true);
+        struct wlr_box box;
+        if (cascade) {
+            box = view->tile != PU_TILE_NONE ? view->floating_box :
+                view->maximized ? view->restore_box : presented_view_box(view);
+            if (box.width < 1 || box.height < 1) {
+                error = "A cascade window has no presented floating size"; break;
+            }
+            fit_floating(view, &box, &bounds);
+        } else {
+            /* Partition outer frames, including the remainder, before per-view insets. */
+            int64_t start = (int64_t)axis * (int64_t)index / (int64_t)count;
+            int64_t end = (int64_t)axis * (int64_t)(index + 1) / (int64_t)count;
+            box = work;
+            if (arrangement == PU_ARRANGE_HORIZONTAL) {
+                box.y += (int)start; box.height = (int)(end - start);
+            } else {
+                box.x += (int)start; box.width = (int)(end - start);
+            }
+            struct wlr_box outer = box;
+            pu_decoration_inset(view, &box, true);
+            struct wlr_box insets = {0};
+            pu_decoration_inset(view, &insets, true);
+            /* inset() clamps tiny boxes; reject instead of accepting a fabricated 1px client. */
+            if ((int64_t)box.width + 2 * insets.x != outer.width ||
+                (int64_t)box.height + insets.y + insets.x != outer.height) {
+                error = "Native insets do not fit the arrangement cell"; break;
+            }
+        }
+        struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
+        if (box.width > bounds.width || box.height > bounds.height ||
+            box.width < limits->min_width || box.height < limits->min_height ||
+            (limits->max_width && box.width > limits->max_width) ||
+            (limits->max_height && box.height > limits->max_height) ||
+            bounds.x >= work.x + work.width || bounds.y >= work.y + work.height) {
+            error = "Client size limits or native insets do not fit the arrangement work area"; break;
+        }
+        if (cascade) {
+            if (offset > bounds.width - box.width || offset > bounds.height - box.height) offset = 0;
+            box.x = bounds.x + offset; box.y = bounds.y + offset;
+            keep_visible(&box, &bounds);
+            offset = offset <= INT_MAX - 24 ? offset + 24 : 0;
+        }
+        plans[index++] = (struct ArrangementPlan){view, box, bounds};
+    }
+    if (!error && index != count) error = "Window arrangement scene membership changed";
+    if (!error) {
+        for (size_t i = 0; i < count; i++) {
+            view = plans[i].view;
+            view->output = output;
+            view->tile = PU_TILE_NONE;
+            view->maximized = false;
+            configure_view(view, plans[i].box, &plans[i].bounds);
+            if (view->geometry_pending) view->pending_arrangement = arrangement;
+        }
+        sync_foreign(desktop);
+    }
+    free(plans);
+    return error;
+}
+
+const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wlr_surface *surface)
+{
+    return pu_desktop_arrange_from_menu(target, surface, PU_ARRANGE_CASCADE);
+}
+
+struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds)
+{
+    struct wlr_box actual = presented_view_box(view);
+    struct wlr_output *head = output_for_box(view->desktop, &actual);
+    return output_box(view->desktop, head, bounds) ? head : NULL;
+}
+
+struct wlr_output *pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
+    bool require_hit, struct wlr_box *button, struct wlr_box *output)
+{
+    struct PuDesktop *desktop = view->desktop;
+    struct wlr_output *head = pu_desktop_picker_output(view, output);
+    if (placement_admit(view) || desktop->stopping || view->fullscreen ||
+        desktop->focused != view ||
+        view->mode == PU_DESKTOP_FULLSCREEN || desktop->suppressed_button ||
+        (!menu && desktop->seat->pointer_state.button_count) ||
+        (desktop->focused_layer && desktop->focused_layer->surface->surface != menu) ||
+        (!menu && !pu_decoration_presented_current(view)) ||
+        !head ||
+        !pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, button)) return NULL;
+    button->x += view->tree->node.x;
+    button->y += view->tree->node.y;
+    if (!require_hit) return head;
+    struct wlr_surface *surface;
+    double sx, sy;
+    return view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy, NULL) == view &&
+        !surface && pu_decoration_hit(view, desktop->cursor->x - view->tree->node.x,
+            desktop->cursor->y - view->tree->node.y) == PU_DECORATION_MAXIMIZE &&
+        wlr_output_layout_output_at(desktop->layout, desktop->cursor->x, desktop->cursor->y) == head ? head : NULL;
+}
+
+struct wlr_output *pu_desktop_system_menu_anchor(struct PuDesktopView *view, bool pointer,
+    struct wlr_box *anchor, struct wlr_box *bounds)
+{
+    struct PuDesktop *desktop = view->desktop;
+    if (placement_admit(view) || desktop->stopping || !desktop->shell_client ||
+        !ordinary_application(view) || desktop->focused != view || desktop->focused_layer ||
+        view->fullscreen || view->mode == PU_DESKTOP_FULLSCREEN ||
+        view->drag_restore_pending || pu_data_device_drag_active(desktop) ||
+        !view->tree->node.enabled || !pu_decoration_shown_geometry(view) ||
+        desktop->seat->pointer_state.button_count ||
+        (desktop->suppressed_button && (!pointer || desktop->suppressed_button != BTN_RIGHT)))
+        return NULL;
+    struct wlr_box actual = presented_view_box(view);
+    if (actual.width < 1 || actual.height < 1) return NULL;
+    if (!pointer && (!desktop->seat->keyboard_state.focused_surface ||
+        wlr_surface_get_root_surface(desktop->seat->keyboard_state.focused_surface) !=
+            view->toplevel->base->surface)) return NULL;
+    struct wlr_output *head;
+    if (pointer) {
+        struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(desktop->seat);
+        if (keyboard && (wlr_keyboard_get_modifiers(keyboard) &
+            (WLR_MODIFIER_SHIFT | WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT | WLR_MODIFIER_LOGO))) return NULL;
+        struct wlr_surface *surface;
+        double sx, sy;
+        if (view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy, NULL) != view ||
+            surface || pu_decoration_hit(view, desktop->cursor->x - view->tree->node.x,
+                desktop->cursor->y - view->tree->node.y) != PU_DECORATION_TITLE) return NULL;
+        /* A caption may straddle heads. Never select a nearest output in a gap. */
+        head = wlr_output_layout_output_at(desktop->layout, desktop->cursor->x, desktop->cursor->y);
+        *anchor = (struct wlr_box){(int)desktop->cursor->x, (int)desktop->cursor->y, 1, 1};
+    } else {
+        head = output_for_box(desktop, &actual);
+        *anchor = (struct wlr_box){actual.x, actual.y, 1, 1};
+    }
+    if (!output_box(desktop, head, bounds)) return NULL;
+    anchor->x = bounds->x + (int)fmax(0, fmin(bounds->width - 1, (double)anchor->x - bounds->x));
+    anchor->y = bounds->y + (int)fmax(0, fmin(bounds->height - 1, (double)anchor->y - bounds->y));
+    return head;
+}
+
+static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)
+{
+    struct PuDesktop *desktop = view->desktop;
+    if (!view->mapped || view->minimized || !pu_workspace_current(view) || modal_target(view) != view ||
+        desktop->focused != view || desktop->focused_layer ||
+        pu_session_lock_active(desktop) || wlr_seat_keyboard_has_grab(desktop->seat) ||
+        desktop->grab != PU_DESKTOP_PASSTHROUGH) return;
+    const char *error = place_view(view, tile, NULL);
+    if (error) wlr_log(WLR_INFO, "%s", error);
+}
+
+static void release_grab(struct PuDesktop *desktop, uint32_t button)
+{
+    struct PuDesktopView *view = desktop->grabbed;
+    bool snap = view && desktop->grab == PU_DESKTOP_MOVE && button == desktop->grab_button &&
+        desktop->grab_title && desktop->grab_title_moved;
+    struct wlr_box floating = {0};
+    if (snap) {
+        floating = presented_view_box(view);
+        if (desktop->grab_title_restored) {
+            floating.width = desktop->grab_box.width;
+            floating.height = desktop->grab_box.height;
+        }
+    }
+    /* End precisely this gesture before using the normal no-active-grab admission. */
+    end_grab(desktop);
+    if (!snap) return;
+    struct wlr_output *output = wlr_output_layout_output_at(desktop->layout,
+        desktop->cursor->x, desktop->cursor->y);
+    struct wlr_box full;
+    if (!output_box(desktop, output, &full)) return;
+    /* Half-open 12 logical pixel strips of the actual output, not its work area.
+     * Top wins at corners; placement itself still uses the reserved work area. */
+    bool top = desktop->cursor->y < full.y + 12;
+    enum PuDesktopTile tile = desktop->cursor->x < full.x + 12 ? PU_TILE_LEFT :
+        desktop->cursor->x >= full.x + full.width - 12 ? PU_TILE_RIGHT : PU_TILE_NONE;
+    if (!top && tile == PU_TILE_NONE) return;
+    const char *error = placement_admit(view);
+    if (!error && (desktop->stopping || desktop->focused != view || desktop->focused_layer))
+        error = "Window does not own desktop input focus";
+    if (!error && (view->fullscreen || view->mode == PU_DESKTOP_FULLSCREEN))
+        error = "Leave fullscreen before changing placement";
+    if (!error && (view->drag_restore_pending || view->mode != PU_DESKTOP_FLOATING ||
+        pu_decoration_mode_pending(view) || !pu_decoration_presented_current(view)))
+        error = "Wait for the presented floating window and native frame";
+    if (!error) {
+        if (top) {
+            set_view_state(view, true, false, output);
+            view->restore_box = floating;
+        } else {
+            error = place_view(view, tile, output);
+            if (!error) view->floating_box = floating;
+        }
+    }
+    if (error) wlr_log(WLR_INFO, "Cannot snap title drag on release: %s", error);
 }
 
 void pu_desktop_redecorate(struct PuDesktopView *view)
@@ -859,6 +1354,20 @@ static void present_view(struct PuDesktopView *view)
         /* A buffer for an older configure must not acquire the latest position. */
         uint32_t serial = view->toplevel->base->current.configure_serial;
         if (!view->geometry_reuse && (int32_t)(serial - view->geometry_serial) < 0) return;
+        if (view->tile != PU_TILE_NONE && !view->maximized && !view->fullscreen &&
+            (view->toplevel->base->geometry.width != view->pending_box.width ||
+             view->toplevel->base->geometry.height != view->pending_box.height)) {
+            if (view->geometry_reuse) return;
+            wlr_log(WLR_ERROR, "Client declined exact tiled geometry; restoring floating window");
+            view->tile = PU_TILE_NONE;
+            struct wlr_box bounds, box = view->floating_box;
+            if (!output_box(view->desktop, view->output, &bounds)) return;
+            use_work_area(view->output, &bounds);
+            pu_decoration_inset(view, &bounds, true);
+            fit_floating(view, &box, &bounds);
+            configure_view(view, box, &bounds);
+            return;
+        }
         if (!pu_decoration_ready(view)) {
             struct wlr_box clip = view->toplevel->base->geometry;
             pu_decoration_waiting_clip(view, &clip);
@@ -887,6 +1396,7 @@ static void present_view(struct PuDesktopView *view)
         fail(view->desktop, "Cannot apply native window effects");
         return;
     }
+    if (view->mode == PU_DESKTOP_FLOATING) view->presented_box = view_box(view);
     update_layer_focus(view->desktop);
     sync_foreign(view->desktop);
 }
@@ -909,16 +1419,23 @@ static void refresh_views(struct PuDesktop *desktop)
         struct wlr_box box = view->geometry_pending ? view->pending_box : view_box(view);
         struct wlr_box bounds;
         struct wlr_output *output = view->output;
-        if ((!view->fullscreen && !view->maximized) || !output_box(desktop, output, &bounds))
+        if ((!view->fullscreen && !view->maximized && view->tile == PU_TILE_NONE) ||
+            !output_box(desktop, output, &bounds))
             output = output_for_box(desktop, &box);
         view->output = output;
         if (!output_box(desktop, output, &bounds)) continue;
         if (!view->fullscreen) {
             use_work_area(output, &bounds);
+            if (!view->maximized && view->tile != PU_TILE_NONE &&
+                !tile_box(view, view->tile, &bounds, &box)) {
+                wlr_log(WLR_ERROR, "Tiled window no longer fits changed work area; restoring floating geometry");
+                view->tile = PU_TILE_NONE;
+                box = view->floating_box;
+            }
             pu_decoration_inset(view, &bounds, true);
         }
         if (view->fullscreen || view->maximized) box = bounds;
-        else fit_floating(view, &box, &bounds);
+        else if (view->tile == PU_TILE_NONE) fit_floating(view, &box, &bounds);
         configure_view(view, box, &bounds);
     }
 }
@@ -927,6 +1444,7 @@ static void layout_changed(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
+    end_grab(desktop);
     pu_session_lock_arrange(desktop);
     pu_data_device_cancel_drag(desktop);
     pu_shortcuts_cancel(desktop);
@@ -1082,6 +1600,7 @@ static void arrange_layers(struct PuDesktop *desktop)
     desktop->arranging_layers = false;
     if (changed) refresh_views(desktop);
     update_layer_focus(desktop);
+    pu_decorations_validate_shell_backdrops(desktop);
     refresh_pointer(desktop);
 }
 
@@ -1096,6 +1615,9 @@ static void layer_unmap(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopLayer *layer = wl_container_of(listener, layer, unmap);
+    pu_workspaces_invalidate_menus(layer->desktop, layer->surface->surface);
+    if (layer->backdrop) wlr_scene_node_destroy(&layer->backdrop->node);
+    layer->backdrop = NULL; layer->backdrop_owner = NULL;
     layer->ready = layer->positioned = layer->presented = false;
     arrange_layers(layer->desktop);
 }
@@ -1114,6 +1636,7 @@ static void layer_commit(struct wl_listener *listener, void *data)
     else {
         present_layer(layer);
         update_layer_focus(layer->desktop);
+        pu_decorations_validate_shell_backdrops(layer->desktop);
         refresh_pointer(layer->desktop);
     }
 }
@@ -1123,6 +1646,7 @@ static void layer_destroy(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktopLayer *layer = wl_container_of(listener, layer, destroy);
     struct PuDesktop *desktop = layer->desktop;
+    pu_workspaces_invalidate_menus(desktop, layer->surface->surface);
     wl_list_remove(&layer->link);
     wl_list_remove(&layer->map.link);
     wl_list_remove(&layer->unmap.link);
@@ -1215,14 +1739,47 @@ bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surfa
 
 static void process_motion(struct PuDesktop *desktop, uint32_t time)
 {
+    pu_workspaces_system_menu_validate(desktop);
+    pu_workspaces_picker_validate(desktop);
     if (pu_session_lock_active(desktop)) { pu_session_lock_motion(desktop, time); return; }
     pu_input_method_reposition(desktop);
     pu_data_device_motion(desktop);
     struct PuDesktopView *view = desktop->grabbed;
     if (view && desktop->grab == PU_DESKTOP_MOVE) {
+        if (!view->mapped || view->minimized || !pu_workspace_current(view) ||
+            modal_target(view) != view || desktop->session_exit_pending ||
+            (desktop->grab_title && (desktop->focused != view || desktop->focused_layer ||
+                view->fullscreen || pu_decoration_mode_pending(view))) ||
+            pu_shortcuts_recording(desktop) ||
+            wlr_seat_pointer_has_grab(desktop->seat) || wlr_seat_keyboard_has_grab(desktop->seat)) {
+            end_grab(desktop);
+            return;
+        }
+        double moved_x = desktop->cursor->x - desktop->grab_start_x;
+        double moved_y = desktop->cursor->y - desktop->grab_start_y;
+        if (desktop->grab_title && moved_x * moved_x + moved_y * moved_y > 25)
+            desktop->grab_title_moved = true;
         double dx = desktop->cursor->x - desktop->last_title_x;
         double dy = desktop->cursor->y - desktop->last_title_y;
         if (dx * dx + dy * dy > 25) desktop->last_title_click = NULL;
+        if (view->mode != PU_DESKTOP_FLOATING && !view->drag_restore_pending) {
+            dx = desktop->cursor->x - (desktop->grab_box.x + desktop->grab_x);
+            dy = desktop->cursor->y - (desktop->grab_box.y + desktop->grab_y);
+            if (dx * dx + dy * dy <= 25) return;
+            if (!restore_title_move(view)) return;
+        }
+        if (view->drag_restore_pending) {
+            /* Never move the old placed frame while either client or native
+             * caption is pending. Release freezes this transaction's last point. */
+            struct wlr_output *output = initial_output(desktop);
+            if (output != view->output) {
+                configure_restored_move(view, output);
+            } else {
+                view->pending_box.x = (int)(desktop->cursor->x - desktop->grab_x);
+                view->pending_box.y = (int)(desktop->cursor->y - desktop->grab_y);
+            }
+            return;
+        }
         wlr_scene_node_set_position(&view->tree->node,
             (int)(desktop->cursor->x - desktop->grab_x),
             (int)(desktop->cursor->y - desktop->grab_y));
@@ -1269,6 +1826,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
     int part = view && !surface && modal_target(view) == view ? pu_decoration_hit(view,
         desktop->cursor->x - view->tree->node.x, desktop->cursor->y - view->tree->node.y) : 0;
     pu_decoration_hover(desktop, view, part);
+    pu_workspaces_picker_motion(desktop, view, part);
     if (surface) {
         wlr_seat_pointer_notify_enter(desktop->seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(desktop->seat, time, sx, sy);
@@ -1298,21 +1856,38 @@ static void cursor_absolute(struct wl_listener *listener, void *data)
 }
 
 static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
-                       uint32_t edges, uint32_t button)
+                       uint32_t edges, uint32_t button, bool title)
 {
     struct PuDesktop *desktop = view->desktop;
-    if (pu_session_lock_active(desktop)) return;
+    if (pu_session_lock_active(desktop) || desktop->session_exit_pending ||
+        pu_shortcuts_recording(desktop) ||
+        wlr_seat_pointer_has_grab(desktop->seat) || wlr_seat_keyboard_has_grab(desktop->seat)) return;
     if (modal_target(view) != view) return;
     if (!view->mapped || view->minimized || !pu_workspace_current(view) || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
-        view->geometry_pending || view->mode != PU_DESKTOP_FLOATING) return;
+        view->geometry_pending || view->resize_pending || pu_decoration_mode_pending(view)) return;
+    if (view->mode != PU_DESKTOP_FLOATING &&
+        (!title || mode != PU_DESKTOP_MOVE || view->fullscreen ||
+         (view->mode != PU_DESKTOP_MAXIMIZED && view->mode != PU_DESKTOP_TILED_LEFT &&
+          view->mode != PU_DESKTOP_TILED_RIGHT))) return;
+    if (view->mode != PU_DESKTOP_FLOATING &&
+        (view->presented_box.width < 1 ||
+         view->presented_box.width != view->toplevel->base->geometry.width ||
+         view->presented_box.height != view->toplevel->base->geometry.height)) return;
     desktop->grab = mode;
+    pu_workspaces_system_menu_cancel(desktop);
+    pu_workspaces_picker_cancel(desktop);
     desktop->grabbed = view;
     desktop->grab_edges = edges;
     desktop->grab_button = button;
+    desktop->grab_start_x = desktop->cursor->x;
+    desktop->grab_start_y = desktop->cursor->y;
+    desktop->grab_title = title && mode == PU_DESKTOP_MOVE;
+    desktop->grab_title_moved = desktop->grab_title_restored = false;
     desktop->grab_x = desktop->cursor->x;
     desktop->grab_y = desktop->cursor->y;
     if (mode == PU_DESKTOP_MOVE) {
         view->resize_pending = false;
+        desktop->grab_box = presented_view_box(view);
         desktop->grab_x -= view->tree->node.x;
         desktop->grab_y -= view->tree->node.y;
     } else {
@@ -1333,6 +1908,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
     struct PuDesktop *desktop = wl_container_of(listener, desktop, button);
     struct wlr_pointer_button_event *event = data;
     bool pressed = event->state == WL_POINTER_BUTTON_STATE_PRESSED;
+    if (pressed) pu_workspaces_picker_input(desktop, desktop->seat->pointer_state.focused_surface);
     if (pu_session_lock_active(desktop)) {
         if (!pressed && desktop->suppressed_button == event->button) { desktop->suppressed_button = 0; return; }
         pu_session_lock_motion(desktop, event->time_msec);
@@ -1348,11 +1924,13 @@ static void cursor_button(struct wl_listener *listener, void *data)
         desktop->decoration_pressed = NULL;
         desktop->decoration_part = 0;
         if (view) pu_decoration_update(view);
-        end_grab(desktop);
+        release_grab(desktop, event->button);
         struct wlr_surface *surface;
         double sx, sy;
         struct PuDesktopView *hit = view_at(desktop, desktop->cursor->x, desktop->cursor->y,
                                             &surface, &sx, &sy, NULL);
+        if (event->button == BTN_RIGHT)
+            pu_workspaces_system_menu_release(desktop, surface ? NULL : hit);
         if (view && hit == view && !surface && !desktop->focused_layer &&
             pu_decoration_hit(view, desktop->cursor->x - view->tree->node.x,
                                       desktop->cursor->y - view->tree->node.y) == part) {
@@ -1364,7 +1942,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
         process_motion(desktop, event->time_msec);
         return;
     }
-    if (pressed && desktop->grab == PU_DESKTOP_PASSTHROUGH &&
+    if (pressed && desktop->suppressed_button != BTN_RIGHT && desktop->grab == PU_DESKTOP_PASSTHROUGH &&
         !wlr_seat_pointer_has_grab(desktop->seat) &&
         desktop->seat->pointer_state.button_count == 0) {
         double sx = 0, sy = 0;
@@ -1390,14 +1968,16 @@ static void cursor_button(struct wl_listener *listener, void *data)
         int part = view && !surface && modal_target(view) == view ? pu_decoration_hit(view,
             desktop->cursor->x - view->tree->node.x, desktop->cursor->y - view->tree->node.y) : 0;
         if (part != PU_DECORATION_TITLE || event->button != BTN_LEFT) desktop->last_title_click = NULL;
-        if (part && event->button == BTN_LEFT && !desktop->focused_layer) {
+        if (part && event->button == BTN_LEFT && !desktop->focused_layer &&
+            !desktop->session_exit_pending && !pu_shortcuts_recording(desktop) &&
+            !wlr_seat_keyboard_has_grab(desktop->seat)) {
             desktop->suppressed_button = event->button;
-            if (part < PU_DECORATION_TITLE) begin_grab(view, PU_DESKTOP_RESIZE, (uint32_t)part, event->button);
+            if (part < PU_DECORATION_TITLE) begin_grab(view, PU_DESKTOP_RESIZE, (uint32_t)part, event->button, false);
             else if (part == PU_DECORATION_TITLE) {
                 double dx = desktop->cursor->x - desktop->last_title_x;
                 double dy = desktop->cursor->y - desktop->last_title_y;
                 if (desktop->last_title_click == view && event->time_msec - desktop->last_title_time <= 400 &&
-                    dx * dx + dy * dy <= 25 && !view->geometry_pending) {
+                    dx * dx + dy * dy <= 25 && !view->geometry_pending && !view->resize_pending) {
                     desktop->last_title_click = NULL;
                     set_view_state(view, !view->maximized, view->fullscreen, NULL);
                 } else {
@@ -1405,7 +1985,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
                     desktop->last_title_time = event->time_msec;
                     desktop->last_title_x = desktop->cursor->x;
                     desktop->last_title_y = desktop->cursor->y;
-                    begin_grab(view, PU_DESKTOP_MOVE, 0, event->button);
+                    begin_grab(view, PU_DESKTOP_MOVE, 0, event->button, true);
                 }
             } else {
                 desktop->decoration_pressed = view;
@@ -1422,14 +2002,19 @@ static void cursor_button(struct wl_listener *listener, void *data)
             (event->button == BTN_LEFT || event->button == BTN_RIGHT)) {
             desktop->suppressed_button = event->button;
             begin_grab(view, event->button == BTN_LEFT ? PU_DESKTOP_MOVE : PU_DESKTOP_RESIZE,
-                       WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT, event->button);
+                       WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT, event->button, false);
+            return;
+        }
+        if (view && part == PU_DECORATION_TITLE && event->button == BTN_RIGHT &&
+            pu_workspaces_system_menu_arm(view)) {
+            desktop->suppressed_button = event->button;
             return;
         }
     }
     wlr_seat_pointer_notify_button(desktop->seat, event->time_msec,
                                   event->button, event->state);
     if (!pressed && event->button == desktop->grab_button) {
-        end_grab(desktop);
+        release_grab(desktop, event->button);
     }
     if (!pressed && desktop->seat->pointer_state.button_count == 0) {
         process_motion(desktop, event->time_msec);
@@ -1601,9 +2186,23 @@ static void output_frame(struct wl_listener *listener, void *data)
         wlr_scene_get_scene_output(entry->desktop->scene, entry->output);
     live_boot_frame(entry);
     pu_session_lock_prepare_frame(entry->desktop, entry->output);
+    if (entry->backdrop_stalled &&
+        entry->backdrop_failure_revision == entry->desktop->scene->backdrop_revision) return;
     if (!output || !wlr_scene_output_commit(output, NULL)) {
+        if (output && output->backdrop_failed) {
+            entry->backdrop_stalled = true;
+            entry->backdrop_failure_revision = entry->desktop->scene->backdrop_revision;
+            const char *message = "Regional backdrop composition failed; last output frame retained";
+            wlr_log(WLR_ERROR, "%s", message);
+            pu_decorations_backdrop_status(entry->desktop, entry->output, message);
+            return;
+        }
         fail(entry->desktop, "Cannot commit output frame");
         return;
+    }
+    if (entry->backdrop_stalled) {
+        entry->backdrop_stalled = false;
+        pu_decorations_backdrop_status(entry->desktop, entry->output, "");
     }
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1871,9 +2470,14 @@ static void view_unmap(struct wl_listener *listener, void *data)
     view->mapped = false;
     view->minimized = false;
     view->geometry_pending = view->maximized = view->fullscreen = false;
+    view->drag_restore_pending = false;
     view->mode = PU_DESKTOP_FLOATING;
+    view->pending_arrangement = PU_ARRANGE_CASCADE;
+    view->tile = PU_TILE_NONE;
     view->output = NULL;
     view->restore_box = (struct wlr_box){0};
+    view->floating_box = (struct wlr_box){0};
+    view->presented_box = (struct wlr_box){0};
     wlr_scene_node_set_enabled(&view->tree->node, false);
     wl_list_remove(&view->link);
     wl_list_init(&view->link);
@@ -1923,6 +2527,13 @@ static void view_commit(struct wl_listener *listener, void *data)
             view->toplevel->requested.fullscreen ? view->toplevel->requested.fullscreen_output : view->output);
     }
     if (!view->mapped) return;
+    if (view->tile != PU_TILE_NONE && !view->maximized && !view->fullscreen) {
+        struct wlr_box bounds, box;
+        if (output_box(view->desktop, view->output, &bounds)) {
+            use_work_area(view->output, &bounds);
+            if (!tile_box(view, view->tile, &bounds, &box)) refresh_views(view->desktop);
+        }
+    }
     present_view(view);
     if (view->resize_pending) {
         /* Anchor the opposite edge using the size actually committed by the client. */
@@ -1985,7 +2596,7 @@ static void view_move(struct wl_listener *listener, void *data)
     struct PuDesktopView *view = wl_container_of(listener, view, move);
     struct wlr_xdg_toplevel_move_event *event = data;
     if (valid_grab(view, event->seat, event->serial))
-        begin_grab(view, PU_DESKTOP_MOVE, 0, view->desktop->seat->pointer_state.grab_button);
+        begin_grab(view, PU_DESKTOP_MOVE, 0, view->desktop->seat->pointer_state.grab_button, false);
 }
 
 static void view_resize(struct wl_listener *listener, void *data)
@@ -1994,7 +2605,7 @@ static void view_resize(struct wl_listener *listener, void *data)
     struct wlr_xdg_toplevel_resize_event *event = data;
     if (valid_grab(view, event->seat, event->serial))
         begin_grab(view, PU_DESKTOP_RESIZE, event->edges,
-                   view->desktop->seat->pointer_state.grab_button);
+                   view->desktop->seat->pointer_state.grab_button, false);
 }
 
 static void view_maximize(struct wl_listener *listener, void *data)
@@ -2311,8 +2922,8 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->keyboards);
     wl_list_init(&desktop->pointers);
     wl_list_init(&desktop->layers);
-    if (wlr_scene_effects_abi_v2() != WLR_SCENE_EFFECTS_ABI ||
-        strcmp(wlr_scene_effects_source_sha256_v2(), PU_WLROOTS_EFFECTS_SHA256)) {
+    if (wlr_scene_effects_abi_v4() != WLR_SCENE_EFFECTS_ABI ||
+        strcmp(wlr_scene_effects_source_sha256_v4(), PU_WLROOTS_EFFECTS_SHA256)) {
         wlr_log(WLR_ERROR, "PollyWM requires its paired wlroots scene effects ABI");
         desktop->failed = true;
         return false;

@@ -1,3 +1,4 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { isLuna } from './desktop/shell/luna-primitives.mjs';
 import { desktopCommand } from './desktop/shared/ui/presentation.mjs';
@@ -7,7 +8,7 @@ export function trayView(theme, items, activate, scroll, error = '') {
   return h('view', { id: 'shell-tray', role: 'toolbar',
     style: { flexDirection: 'row', alignItems: 'center', flexShrink: 1,
       maxWidth: theme.layout.trayWidth, gap: theme.layout.trayGap, overflow: 'scroll' } },
-  error ? h('view', { role: 'alert', style: { color: theme.panel.text, fontSize: theme.layout.smallFontSize } },
+  error ? h('view', { role: 'alert', style: { color: theme.panel.text, ...bodyFont(theme), fontSize: theme.layout.smallFontSize } },
     'Tray unavailable') : null,
   ...items.filter(item => item.status !== 'Passive').map(item => {
     const act = (event, kind) => {
@@ -37,7 +38,7 @@ export function trayView(theme, items, activate, scroll, error = '') {
         scroll(item, Math.round(-(horizontal ? event.deltaX : event.deltaY) * 3), horizontal);
       },
     }, item.icon ? h('view', { style: { width: theme.layout.trayIconSize, height: theme.layout.trayIconSize, backgroundImage: item.icon } }) :
-      h('view', { style: { fontSize: theme.layout.smallFontSize,
+      h('view', { style: { ...bodyFont(theme), fontSize: theme.layout.smallFontSize,
         color: isLuna(theme, 'panel') ? theme.panel.text : theme.colors.text } }, item.title));
   }));
 }
@@ -46,10 +47,15 @@ export function createTray({ native, report, changed, host, theme }) {
   let items = [], started = false, available = false, previous, errorMessage = '';
   let menu = null, position = null;
   const errors = new Set();
+  function retireMenu(current) {
+    if (!current) return;
+    render(null, current.window.document.body);
+    if (!current.window.closed) current.window.close();
+  }
   function closeMenu() {
     const current = menu;
     menu = null; position = null;
-    if (current && !current.window.closed) current.window.close();
+    retireMenu(current);
     if (started && available) {
       try { native.closeTrayMenu(); }
       catch (error) { unavailable(error); }
@@ -80,7 +86,7 @@ export function createTray({ native, report, changed, host, theme }) {
   }
   function paintMenuState() {
     const state = native.trayMenu();
-    if (!state.itemId) { if (menu && !menu.window.closed) menu.window.close(); menu = null; return; }
+    if (!state.itemId) { retireMenu(menu); menu = null; return; }
     const output = host.displays().find(output => position && position.x >= output.x && position.x < output.x + output.width &&
       position.y >= output.y && position.y < output.y + output.height) || host.displays()[0];
     if (!output) { closeMenu(); return; }
@@ -91,7 +97,7 @@ export function createTray({ native, report, changed, host, theme }) {
     if (menu && (menu.window.closed || menu.geometry !== geometry)) {
       const retired = menu;
       menu = null;
-      if (!retired.window.closed) retired.window.close();
+      retireMenu(retired);
     }
     if (!menu) {
       const x = Math.max(layout.screenInset, Math.min((position?.x ?? output.x) - output.x, output.width - width - layout.screenInset));
@@ -127,13 +133,13 @@ export function createTray({ native, report, changed, host, theme }) {
             catch (error) { report('[shell] Tray menu action failed: ' + String(error)); paintMenu(); }
           }
         }, entry.enabled));
-    const view = panelViewport(current, { id: 'shell-tray-menu', variant: 'menu' },
+    const view = panelViewport(current, { id: 'shell-tray-menu', variant: 'menu', scrollbar: true },
       menuButton('shell-tray-menu-close', 'Close', closeMenu),
       state.root ? menuButton('shell-tray-menu-root', 'Main menu', () => openMenu(target, 0)) : null,
-      state.pending ? h('view', { style: { color: current.colors.text, fontSize: current.layout.fontSize } }, 'Loading menu...') :
-        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, fontSize: current.layout.fontSize } }, state.error) : entries);
+      state.pending ? h('view', { style: { color: current.colors.text, ...bodyFont(current), fontSize: current.layout.fontSize } }, 'Loading menu...') :
+        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, ...bodyFont(current), fontSize: current.layout.fontSize } }, state.error) : entries);
     view.props.role = 'menu';
-    view.children[0].props.style.gap = current.layout.trayGap;
+    view.children[0].children[0].props.style.gap = current.layout.trayGap;
     render(view, menu.window.document.body);
     if (!menu.window.document.activeElement)
       menu.window.document.querySelectorAll('.tray-menu-entry').find(node => node.tabIndex >= 0)?.focus();

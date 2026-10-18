@@ -3,7 +3,7 @@ import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shared/ui/them
 import { settingsView } from './desktop/apps/settings/ui/appearance.mjs';
 import { systemSettingsView, aboutSettingsView } from './desktop/apps/settings/ui/frame.mjs';
 import { SETTINGS_APP_ID, SETTINGS_VERSION, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
-import { desktopCommand, desktopText, settingsCard } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, themedText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { selectionInk } from './desktop/shared/ui/surface-primitives.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
 import { createSettingsNetworkClient } from './desktop/apps/settings/network-client.mjs';
@@ -12,11 +12,16 @@ import { createSettingsPages } from './desktop/apps/settings/logic/pages.mjs';
 import { createDisplayPage } from './desktop/apps/settings/ui/display-page.mjs';
 import { audioSettingsView } from './desktop/apps/settings/ui/audio.mjs';
 import { shortcutsView } from './desktop/apps/settings/ui/keyboard.mjs';
+import { createWallpaperMaterial } from './desktop/shared/ui/material.mjs';
+import { parseMaterialSource } from './desktop/client/settings-contract.mjs';
 
 export function createSettingsApp({ client, page = 'appearance', host = window, report = console.error,
   identity = typeof application === 'undefined' ? { id: SETTINGS_APP_ID } : application,
-  onStop = () => {} }) {
+  onStop = () => {}, optInMaterial = false }) {
+  if (typeof optInMaterial !== 'boolean') throw new TypeError('Settings material opt-in must be boolean');
   let surface = null, timer = null, pageTimer = null, stopped = false, revision = 0, details = false;
+  let material = null, materialUnsubscribe = null, materialKey = '', materialInput = '', materialStatusPaint = false;
+  let materialGeneration = 0, materialReady = false, materialError = '', materialSource = null, materialLoading = false;
   const ownBuild = runtimeBuild(identity);
   let currentTheme = getDesktopTheme(DEFAULT_DESKTOP_THEME);
   const networkClient = createSettingsNetworkClient(client, report);
@@ -24,6 +29,93 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   const pages = createSettingsPages({ client, changed: paint, report });
   const displays = createDisplayPage();
   const controller = createSettingsController({ client, page, changed: paint, report });
+  function materialPresentation() {
+    if (!surface || surface.closed || stopped) return;
+    const root = surface.document.getElementById('shell-system-settings');
+    if (root) root.style.backgroundColor = materialReady ? 'transparent' : currentTheme.colors.body;
+    if (material) material.canvas.style.display = materialReady ? 'flex' : 'none';
+  }
+  function setMaterialError(message) {
+    if (materialError === message) return;
+    materialError = message;
+    if (materialStatusPaint) return;
+    materialStatusPaint = true;
+    Promise.resolve().then(() => {
+      materialStatusPaint = false;
+      if (!stopped && !surface.closed) paint();
+    });
+  }
+  function retireMaterial() {
+    materialGeneration++; materialReady = false; materialSource = null; materialLoading = false; materialInput = '';
+    material?.dispose(); material = null;
+  }
+  function materialFailure(error, generation) {
+    if (stopped || surface?.closed || generation !== materialGeneration) return;
+    retireMaterial();
+    setMaterialError(String(error.message || error));
+    report('[settings material] ' + materialError);
+    materialPresentation();
+  }
+  function updateMaterialPixels() {
+    if (!materialSource || materialError || stopped || surface.closed) return;
+    const state = surface.state;
+    if (state.width < 1 || state.height < 1) return;
+    const input = JSON.stringify([materialKey, state.width, state.height, state.scale, state.active]);
+    if (input === materialInput) return;
+    materialInput = input;
+    const generation = materialGeneration;
+    try {
+      if (!material) {
+        material = createWallpaperMaterial({ document: surface.document, onError: error => materialFailure(error, generation) });
+        material.canvas.id = 'settings-material-base';
+        material.canvas.setAttribute('aria-hidden', 'true');
+        Object.assign(material.canvas.style, { position: 'absolute', left: '0', top: '0', pointerEvents: 'none' });
+        surface.document.body.insertBefore(material.canvas, surface.document.body.firstChild);
+      }
+      const owner = material;
+      materialReady = false; materialPresentation();
+      owner.update({ theme: currentTheme, width: state.width, height: state.height, scale: state.scale,
+        active: state.active, asset: materialSource.dataURL, sourceRevision: materialSource.revision }).then(() => {
+        if (stopped || surface.closed || generation !== materialGeneration || owner !== material || input !== materialInput) return;
+        materialReady = owner.stats.ready; materialPresentation();
+      }, error => materialFailure(error, generation));
+    } catch (error) { materialFailure(error, generation); }
+  }
+  function syncMaterial() {
+    if (!optInMaterial || stopped || !surface || surface.closed) return;
+    const { appearance, unavailable } = controller.getState();
+    if (!appearance || unavailable || currentTheme.window.clientMaterial !== 'wallpaper') {
+      if (materialKey) retireMaterial();
+      materialKey = ''; setMaterialError('');
+      materialUnsubscribe?.(); materialUnsubscribe = null;
+      materialPresentation();
+      return;
+    }
+    const key = JSON.stringify([appearance.revision, appearance.catalogRevision, currentTheme]);
+    if (key !== materialKey) {
+      retireMaterial(); setMaterialError(''); materialKey = key;
+      materialPresentation();
+      const generation = materialGeneration;
+      try {
+        if (!materialUnsubscribe) materialUnsubscribe = surface.observeState(() => syncMaterial());
+        if (currentTheme.desktop.asset) {
+          materialLoading = true;
+          Promise.resolve().then(() => {
+            if (stopped || generation !== materialGeneration) return null;
+            if (typeof client.getMaterialSource !== 'function') throw new Error('Authenticated wallpaper source is unavailable');
+            return client.getMaterialSource(appearance);
+          }).then(source => {
+            if (stopped || surface.closed || generation !== materialGeneration) return;
+            const checked = parseMaterialSource(JSON.stringify(source));
+            if (checked.themeId !== appearance.themeId || checked.revision !== appearance.revision)
+              throw new Error('Wallpaper source no longer matches the displayed appearance');
+            materialLoading = false; materialSource = checked; updateMaterialPixels();
+          }).catch(error => materialFailure(error, generation));
+        } else materialSource = { dataURL: '', revision: appearance.revision };
+      } catch (error) { materialFailure(error, generation); }
+    }
+    if (!materialLoading) updateMaterialPixels();
+  }
   function paint() {
     if (stopped || !surface || surface.closed) return;
     const state = controller.getState(), scope = ++revision;
@@ -35,7 +127,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       if (!controller.getState().busy && !controller.getState().unavailable && controller.getState().appearance)
         return action(...args);
     });
-    const label = text => desktopText(text, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 });
+    const label = text => themedText(theme, text, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 });
     const build = state.appearance?.build || ownBuild;
     let content;
     if (state.page === 'appearance') {
@@ -94,9 +186,16 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       navigate(page);
       surface.document.getElementById('shell-settings-page-' + page)?.focus();
     }), stop, content, null, 'Settings', [], build);
+    if (optInMaterial) tree.children.splice(tree.children.length - 1, 0,
+      h('view', { id: 'settings-material-status', role: 'status', onWheel: scrollDesktop,
+        style: { display: materialError ? 'flex' : 'none', minWidth: 0, maxHeight: '25%', flexShrink: 0,
+          padding: theme.layout.compactPadding, paddingLeft: theme.layout.contentPadding, overflow: 'scroll' } },
+      themedText(theme, materialError ? 'Wallpaper material unavailable: ' + materialError : '',
+        theme.colors.text, theme.layout.statusFontSize, { minWidth: 0 })));
+    if (optInMaterial && materialReady) tree.props.style.backgroundColor = 'transparent';
     if (JSON.stringify(build) !== JSON.stringify(ownBuild))
       tree.children.push(h('view', { role: 'status', style: { padding: theme.layout.compactPadding, flexShrink: 0,
-        backgroundColor: theme.colors.selection } }, desktopText('Settings runtime differs: ' + buildLabel(ownBuild),
+        backgroundColor: theme.colors.selection } }, themedText(theme, 'Settings runtime differs: ' + buildLabel(ownBuild),
         selectionInk(theme, theme.colors.text), theme.layout.statusFontSize, { flexShrink: 1 })));
     if (state.busy || !state.appearance)
       tree.props['aria-busy'] = 'true';
@@ -120,6 +219,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     }
     disable(tree);
     render(tree, surface.document.body);
+    syncMaterial();
     if (state.page === 'network') network.refresh();
     if (state.page === 'displays' && pages.getState().snapshot) {
       const { snapshot, busy } = pages.getState();
@@ -134,13 +234,15 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     controller.navigate(page); pages.activate(page);
   }
   function keydown(event) {
-    if (!event.defaultPrevented && event.key === 'Escape') {
+    if (!event.isComposing && !event.defaultPrevented && event.key === 'Escape') {
       event.preventDefault(); event.stopPropagation(); stop();
     }
   }
   function stop() {
     if (stopped) return;
     stopped = true; revision++;
+    materialUnsubscribe?.(); materialUnsubscribe = null;
+    retireMaterial();
     if (timer !== null) clearInterval(timer);
     if (pageTimer !== null) clearInterval(pageTimer);
     surface?.document.body.removeEventListener('keydown', keydown);
@@ -149,6 +251,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   }
   return Object.freeze({
     controller, pages, stop, getWindow: () => surface,
+    getMaterialState: () => Object.freeze({ ready: materialReady, error: materialError, stats: material?.stats || null }),
     present(page) {
       if (stopped) throw new Error('Settings instance is closed');
       return navigate(page);

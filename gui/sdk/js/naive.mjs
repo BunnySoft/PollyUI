@@ -10,6 +10,7 @@ import { clampTextIndex, previousTextIndex, nextTextIndex, removeLastCodePoint }
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
 import { fixedRowWindow } from './gui/sdk/js/virtual-list.mjs';
 import { selectionTextColor, paintSelectionText } from './gui/sdk/js/selection-text.mjs';
+import { requireFontFamily, fontFamilyStyle } from './gui/sdk/js/font-family.mjs';
 import { selectionAppearance, selectionSkin } from './gui/sdk/js/selection-appearance.mjs';
 
 // ---- themes -----------------------------------------------------------------
@@ -132,7 +133,8 @@ function updateCaretInput() {
   const st = _inputs[_caret.activeId];
   if (!st) return;
   _caretNode.setInputMethod({ purpose: st.inputPurpose, x: st.inputPadding +
-    textGeometry(_caretNode.textContent, st.inputFont).caret(st.visualCaret),
+    textGeometry(st.inputFamily === undefined ? _caretNode.textContent : st.inputText,
+      st.inputFont, st.inputFamily).caret(st.visualCaret),
     y: (st.inputHeight - st.inputFont) / 2, width: 2, height: st.inputFont });
 }
 function caretFocus(id, node) {
@@ -163,9 +165,9 @@ function inputState(id, len) {
   if (st.anchor != null && st.anchor > len) st.anchor = len;
   return st;
 }
-function indexAtX(value, fontSize, localX, masked = false) {
+function indexAtX(value, fontSize, localX, masked = false, family) {
   const display = masked ? '\u2022'.repeat(Array.from(value).length) : value;
-  const index = textGeometry(display, fontSize).nearest(localX);
+  const index = textGeometry(display, fontSize, family).nearest(localX);
   return masked ? clampTextIndex(value, Array.from(value).slice(0, index).join('').length) : index;
 }
 // A caret vnode for a focused input (or null). Place inside a position:relative box.
@@ -389,7 +391,7 @@ export function NTabs(props = {}) {
       'aria-labelledby': id && selected >= 0 ? id + '-tab-' + selected : undefined,
       className: 'n-selection-pane',
       style: { paddingTop: String(m.panePadding),
-        ...(skin.custom ? { backgroundColor: c.card, color: c.text, fontSize: m.fontSize,
+        ...(skin.custom ? { backgroundColor: c.card, color: c.text, fontSize: m.fontSize, ...fontFamilyStyle(skin.fontFamily),
           borderWidth: 1, borderColor: c.border, paddingLeft: m.paddingX, paddingRight: m.paddingX,
           paddingBottom: m.panePadding } : {}) } }, active ? (typeof active.content === 'function' ? active.content() : active.content) : null));
 }
@@ -432,6 +434,7 @@ export function NCard(props = {}, ...children) {
 // ---- NInput (controlled) ----------------------------------------------------
 
 export function NInput(props = {}) {
+  const family = requireFontFamily(props.fontFamily);
   const { value = '', placeholder = '', onInput, width = 200, size = 'medium', id, selectionColor = '#93c5fd' } = props;
   const purpose = props.password ? 'password' : props.purpose ?? 'text';
   const secure = purpose === 'password' || purpose === 'pin';
@@ -454,11 +457,12 @@ export function NInput(props = {}) {
   const text = composition ? value.slice(0, composition.start) + composition.text + value.slice(composition.end) : value;
   const cursor = composition ? composition.start + (composition.cursor < 0 ? composition.text.length : composition.cursor) : st ? st.caret : value.length;
   const isPh = text.length === 0;
-  const geometry = textGeometry(displayed(text), fs);
+  const geometry = textGeometry(displayed(text), fs, family);
   const displayIndex = i => displayed(text.slice(0, i)).length;
-  const xOf = (i, source = text) => pad + textGeometry(displayed(source), fs).caret(displayed(source.slice(0, i)).length);
+  const xOf = (i, source = text) => pad + textGeometry(displayed(source), fs, family).caret(displayed(source.slice(0, i)).length);
   if (st) {
     st.inputPurpose = purpose; st.inputPadding = pad; st.inputFont = fs; st.inputHeight = h0;
+    st.inputFamily = family; st.inputText = displayed(text);
     st.visualCaret = displayed(text.slice(0, cursor)).length;
   }
   const localX = (e) => e.clientX - (e.currentTarget.offsetLeft + pad);
@@ -466,7 +470,7 @@ export function NInput(props = {}) {
   const selectedForeground = selectionTextColor(props.selectionTextColor);
   const ranges = focused && sel && !composition ? geometry.ranges(displayIndex(sel[0]), displayIndex(sel[1])) : [];
   const selectedPaint = layer => paintSelectionText(layer, {
-    text: displayed(text), fontSize: fs, ranges, width: geometry.width, height: fs + 2,
+    text: displayed(text), fontSize: fs, fontFamily: family, ranges, width: geometry.width, height: fs + 2,
     foreground: selectedForeground, selection: selectionColor, background: theme.card, textTop: 1,
   });
 
@@ -475,7 +479,8 @@ export function NInput(props = {}) {
     for (const range of geometry.ranges(displayIndex(sel[0]), displayIndex(sel[1])))
       kids.push(h('view', { style: clean({ position: 'absolute', left: pad + range.x, top: (h0 - fs) / 2 - 1,
         width: range.width, height: fs + 2, backgroundColor: selectionColor }) }));
-  kids.push(h('view', { style: { position: 'relative', color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } },
+  kids.push(h('view', { style: { position: 'relative', color: isPh ? theme.textDisabled : theme.text,
+    fontSize: String(fs), ...fontFamilyStyle(family) } },
     isPh ? placeholder : displayed(text),
     selectedForeground !== undefined && ranges.length ? h('view', { 'aria-hidden': 'true', className: 'input-selection-text',
       style: { position: 'absolute', left: 0, top: -1, pointerEvents: 'none' },
@@ -505,10 +510,10 @@ export function NInput(props = {}) {
       if (st?.composition) e.currentTarget.cancelComposition();
       e.currentTarget.focus();
       if (!st) return;
-      const i = indexAtX(value, fs, localX(e), secure);
+      const i = indexAtX(value, fs, localX(e), secure, family);
       st.caret = i; st.anchor = i; st.dragging = true; caretFocus(id, e.currentTarget);
     },
-    onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e), secure); _caret.tick++; } },
+    onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e), secure, family); _caret.tick++; } },
     onMouseup: e => {
       if (e.button !== 0 || !st) return;
       st.dragging = false;
@@ -523,7 +528,7 @@ export function NInput(props = {}) {
       e.preventDefault();
       if (st.composition) e.currentTarget.cancelComposition();
       e.currentTarget.focus();
-      st.caret = indexAtX(value, fs, localX(e), secure); st.anchor = null;
+      st.caret = indexAtX(value, fs, localX(e), secure, family); st.anchor = null;
       replace(clipboard.readPrimaryText()); _caret.tick++;
     },
     onKeydown: (e) => {
@@ -772,7 +777,8 @@ function selectDropdown(state) {
       borderWidth: 1, borderColor: c.focus, opacity: state.active === index ? 1 : 0, pointerEvents: 'none' }) })),
   skin, { kind: 'option', selected: option.value === config.value, active: state.active === index,
     disabled: Boolean(option.disabled || config.disabled) })) :
-    h('view', { role: 'status', style: { height: m.optionHeight, color: c.textDisabled, fontSize: m.fontSize } }, 'No options'));
+    h('view', { role: 'status', style: { height: m.optionHeight, color: c.textDisabled,
+      fontSize: m.fontSize, ...fontFamilyStyle(skin.fontFamily) } }, 'No options'));
 }
 function syncSelect(node, config) {
   let state = selectStates.get(node);

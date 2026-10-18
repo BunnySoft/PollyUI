@@ -4,7 +4,7 @@ import { NTabs, NSelect, NMenu, NOverlayHost, useTheme, theme } from './gui/sdk/
 const check = (value, message) => { if (!value) throw new Error(message); console.log('PASS: ' + message); };
 const model = reactive({ tab: 'a', menu: 'a', select: 'a', disabled: false, showSelect: true, replaceSelect: false,
   options: [{ value: 'a', label: 'Apple' }, { value: 'b', label: 'Blocked', disabled: true }, { value: 'c', label: 'Cherry' }],
-  blockedLast: false, tick: 0, selectWidth: 180, horizontal: false, callbackVersion: 0 });
+  blockedLast: false, tick: 0, selectWidth: 180, horizontal: false, callbackVersion: 0, family: undefined });
 const calls = [];
 const callback = kind => {
   const version = model.callbackVersion;
@@ -34,6 +34,7 @@ createApp({ setup: () => () => {
           { name: 'c', label: 'Last', disabled: model.blockedLast, content: 'Pane C' }] }),
       model.showSelect ? model.replaceSelect ? h('canvas', { id: 'replaced-select', style: { width: 180, height: 34 } }) :
         NSelect({ id: 'select', value: model.select, options: model.options, width: model.selectWidth,
+          appearance: model.family === undefined ? undefined : { fontFamily: model.family },
           disabled: model.disabled, onUpdate: callback('select') }) : null,
       NMenu({ id: 'menu', value: model.menu, disabled: model.disabled, mode: model.horizontal ? 'horizontal' : 'vertical', onUpdate: callback('menu'),
         items: [{ key: 'a', label: 'Menu A' }, { key: 'b', label: 'Blocked menu', disabled: true },
@@ -199,4 +200,17 @@ await key('ArrowLeft'); check(document.activeElement === find('menu-item-0'), 'H
 useTheme('light'); model.tick++; await settle();
 check(find('select').getAttribute('role') === 'combobox' && find('tabs-panel').getAttribute('role') === 'tabpanel',
   'Semantic roles survive light/dark and dynamic lifecycle');
+if (measureText.supportsFontFamily === true) {
+  find('select').focus(); await key('Enter');
+  const openList = list();
+  model.family = globalThis.namedTestFont || 'monospace'; await settle();
+  check(list() === openList && find('select').querySelector('.n-selection-label').style.fontFamily === model.family &&
+    options()[0].querySelector('.n-selection-label').style.fontFamily === model.family,
+    'Open Select applies the current per-instance family to both trigger and portal options');
+  model.family = 'sans-serif'; await settle();
+  check(list() === openList && options()[0].querySelector('.n-selection-label').style.fontFamily === model.family &&
+    !find('menu-item-0').querySelector('.n-selection-label').style.fontFamily,
+    'Family updates refresh the retained portal without leaking into an independent Menu');
+  await key('Escape');
+}
 console.log('PASS: actual Tabs/Select/Menu keyboard, disabled, dynamic controlled overlays, focus recovery and retheme');

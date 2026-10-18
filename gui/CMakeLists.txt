@@ -287,15 +287,19 @@ if (BUILD_TESTING)
             $<TARGET_FILE:pollyui-wayland-transparency-test> $<TARGET_FILE:pollyui-playground>
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/transparency.mjs")
         set_tests_properties(gui-wayland-transparency PROPERTIES TIMEOUT 150 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/native-window-evidence")
-        add_test(NAME gui-wayland-window-contract COMMAND sh
-            "${CMAKE_SOURCE_DIR}/desktop/tests/window-contract.sh"
-            $<TARGET_FILE:pollywm-window-contract-test> $<TARGET_FILE:pollyui-playground>
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/window-contract.mjs"
-            "${CMAKE_BINARY_DIR}/native-window-evidence/frame" $<TARGET_FILE:pollyui-native-lifetime-test>
-            $<TARGET_FILE:pollyui-close-tree-test>)
-        set_tests_properties(gui-wayland-window-contract PROPERTIES TIMEOUT 25
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        if (PU_BUILD_LAUNCHER AND PU_DESKTOP_SERVICES)
+            file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/native-window-evidence")
+            add_test(NAME gui-wayland-window-contract COMMAND sh
+                "${CMAKE_SOURCE_DIR}/desktop/tests/window-contract.sh"
+                $<TARGET_FILE:pollywm-window-contract-test> $<TARGET_FILE:pollyui-playground>
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/window-contract.mjs"
+                "${CMAKE_BINARY_DIR}/native-window-evidence/frame" $<TARGET_FILE:pollyui-native-lifetime-test>
+                $<TARGET_FILE:pollyui-close-tree-test> $<TARGET_FILE:pollyui>)
+            set_tests_properties(gui-wayland-window-contract PROPERTIES TIMEOUT 25
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        else()
+            message(STATUS "gui-wayland-window-contract requires PU_BUILD_LAUNCHER and PU_DESKTOP_SERVICES (independent decorator)")
+        endif()
     endif()
     if (PU_BUILD_LAUNCHER)
         add_test(NAME gui-mouse-capture COMMAND pollyui --test "${CMAKE_CURRENT_SOURCE_DIR}/tests/mouse-capture.mjs")

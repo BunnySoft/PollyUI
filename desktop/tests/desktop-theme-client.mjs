@@ -41,6 +41,14 @@ const stable = first.getState();
 rejected = false;
 try { first.setOverrides({ window: { titleHeight: 99999 } }); } catch { rejected = true; }
 check(rejected && first.getState() === stable, 'invalid local override preserves the accepted snapshot');
+const originalMeasure = globalThis.measureText, originalLayout = globalThis.layoutText;
+try {
+  globalThis.measureText = () => 10;
+  globalThis.layoutText = undefined;
+  rejected = false;
+  try { first.setOverrides({ layout: { fontFamily: 'Consolas' } }); } catch { rejected = true; }
+  check(rejected && first.getState() === stable, 'Old measurement provider rejects named font before publishing state or mutating a consumer');
+} finally { globalThis.measureText = originalMeasure; globalThis.layoutText = originalLayout; }
 first.stop();
 check(stops === 0, 'removing one binding keeps remaining subscribers alive');
 second.stop();

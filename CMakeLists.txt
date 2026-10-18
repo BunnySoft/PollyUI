@@ -788,6 +788,75 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     $<TARGET_FILE:pollywm-test-client>)
             set_tests_properties(desktop-decorator-lifecycle-raster PROPERTIES TIMEOUT 100
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
+            add_test(NAME desktop-regional-backdrop-native
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> backdrop)
+            set_tests_properties(desktop-regional-backdrop-native PROPERTIES TIMEOUT 60
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;backdrop")
+            add_test(NAME desktop-backdrop-fixture-lifetime
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> backdrop-guard)
+            set_tests_properties(desktop-backdrop-fixture-lifetime PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;backdrop;test-guard")
+            add_test(NAME desktop-decoration-presented-frame-fence
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> frame-fence)
+            set_tests_properties(desktop-decoration-presented-frame-fence PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;test-fence")
+            add_test(NAME desktop-title-drag-restore
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> title-drag)
+            set_tests_properties(desktop-title-drag-restore PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
+            add_test(NAME desktop-title-edge-snap
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> title-snap)
+            set_tests_properties(desktop-title-edge-snap PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
+            foreach(system_menu_mode IN ITEMS system-menu-protocol system-menu)
+                add_test(NAME desktop-window-${system_menu_mode}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                        $<TARGET_FILE:pollywm-test-client> ${system_menu_mode})
+                set_tests_properties(desktop-window-${system_menu_mode} PROPERTIES TIMEOUT 40
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;system-menu"
+                    ENVIRONMENT "PU_RENDERER=raster")
+            endforeach()
+            foreach(cascade_mode IN ITEMS cascade-protocol cascade)
+                add_test(NAME desktop-window-${cascade_mode}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                        $<TARGET_FILE:pollywm-test-client> ${cascade_mode})
+                set_tests_properties(desktop-window-${cascade_mode} PROPERTIES TIMEOUT 40
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;cascade"
+                    ENVIRONMENT "PU_RENDERER=raster")
+            endforeach()
+            foreach(arrangement_mode IN ITEMS arrangement-protocol arrangement)
+                add_test(NAME desktop-window-${arrangement_mode}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                        $<TARGET_FILE:pollywm-test-client> ${arrangement_mode})
+                set_tests_properties(desktop-window-${arrangement_mode} PROPERTIES TIMEOUT 40
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;arrangement"
+                    ENVIRONMENT "PU_RENDERER=raster")
+            endforeach()
+            add_test(NAME desktop-shell-regional-backdrop-native
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> shell-backdrop)
+            set_tests_properties(desktop-shell-regional-backdrop-native PROPERTIES TIMEOUT 70
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;backdrop")
+            add_test(NAME desktop-standard-start-backdrop-native
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> standard-start)
+            set_tests_properties(desktop-standard-start-backdrop-native PROPERTIES TIMEOUT 70
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;backdrop")
             add_test(NAME desktop-decorator-version-pair COMMAND pollywm-decorator-policy $<TARGET_FILE:pollyui>)
             set_tests_properties(desktop-decorator-version-pair PROPERTIES TIMEOUT 25
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -935,6 +1004,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                         "${CMAKE_SOURCE_DIR}/desktop/tests/window-shell.mjs" windows)
                 set_tests_properties(desktop-window-shell-${renderer} PROPERTIES TIMEOUT 90
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+                if (renderer STREQUAL "raster")
+                    add_test(NAME desktop-window-placement-menu
+                        COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                            $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                            "${CMAKE_SOURCE_DIR}/desktop/tests/window-shell.mjs" windows placement)
+                    set_tests_properties(desktop-window-placement-menu PROPERTIES TIMEOUT 90
+                        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=raster")
+                endif()
             endif()
             add_test(NAME desktop-shell-${renderer}
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/native-shell.sh"

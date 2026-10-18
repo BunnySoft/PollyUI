@@ -23,6 +23,8 @@ const debian = !alpine && existsSync('/etc/debian_version') &&
 if ((!alpine?.startsWith('3.24.') && !debian) || run('uname', ['-m']) !== 'x86_64')
   throw new Error('Runtime packaging supports Alpine 3.24 or Debian trixie on x86_64');
 const distribution = debian ? 'debian13' : 'alpine3.24';
+const wlrootsEffects = debian ? JSON.parse(readFileSync(path.join(repo,
+  'desktop/release/debian/wlroots-effects.json'), 'utf8')) : null;
 if (alpine)
   throw new Error('Current desktop packaging requires the pinned Debian scene-effects SDK; historical Alpine packages are not rebuildable until their paired SDK is ported');
 const mesaCache = debian ? path.resolve(process.env.POLLY_MESA_CACHE || '/opt/pollyui-local-debs/mesa') : null;
@@ -83,7 +85,7 @@ for (const [name, source, expected] of [
 const packages = new Map(), providers = new Map();
 if (debian) {
   run('python3', [path.join(repo, 'desktop/release/debian/apply-wlroots-effects.py'),
-    '/opt/pollyui-wlroots', '--check-installed']);
+    '/opt/pollyui-wlroots-effects4', '--check-installed']);
   for (const row of run('dpkg-query', ['-W', '-f=${binary:Package}\t${Version}\t${Homepage}\t${Depends}\t${Pre-Depends}\t${Provides}\n']).split('\n')) {
     const [P, V, U, depends, preDepends, provides] = row.split('\t');
     packages.set(P, { P, V, U, D: [depends, preDepends].filter(Boolean).join(', '), L: 'See /usr/share/doc/' + P.split(':')[0] + '/copyright' });
@@ -180,9 +182,9 @@ try {
   if (debian) {
     copy(path.join(repo, 'desktop/release/debian/rime-default.custom.yaml'),
       path.join(root, 'usr/share/rime-data/default.custom.yaml'));
-    copy('/opt/pollyui-wlroots/lib/libwlroots-0.19-polly-effects2.so', path.join(root, 'usr/lib/pollyui/libwlroots-0.19-polly-effects2.so'));
+    copy('/opt/pollyui-wlroots-effects4/lib/libwlroots-0.19-polly-effects4.so', path.join(root, 'usr/lib/pollyui/libwlroots-0.19-polly-effects4.so'));
     copy(realpathSync('/opt/pollyui-input/lib/libinput.so.10'), path.join(root, 'usr/lib/pollyui/libinput.so.10'));
-    relocate('usr/lib/pollyui/libwlroots-0.19-polly-effects2.so', '$ORIGIN');
+    relocate('usr/lib/pollyui/libwlroots-0.19-polly-effects4.so', '$ORIGIN');
     relocate('usr/bin/pollywm', '$ORIGIN/../lib/pollyui');
     copy('/opt/wlroots-0.19.3/LICENSE', path.join(licenseRoot, 'wlroots/LICENSE'));
     for (const [source, name] of [
@@ -288,8 +290,9 @@ try {
     { name: 'SDL', versionInfo: '3.4.10-polly-sync-lifetime', licenseDeclared: 'Zlib',
       downloadLocation: 'https://github.com/libsdl-org/SDL/tree/8e37db5e797b6167f3a00d697d816a684bd259c7' },
   ];
-  if (debian) sourceComponents.push({ name: 'wlroots', versionInfo: '0.19.3-polly-effects2', licenseDeclared: 'MIT',
-    licenseComments: 'Pinned upstream source plus the packaged, SHA-256 checked PollyUI scene effects patch; ABI 2.',
+  if (debian) sourceComponents.push({ name: 'wlroots', versionInfo: wlrootsEffects.version, licenseDeclared: 'MIT',
+    licenseComments: 'Pinned upstream source plus the packaged, SHA-256 checked PollyUI scene effects patch; ABI 4.',
+    sourceInfo: `PollyUI wlroots patch SHA-256: ${wlrootsEffects.patchSha256}; effects ABI ${wlrootsEffects.abi}.`,
     downloadLocation: 'https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.3/wlroots-0.19.3.tar.gz' });
   if (debian) sourceComponents.push({ name: 'libinput-private', versionInfo: '1.28.1-1+deb13u1',
     licenseDeclared: 'MIT', downloadLocation: 'NOASSERTION',
@@ -333,8 +336,7 @@ try {
     throw new Error('Source inputs changed during runtime rebuild/install; freeze the checkout before packaging');
   manifest.runtimeContract = { schemaVersion: 1, kind: 'gui-sysrt-js', installFiles, postprocess,
     nativeLibraries, bundledLibraries,
-    ...(debian ? { wlrootsEffects: JSON.parse(readFileSync(path.join(repo,
-      'desktop/release/debian/wlroots-effects.json'), 'utf8')) } : {}),
+    ...(debian ? { wlrootsEffects } : {}),
     abi: { path: 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs',
       sha256: hash(path.join(root, 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs')),
       target: 'linux-x86_64-lp64', verified: true } };

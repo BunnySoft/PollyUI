@@ -1,4 +1,6 @@
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
+import { getDesktopTheme } from './desktop/shell/themes.mjs';
+import { windowTasks, taskLabel } from './desktop/shell/window-groups.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -33,10 +35,19 @@ async function acknowledge(title) {
   await until(() => marker.closed, title);
 }
 async function click(surface, id, button = 0) {
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  await until(() => surface.window.document.getElementById(id)?.offsetWidth > 0, id + ' layout');
-  const node = surface.window.document.getElementById(id);
-  const rect = node.getBoundingClientRect();
+  const owner = surface.window.document, deadline = Date.now() + 15000;
+  let previous, rect;
+  for (;;) {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const node = owner.getElementById(id), bounds = owner.body.getBoundingClientRect();
+    rect = node?.getBoundingClientRect();
+    if (!surface.window.closed && node?.ownerDocument === owner && rect?.width > 0 && rect.height > 0 &&
+        previous?.node === node && ['x', 'y', 'width', 'height'].every(key => rect[key] === previous.rect[key]) &&
+        rect.x + rect.width / 2 >= bounds.x && rect.x + rect.width / 2 < bounds.x + bounds.width &&
+        rect.y + rect.height / 2 >= bounds.y && rect.y + rect.height / 2 < bounds.y + bounds.height) break;
+    if (Date.now() > deadline) throw new Error('Timed out: stable native control geometry ' + id);
+    previous = { node, rect };
+  }
   await acknowledge(`fixture-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ` +
     `${Math.floor(rect.y + rect.height / 2)} ${button} ${surface.title}`);
 }
@@ -63,9 +74,23 @@ async function remove(id) {
       .every(item => !item.window.document.getElementById('shell-workspace-' + id)), 'workspace removal ' + id);
 }
 function hasTaskButton(id, present = true) {
-  const kind = shell.getState().themeId === 'xp' ? 'panel' : 'dock';
-  return shell.getSurfaces().filter(surface => surface.kind === kind)
-    .every(surface => !!surface.window.document.getElementById('shell-window-' + id) === present);
+  const theme = getDesktopTheme(shell.getState().themeId), snapshots = desktop.windows();
+  const target = snapshots.find(item => item.id === id);
+  if (!target) return false;
+  const grouping = theme.panel.taskGrouping ?? 'windows';
+  const identity = windowTasks([target], grouping).find(task => !task.quickLaunch);
+  const task = windowTasks(snapshots.filter(item => item.workspaceId === current()?.id), grouping)
+    .find(item => item.id === identity.id);
+  if (!!task !== present || (task?.grouped && (task.appId !== target.appId ||
+      task.count !== 1 || task.windows[0].id !== id || task.minimized !== target.minimized))) return false;
+  const kind = theme.panel.kind === 'dock' ? 'dock' : 'panel', displays = window.displays();
+  const surfaces = shell.getSurfaces().filter(surface => surface.kind === kind);
+  return displays.length === 2 && surfaces.length === 2 &&
+    displays.every(output => surfaces.filter(surface => surface.output === output.id).length === 1) &&
+    surfaces.every(surface => {
+      const node = surface.window.document.getElementById('shell-window-' + identity.id);
+      return present ? !!node && node.offsetWidth > 0 && node.getAttribute('aria-label') === taskLabel(task) : !node;
+    });
 }
 async function run() {
   if (mode === 'denied') {
@@ -89,6 +114,7 @@ async function run() {
       return native;
     },
   } }).start();
+  check(shell.configuration.snapshot.launchers.applications.length === 0, 'workspace fixture has no catalog pins');
   check(shell.selectTheme('xp'), 'workspace fixture uses the taskbar');
   if (mode === 'initial') {
     const initial = workspaces();

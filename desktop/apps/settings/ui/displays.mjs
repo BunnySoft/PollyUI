@@ -1,6 +1,6 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
-import { desktopText } from './desktop/shared/ui/presentation.mjs';
+import { themedText } from './desktop/shared/ui/presentation.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 import { displayField, setDisplayField } from './desktop/apps/settings/ui/display-inputs.mjs';
 import { themedCheckbox, themedRadioGroup } from './desktop/shared/ui/selection-controls.mjs';
@@ -8,7 +8,7 @@ import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearan
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null, busy = false) {
   const label = (value, color = theme.colors.text, size = theme.layout.fontSize, extra = {}) =>
-    desktopText(value, color, size, extra);
+    themedText(theme, value, color, size, extra);
   const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width,
     name === 'scale' ? repaint : null);
   function scalePresets(head) {
@@ -65,7 +65,7 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
     gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
   } },
   h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
-    desktopText('Connected displays', theme.colors.text, theme.layout.headingFontSize,
+    themedText(theme, 'Connected displays', theme.colors.text, theme.layout.headingFontSize,
       { fontWeight: 600, flexShrink: 1, minWidth: 0 }),
     h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
     button('shell-output-close', 'Close', theme, close)),
