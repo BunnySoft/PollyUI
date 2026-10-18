@@ -40,17 +40,18 @@
 
 ## 图标设计规范
 
-- **风格**：现代简约。圆角方形渐变底板 + 粗实心白色符号，弱阴影、无高光/描边/纹理；
-  远看是干净的 App 图标，近看仍有体积和层次，不回到 XP 的拟物细节。
-- **结构**：1024×1024 母版，导出 256/128/64；透明背景，圆角 196px，主体留白一致。
-- **光照**：极轻的顶部提亮 + 14px 高斯阴影，不做玻璃高光、斜面或金属反射。
-- **配色**：Files 暖黄、Settings 银灰蓝、Terminal 石墨、Text Editor 宝蓝、
-  Photos 橙红、Music 玫红、Calculator 深灰、Calendar 正红、
-  System Monitor 青绿、Browser 亮蓝；功能徽章沿用同一色系。
+- **风格**：macOS-inspired。超椭圆（squircle）底板、分层渐变、内缘微高光、柔和环境阴影、
+  克制的镜面光；有体积和材质感，但不像 XP 那样堆高光、纹理和粗描边。
+- **结构**：1024×1024 母版，导出 256/128/64；透明背景，主体四周留白一致。
+- **光照**：22–38px 高斯环境阴影、顶部大范围柔光、底部轻微环境遮蔽、1px 内缘；
+  不做玻璃斜面、金属拉丝或纸张纹理。
+- **配色**：Files 蓝底金文件夹、Settings 银灰蓝、Terminal 石墨黑、
+  Text Editor 宝蓝、Photos 橙红、Music 玫红、Calculator 深灰、
+  Calendar 正红、System Monitor 青绿、Browser 亮蓝。
 - **边界**：不包含 Microsoft/Apple 的商标、系统图标、Segoe UI/SF 字体或下载素材；
   全部为原创 Pillow 绘制。
 - **功能图标**：Wi-Fi、Bluetooth、Volume、Brightness、Battery、Airplane、
-  Night light、Accessibility 使用同色系圆角徽章 + 白色实心符号。
+  Night light、Accessibility 使用同色系超椭圆徽章 + 白色实心符号。
 
 
 ## 文件与再生成
