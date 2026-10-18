@@ -33,13 +33,21 @@ async function run() {
     Object.assign(target.style, { width: '100%', height: '100%', backgroundColor: '#234567' });
     client.document.body.appendChild(target);
     let downs = 0, ups = 0, contexts = 0;
-    const entered = () => {
-      if (ups === 0) target.style.backgroundColor = '#456789';
+    let pointed = false;
+    const paintReady = () => {
+      if (ups === 0) target.style.backgroundColor = client.active && pointed ? '#456789' : '#234567';
+    };
+    const moved = () => {
+      pointed = true;
+      paintReady();
       const rect = target.getBoundingClientRect();
       check(rect.x <= 20 && rect.y <= 20 && rect.right > 20 && rect.bottom > 20,
         'plain SDK target actual layout contains the requested local point');
-      console.log('SYSTEM_MENU_CLIENT_READY ' + JSON.stringify(rect));
+      console.log('SYSTEM_MENU_CLIENT_READY ' + JSON.stringify({ active: client.active, rect }));
     };
+    const left = () => { pointed = false; paintReady(); };
+    client.onactivate = paintReady;
+    client.ondeactivate = left;
     const down = event => {
       console.log('SYSTEM_MENU_CLIENT_DOWN ' + JSON.stringify({ button: event.button,
         x: event.clientX, y: event.clientY, target: event.target === target }));
@@ -69,11 +77,14 @@ async function run() {
         'SystemMenu.client.duplicate', width: 32, height: 32 });
       witness.setFrameless(true);
     };
-    target.addEventListener('mouseenter', entered);
+    target.addEventListener('mousemove', moved);
+    target.addEventListener('mouseleave', left);
     const handlers = { mousedown: down, mouseup: up, contextmenu: context };
     for (const [type, handler] of Object.entries(handlers)) client.document.body.addEventListener(type, handler);
     client.onclose = () => {
-      target.removeEventListener('mouseenter', entered);
+      target.removeEventListener('mousemove', moved);
+      target.removeEventListener('mouseleave', left);
+      client.onactivate = client.ondeactivate = null;
       for (const [type, handler] of Object.entries(handlers)) client.document.body.removeEventListener(type, handler);
       window.quit();
     };

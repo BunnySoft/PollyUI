@@ -68,6 +68,8 @@ static struct {
     uint32_t child, applied, held_applied, commit_serial, applied_serial;
     uint64_t requested_window;
     struct wl_client *request_client;
+    struct wl_client *csd_client;
+    uint32_t csd_down, csd_up, csd_down_serial, csd_up_serial;
     uint64_t generation, held_generation;
     bool invalid;
 } system_trace;
@@ -78,6 +80,18 @@ static void system_protocol_log(void *data, enum wl_protocol_logger_type directi
     (void)data;
     const char *interface = wl_resource_get_class(message->resource);
     const char *name = message->message->name;
+    if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "wl_pointer") &&
+        !strcmp(name, "button") && wl_resource_get_client(message->resource) == system_trace.csd_client) {
+        if (message->arguments_count != 4 || !message->arguments) { system_trace.invalid = true; return; }
+        if (message->arguments[2].u == BTN_RIGHT) {
+            if (message->arguments[3].u == WL_POINTER_BUTTON_STATE_PRESSED) {
+                system_trace.csd_down++; system_trace.csd_down_serial = message->arguments[0].u;
+            } else {
+                system_trace.csd_up++; system_trace.csd_up_serial = message->arguments[0].u;
+            }
+        }
+        return;
+    }
     if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_workspace_toplevel_v1")) {
         if (!strcmp(name, "system_menu_requested")) {
             if (message->arguments_count != 11 || !message->arguments ||
@@ -3526,10 +3540,8 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
     struct PuDesktopView *views[3];
     CHECK(cascade_clients(wire, views));
     backdrop_guard_views(views[0], views[1], views[2]);
-    if (!old) {
-        system_trace.logger = wl_display_add_protocol_logger(desktop.display, system_protocol_log, NULL);
-        CHECK(system_trace.logger);
-    }
+    system_trace.logger = wl_display_add_protocol_logger(desktop.display, system_protocol_log, NULL);
+    CHECK(system_trace.logger);
     app_pid = fork();
     CHECK(app_pid >= 0);
     if (!app_pid) {
@@ -3668,8 +3680,13 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                     client->toplevel->base->geometry.x, client->toplevel->base->geometry.y,
                     client->toplevel->base->geometry.width, client->toplevel->base->geometry.height,
                     desktop.seat->pointer_state.sx, desktop.seat->pointer_state.sy, inset.x, inset.y);
+                system_trace.csd_client = wl_resource_get_client(surface->resource);
                 system_button(true); system_button(false);
-                CHECK(!desktop.suppressed_button && !picker_menu());
+                printf("SYSTEM_MENU_CSD_PROTOCOL down=%u downSerial=%u up=%u upSerial=%u\n",
+                    system_trace.csd_down, system_trace.csd_down_serial, system_trace.csd_up, system_trace.csd_up_serial);
+                CHECK(!system_trace.invalid && system_trace.csd_down == 1 && system_trace.csd_up == 1 &&
+                    system_trace.csd_down_serial && system_trace.csd_up_serial &&
+                    !desktop.suppressed_button && !picker_menu());
             } else if (!strcmp(operation, "client-check")) {
                 struct PuDesktopView *client = find("SystemMenu.client.body");
                 CHECK(client && find("SystemMenu.client.ok") && !find("SystemMenu.client.duplicate") &&
@@ -3691,6 +3708,7 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 }
                 CHECK(done && WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
                     !find("SystemMenu.client.body") && !find("SystemMenu.client.ok"));
+                system_trace.csd_client = NULL;
             } else if (!strcmp(operation, "placed")) {
                 CHECK(wait_presented_frame(views[0]) && views[0]->mode == PU_DESKTOP_TILED_LEFT);
             } else if (!strcmp(operation, "cascade-check")) {
