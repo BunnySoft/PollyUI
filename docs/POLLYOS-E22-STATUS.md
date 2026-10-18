@@ -68,7 +68,7 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 本轮任务文档同步与已交功能冻结后生成一次候选，不等待所有E22原图资料齐全。
 
-使用当前正常源码和已采用的SDK C6/ABI4/pin01a，记录实际运行时与媒体生产源码、ISO SHA256和已知未完成项；保默认solid，不纳入未通过的FIR性能候选。
+此已交付ISO冻结于clean ddd0a5e源码，采用SDK C6/ABI4/pin01a；运行时/媒体来源、ISO SHA256和未完成项以以下回执为准。保默认solid，不含后续合入的FIR/Yoga可选后端与启动开关，不用当前main重标旧介质。
 
 只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。
 
@@ -84,7 +84,7 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 唯一一次OVMF UEFI/KVM、4GiB/2vCPU、只读ISO、无guestdisk/NIC的原fixture FIRST通过；普通PAM/真实DRM桌面/工作区切换/原生中文提交与剪贴板通过。
 
-**未覆盖：** 完整新架构Apps/default splash/Hyper-V/物理设备未验；无安装器/持久guestdisk。标准Start仍默认solid、held FIR候选不入；不是全部E22或实时性能完成。
+**未覆盖：** 完整新架构Apps/default splash/Hyper-V/物理设备未验；无安装器/持久guestdisk。此介质标准Start默认solid，不含后续FIR/Yoga可选后端或启动开关；不是全部E22或实时性能完成。
 
 稳定路径与版本文件为同一inode的硬链接；已打开的VM光盘句柄可能仍指向旧inode，需用户自行重新选择介质，未操作任何existingVM。
 

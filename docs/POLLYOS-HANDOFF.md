@@ -21,6 +21,40 @@
 | 较高区域采样旧分支 | 4096x768 泛型能力已通过已验收接续进入主线；不重复合并旧 `47fdfe4` 整合检查点，v7/v8 的 512 限高和 v9 标准 Start 独立 opt-in 不变 |
 | `lroundf` 替换研究 | 保留有条件的数值研究结论，不引入未经证明完整异常/部署等价的舍入替换 |
 
+源码已正常合入：Yoga `502e5f9` → `a6e2a4c`，FIR `04e1a96` → `1f2f99e`；
+原探索提交的正常父链完整保留，后端之外的主题、绘制/裁剪和应用业务不替换。
+两个开关独立，默认均关闭；在启动 compositor 与 GUI 的环境中设置，例如：
+
+```sh
+POLLY_EXPERIMENTAL_FIR=1 POLLY_EXPERIMENTAL_LAYOUT=1 polly-desktop
+```
+
+unset 或精确 `0` 保留默认实现，精确 `1` 选择对应实验后端；空值、
+`true`、`01` 或带空白的值明确拒绝启动。改变已经运行的应用环境不热切换，
+需要重新启动桌面会话。FIR 在 scene 创建时固定选择，GUI 在首次初始化时固定
+并由后续 context 沿用；没有新增 Settings 复选框或主题字段。FIR 的显式启用
+要求实际 SDK 支持 x86-64 SSE2，不支持时明确拒绝，默认仍保留 scalar fallback。
+
+新 FIR 必须重建与当前源码匹配的 SDK：ABI 4，patch pin
+`7b58c4a0c4c8a0cfac4ab8016f1f3590b463d961405102fbe133e0054fcebf0e`，
+本次实际库 SHA256
+`40a2a97b55315eda48e8675152381722bcbdc6ea6a1adc5c211a9ad76e2b9d34`。
+不能继续以旧 C6 库满足新源码 pin，即使关闭实验也需要正确配对。
+三条 production/experimental/scalar 数学路径、尾部和 guard、两条真实 scene、
+启动/latch/非法选项、strict64k 及旧 ABI/pin 拒绝已独立通过；新资格回执
+SHA256 为 `584e77adf615a36e02007e825ef6ba0be13489f2013cd8f6a6e53681116fbf44`。
+其中保留的 `AssertionError()` 是首次 `cc @rsp` 链接元数据观察器错误，
+当时尚未实际 link/运行 unsupported 用例；原 FIRST 不改写，后续展开真实参数后
+首次 link 和真实 scalar/拒绝路径另有记录，不把它冒产品失败或重复跑绿。
+
+Yoga 的当前 Windows/Linux 构建各自通过 4 个定向 CTest 和两种模式下原有
+style/textwrap/DOM 回归；实际像素验证保留 legacy 的已知缺口，并验证 coherent
+底边/右边落在父裁剪内部。Linux tests 日志 SHA256 为
+`6871f554c50aef611a3c891b786f2b59e260d255442826d23edaf641f5b94e2b`。
+父主线组合的包契约、主题和配置检查通过；两单元的主线产品文件分别与冻结
+`502e5f9`、`04e1a96` 逐路径相同。资格按实际单元源码与二进制绑定，
+不把分单元构建冒充 combined main 的全套新二进制或媒体验收。
+
 最终 FIR 的历史大区域四阶段约提速 1.90–2.16 倍、耗时约 59ms，但三个阶段
 未达原两倍目标且小场景有回退。实验纳入不把 R11 改为通过，不代表实时
 16.7ms/60Hz、默认 Start 材质或完整 E22 已交付。当前集中手测 ISO 的源码、
