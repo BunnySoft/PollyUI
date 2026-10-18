@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "style": "original skeuomorphic/modern",
+  "master": 1024,
+  "apps": [
+    {
+      "id": "files",
+      "name": "Files",
+      "nameZh": "\u6587\u4ef6",
+      "status": "Existing \u00b7 core",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "files-1024.png"
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "nameZh": "\u8bbe\u7f6e",
+      "status": "Existing \u00b7 six pages",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "settings-1024.png"
+    },
+    {
+      "id": "terminal",
+      "name": "Terminal",
+      "nameZh": "\u7ec8\u7aef",
+      "status": "Existing \u00b7 foot",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "terminal-1024.png"
+    },
+    {
+      "id": "text-editor",
+      "name": "Text Editor",
+      "nameZh": "\u6587\u672c\u7f16\u8f91",
+      "status": "Existing \u00b7 basic",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "text-editor-1024.png"
+    },
+    {
+      "id": "photos",
+      "name": "Photos",
+      "nameZh": "\u7167\u7247",
+      "status": "Proposed",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "photos-1024.png"
+    },
+    {
+      "id": "music",
+      "name": "Music",
+      "nameZh": "\u97f3\u4e50",
+      "status": "Proposed",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "music-1024.png"
+    },
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "nameZh": "\u8ba1\u7b97\u5668",
+      "status": "Proposed",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "calculator-1024.png"
+    },
+    {
+      "id": "calendar",
+      "name": "Calendar",
+      "nameZh": "\u65e5\u5386",
+      "status": "Proposed",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "calendar-1024.png"
+    },
+    {
+      "id": "monitor",
+      "name": "System Monitor",
+      "nameZh": "\u7cfb\u7edf\u76d1\u89c6\u5668",
+      "status": "Existing \u00b7 Processes",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "monitor-1024.png"
+    },
+    {
+      "id": "browser",
+      "name": "Browser",
+      "nameZh": "\u6d4f\u89c8\u5668",
+      "status": "External \u00b7 Chromium tested",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "browser-1024.png"
+    }
+  ],
+  "features": [
+    {
+      "id": "wifi",
+      "name": "Wi-Fi",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "wifi-1024.png"
+    },
+    {
+      "id": "bluetooth",
+      "name": "Bluetooth",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "bluetooth-1024.png"
+    },
+    {
+      "id": "volume",
+      "name": "Volume",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "volume-1024.png"
+    },
+    {
+      "id": "brightness",
+      "name": "Brightness",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "brightness-1024.png"
+    },
+    {
+      "id": "battery",
+      "name": "Battery",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "battery-1024.png"
+    },
+    {
+      "id": "airplane",
+      "name": "Airplane",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "airplane-1024.png"
+    },
+    {
+      "id": "night",
+      "name": "Night light",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "night-1024.png"
+    },
+    {
+      "id": "accessibility",
+      "name": "Accessibility",
+      "sizes": [
+        256,
+        128,
+        64
+      ],
+      "master": "accessibility-1024.png"
+    }
+  ]
+}
