@@ -639,7 +639,7 @@ It remains a memory-only development candidate; the earlier Alpine alpha.4
 physical baseline and Debian alpha.4-r1 boot media remain separate preserved
 artifacts, not silently upgraded installations.
 
-Caption text in all six themes uses the shared GUI Canvas2D renderer. Its
+Caption text in all seven themes uses the shared GUI Canvas2D renderer. Its
 sanitized title remains capped at 512 code points; Linux ICU boundaries move
 that cap down to a complete grapheme and keep measured prefix-plus-ellipsis
 fitting from splitting combining sequences, emoji ZWJ sequences or flags.
@@ -895,6 +895,7 @@ visual styles.
 | `aqua` | OS X / Aqua | Pinstriped chrome, glossy pill controls, left-side circular captions, menu bar and dock |
 | `lion` | OS X / Lion | Gray chrome, graphite woven-grid background, left-side captions, compact gray dock |
 | `bigsur` | macOS / Big Sur | Larger rounded frames, unified light title/toolbar, blue accents, rounded-square dock tiles and original colorful bands |
+| `monterey` | Polly / Monterey | Original flowing wallpaper, translucent 24px menu bar, floating 64px dock, left-side controls and material light chrome |
 
 `shell/themes.mjs` loads deeply immutable data from `themes/builtin.json`.
 Every preset has the same desktop, color, window, icon, button, panel and layout groups.

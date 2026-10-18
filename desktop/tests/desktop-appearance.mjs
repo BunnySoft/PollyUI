@@ -54,7 +54,7 @@ function inside(element, parent, name) {
     element.offsetTop + element.offsetHeight <= parent.offsetTop + parent.offsetHeight + 1);
 }
 
-check('modern and five stable classic appearance IDs', DESKTOP_THEMES.map(t => t.id).join(',') === 'xp,server2003,aqua,lion,bigsur,modern');
+check('modern and six stable appearance IDs', DESKTOP_THEMES.map(t => t.id).join(',') === 'xp,server2003,aqua,lion,bigsur,monterey,modern');
 check('modern is the fresh preview default, not an override of saved choices', DEFAULT_DESKTOP_THEME === 'modern');
 throws('unknown theme is rejected', () => getDesktopTheme('not-a-theme'));
 throws('invalid initial theme is rejected', () => createAppearancePreview({ themeId: 'not-a-theme' }));

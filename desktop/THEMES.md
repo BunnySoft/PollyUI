@@ -13,9 +13,11 @@ connection and fixed role. Native file mappings themselves have no theme policy.
 
 ## Data and ownership
 
-`resources/themes/builtin.json` contains **Polly / Modern** and five retained
-classic presets. Modern now targets Windows 11 25H2 light geometry, not Windows
-10. Modern is the default only for fresh or
+`resources/themes/builtin.json` contains **Polly / Modern**, **Polly / Monterey**
+and the five retained classic presets. Modern now targets Windows 11 25H2 light
+geometry, not Windows 10. Monterey uses an original flowing wallpaper, a
+translucent 24px menu bar, a floating 64px dock and left-side window controls;
+it is not a copy of Apple artwork. Modern is the default only for fresh or
 unavailable configuration; saved classic choices and user overrides are not
 silently rewritten. The Settings appearance gallery presents Modern first while
 the catalog's declared order and default stay authoritative for persistence and

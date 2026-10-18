@@ -14,8 +14,8 @@ function rejects(value, parser, message) {
 const clone = value => JSON.parse(JSON.stringify(value));
 const encodeOverride = themes => JSON.stringify({ schemaVersion: 1, themes });
 const original = JSON.stringify(BUILTIN_THEME_CATALOG);
-check(parseThemeCatalog(original).themes.length === 6 && BUILTIN_THEME_CATALOG.default === 'modern',
-  'modern and five classic presets are validated JSON data');
+check(parseThemeCatalog(original).themes.length === 7 && BUILTIN_THEME_CATALOG.default === 'modern',
+  'modern, Monterey and five classic presets are validated JSON data');
 const custom = clone(getDesktopTheme('bigsur'));
 custom.id = 'user-blue';
 custom.name = 'User blue';
