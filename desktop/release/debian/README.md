@@ -1,5 +1,11 @@
 # Debian minbase migration
 
+For the complete **fresh-machine source → SDK → desktop → package → Live ISO**
+workflow, use [the portable build guide](../../../docs/BUILDING.md). This page
+retains the detailed Debian/storage/profile contracts and historical commands;
+cached images or developer volumes mentioned here are not prerequisites on a
+new machine.
+
 This is the Debian 13 trixie amd64 migration path. The accepted Alpine alpha.4
 source and artifact hashes are preserved in `baseline.json`. Debian is a
 separate candidate: on 2026-10-07 the user confirmed alpha.5-r2 boots and runs on

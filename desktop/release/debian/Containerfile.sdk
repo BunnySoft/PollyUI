@@ -3,9 +3,9 @@ FROM ${MINBASE_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config meson git python3 python3-pil \
-    clang clang-18 libclang-rt-dev generate-ninja gdb valgrind nodejs openssl curl \
+    clang clang-18 libclang-rt-dev generate-ninja gdb valgrind nodejs openssl curl file \
     libwayland-dev wayland-protocols libxkbcommon-dev libdrm-dev libpixman-1-dev \
-    libinput-dev libseat-dev libudev-dev libcap-dev libdisplay-info-dev libliftoff-dev \
+    libinput-dev libinput-bin libseat-dev libudev-dev libcap-dev libdisplay-info-dev libliftoff-dev \
     liblcms2-dev libegl-dev libgles-dev libgbm-dev hwdata \
     libfontconfig-dev libfreetype-dev libpng-dev libjpeg-dev libwebp-dev zlib1g-dev \
     libxcursor-dev libxrandr-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libasound2-dev \

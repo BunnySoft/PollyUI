@@ -1,5 +1,10 @@
 # Memory-only UEFI development image
 
+For a new machine, follow [the complete build guide](../docs/BUILDING.md) for
+source checkout, native SDK bootstrapping, runtime packaging and ISO generation.
+The delivery records below describe historical artifacts, not reusable build
+inputs or a requirement to obtain the maintainer's cached containers.
+
 **2026-10-18 regenerated current-source candidate:** the stable Windows path
 `D:\temp\PollyOS\PollyOS.iso` now points to a new versioned Alpha.8 ISO built from
 clean runtime/overlay/media source `8433048a705f2f7b8501d4966ad669ddee7daa73`.

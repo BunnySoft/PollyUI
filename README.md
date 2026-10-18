@@ -418,6 +418,12 @@ Linux) in **[docs/PORTING.md](./docs/PORTING.md)**; full feature matrix in
 
 ## Building
 
+For a clean-machine, end-to-end build of the GUI, SysRT, Debian desktop, runtime
+package and Live ISO, start with **[the portable build guide](docs/BUILDING.md)**.
+It covers dependency bootstrapping, the matched native SDK, Linux/WSL source
+handling, online versus offline inputs, verification and publication limits.
+The short platform examples below do not replace that release workflow.
+
 Windows, with CMake ≥ 3.25, Ninja, and LLVM/clang-cl (against an installed
 MSVC + Windows SDK).
 The Windows driver discovers the latest installed C++ toolchain through
