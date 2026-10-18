@@ -993,6 +993,7 @@ static void commit_theme(struct wl_client *client, struct wl_resource *resource,
         snapshot->backdrop_count = 0;
     }
     owner->staged->generation = state->snapshot->generation + 1;
+    pu_workspaces_system_menu_cancel(state->desktop);
     pu_workspaces_picker_cancel(state->desktop);
     snapshot_drop(state->snapshot); state->snapshot = owner->staged;
     state->initial_theme_consumed = true;

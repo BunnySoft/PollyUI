@@ -9,9 +9,11 @@
 #include <string.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
@@ -83,6 +85,14 @@ struct PuWorkspaces {
     struct wl_resource *picker_view;
     struct wlr_box picker_anchor, picker_bounds;
     uint32_t picker_token, next_picker_token, picker_revision;
+    struct wl_resource *system_menu_manager;
+    struct Tracked *system_menu_target;
+    uint64_t system_menu_window;
+    struct PuWorkspace *system_menu_workspace;
+    struct wlr_output *system_menu_output;
+    struct wlr_box system_menu_anchor, system_menu_bounds, system_menu_box;
+    uint32_t system_menu_serial, next_system_menu_serial, system_menu_origin;
+    bool system_menu_armed;
     bool used;
 };
 
@@ -114,6 +124,136 @@ static struct PuDesktopView *window_for(struct PuWorkspaces *state, uint64_t id)
     if (!id) return NULL;
     wl_list_for_each(view, &state->desktop->views, link) if (view->workspace_window == id) return view;
     return NULL;
+}
+
+void pu_workspaces_system_menu_cancel(struct PuDesktop *desktop)
+{
+    struct PuWorkspaces *state = desktop->workspaces;
+    if (!state) return;
+    if (state->system_menu_target && state->system_menu_serial)
+        polly_workspace_toplevel_v1_send_system_menu_cancelled(
+            state->system_menu_target->resource, state->system_menu_serial);
+    state->system_menu_target = NULL;
+    state->system_menu_window = 0;
+    state->system_menu_workspace = NULL;
+    state->system_menu_output = NULL;
+    state->system_menu_serial = 0;
+    state->system_menu_armed = false;
+}
+
+static struct Tracked *system_menu_target(struct PuDesktopView *view)
+{
+    struct PuWorkspaces *state = view->desktop->workspaces;
+    if (!state || !state->system_menu_manager) return NULL;
+    struct Tracked *tracked;
+    wl_list_for_each(tracked, &state->tracked, link)
+        if (tracked->window == view->workspace_window && tracked->binding && tracked->binding->manager &&
+            tracked->toplevel_manager == state->system_menu_manager &&
+            wl_resource_get_version(tracked->resource) >= 7) return tracked;
+    return NULL;
+}
+
+static bool system_menu_current(struct PuWorkspaces *state, bool require_pointer)
+{
+    struct PuDesktopView *view = window_for(state, state->system_menu_window);
+    if (!view || system_menu_target(view) != state->system_menu_target ||
+        view->workspace != state->system_menu_workspace) return false;
+    struct wlr_box actual = view->presented_box;
+    actual.x = view->tree->node.x; actual.y = view->tree->node.y;
+    if (!wlr_box_equal(&actual, &state->system_menu_box)) return false;
+    struct wlr_box anchor, bounds;
+    bool pointer = state->system_menu_origin == POLLY_WORKSPACE_TOPLEVEL_V1_MENU_ORIGIN_TITLE;
+    /* The release point is immutable after an offer; later pointer motion is
+     * not authority to select a different output or window. */
+    struct wlr_output *head = pu_desktop_system_menu_anchor(view, pointer && require_pointer, &anchor, &bounds);
+    if (pointer && !require_pointer) {
+        struct Output *output;
+        head = NULL;
+        wl_list_for_each(output, &state->outputs, link)
+            if (output->output == state->system_menu_output) {
+                head = output->output->enabled ? output->output : NULL;
+                if (!head) break;
+                wlr_output_layout_get_box(state->desktop->layout, head, &bounds);
+                break;
+            }
+        struct wlr_box ignored_anchor, ignored_bounds;
+        if (!pu_desktop_system_menu_anchor(view, false, &ignored_anchor, &ignored_bounds)) return false;
+    }
+    return head == state->system_menu_output && head &&
+        wlr_box_equal(&bounds, &state->system_menu_bounds);
+}
+
+void pu_workspaces_system_menu_validate(struct PuDesktop *desktop)
+{
+    struct PuWorkspaces *state = desktop->workspaces;
+    if (state && state->system_menu_target &&
+        !system_menu_current(state, state->system_menu_armed))
+        pu_workspaces_system_menu_cancel(desktop);
+}
+
+static bool prepare_system_menu(struct PuDesktopView *view, bool pointer)
+{
+    struct PuWorkspaces *state = view->desktop->workspaces;
+    if (!state || state->next_system_menu_serial == UINT32_MAX) return false;
+    struct Tracked *tracked = system_menu_target(view);
+    struct wlr_box anchor, bounds;
+    struct wlr_output *head = tracked ? pu_desktop_system_menu_anchor(view, pointer, &anchor, &bounds) : NULL;
+    if (!head) return false;
+    pu_workspaces_system_menu_cancel(view->desktop);
+    state->system_menu_target = tracked;
+    state->system_menu_window = view->workspace_window;
+    state->system_menu_workspace = view->workspace;
+    state->system_menu_output = head;
+    state->system_menu_anchor = anchor;
+    state->system_menu_bounds = bounds;
+    state->system_menu_box = view->presented_box;
+    state->system_menu_box.x = view->tree->node.x;
+    state->system_menu_box.y = view->tree->node.y;
+    state->system_menu_origin = pointer ? POLLY_WORKSPACE_TOPLEVEL_V1_MENU_ORIGIN_TITLE :
+        POLLY_WORKSPACE_TOPLEVEL_V1_MENU_ORIGIN_KEYBOARD;
+    return true;
+}
+
+static void offer_system_menu(struct PuWorkspaces *state)
+{
+    state->system_menu_serial = ++state->next_system_menu_serial;
+    struct wlr_box anchor = state->system_menu_anchor, bounds = state->system_menu_bounds;
+    polly_workspace_toplevel_v1_send_system_menu_requested(state->system_menu_target->resource,
+        state->system_menu_serial, state->system_menu_origin, anchor.x - bounds.x, anchor.y - bounds.y,
+        anchor.width, anchor.height, state->system_menu_output->name,
+        bounds.x, bounds.y, bounds.width, bounds.height);
+}
+
+bool pu_workspaces_system_menu_arm(struct PuDesktopView *view)
+{
+    if (!prepare_system_menu(view, true)) return false;
+    view->desktop->workspaces->system_menu_armed = true;
+    return true;
+}
+
+void pu_workspaces_system_menu_release(struct PuDesktop *desktop, struct PuDesktopView *hit)
+{
+    struct PuWorkspaces *state = desktop->workspaces;
+    if (!state || !state->system_menu_armed) return;
+    if (!hit || hit->workspace_window != state->system_menu_window || !system_menu_current(state, true)) {
+        pu_workspaces_system_menu_cancel(desktop);
+        return;
+    }
+    struct wlr_box anchor, bounds;
+    if (pu_desktop_system_menu_anchor(hit, true, &anchor, &bounds) != state->system_menu_output) {
+        pu_workspaces_system_menu_cancel(desktop);
+        return;
+    }
+    state->system_menu_anchor = anchor;
+    state->system_menu_armed = false;
+    offer_system_menu(state);
+}
+
+bool pu_workspaces_system_menu_key(struct PuDesktopView *view)
+{
+    if (!view || !prepare_system_menu(view, false)) return false;
+    offer_system_menu(view->desktop->workspaces);
+    return true;
 }
 
 void pu_workspaces_picker_cancel(struct PuDesktop *desktop)
@@ -297,6 +437,7 @@ void pu_workspaces_invalidate_menus(struct PuDesktop *desktop, struct wlr_surfac
 {
     if (!desktop->workspaces) return;
     struct PuWorkspaces *state = desktop->workspaces;
+    if (!surface) pu_workspaces_system_menu_cancel(desktop);
     if (!surface || (state->picker_target && state->picker_target->menu == surface))
         pu_workspaces_picker_cancel(desktop);
     struct Tracked *tracked;
@@ -356,6 +497,8 @@ static void membership(struct Tracked *tracked)
 
 static void close_tracked(struct Tracked *tracked)
 {
+    if (tracked->state->system_menu_target == tracked)
+        pu_workspaces_system_menu_cancel(tracked->state->desktop);
     if (tracked->state->picker_window == tracked->window)
         pu_workspaces_picker_cancel(tracked->state->desktop);
     if (tracked->window) polly_workspace_toplevel_v1_send_closed(tracked->resource);
@@ -750,6 +893,8 @@ static void bind_manager(struct wl_client *client, void *data, uint32_t version,
 static void tracked_destroyed(struct wl_resource *resource)
 {
     struct Tracked *tracked = wl_resource_get_user_data(resource);
+    if (tracked->state->system_menu_target == tracked)
+        pu_workspaces_system_menu_cancel(tracked->state->desktop);
     if (tracked->state->picker_target == tracked) pu_workspaces_picker_cancel(tracked->state->desktop);
     wl_list_remove(&tracked->link);
     free(tracked);
@@ -931,12 +1076,28 @@ static void arrange_request(struct wl_client *client, struct wl_resource *resour
     arrangement_request(client, resource, serial, epoch, kind);
 }
 
+static void consume_system_menu(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
+{
+    struct Tracked *tracked = wl_resource_get_user_data(resource);
+    struct PuWorkspaces *state = tracked->state;
+    bool current = client == state->desktop->shell_client && serial &&
+        state->system_menu_target == tracked && serial == state->system_menu_serial &&
+        !state->system_menu_armed;
+    bool accepted = current && system_menu_current(state, false);
+    if (current) {
+        if (accepted) state->system_menu_serial = 0;
+        pu_workspaces_system_menu_cancel(state->desktop);
+    }
+    polly_workspace_toplevel_v1_send_system_menu_consumed(resource, serial, accepted);
+}
+
 static const struct polly_workspace_toplevel_v1_interface tracked_impl = {
     .destroy = destroy_request, .move_to = move_request,
     .open_menu = open_menu, .close_menu = close_menu, .place = place_request,
     .open_layout_picker = open_layout_picker, .dismiss_layout_picker = dismiss_layout_picker,
     .cascade = cascade_request,
     .arrange = arrange_request,
+    .consume_system_menu = consume_system_menu,
 };
 
 static void get_toplevel(struct wl_client *client, struct wl_resource *resource, uint32_t id,
@@ -1059,15 +1220,32 @@ static void enable_layout_picker(struct wl_client *client, struct wl_resource *r
 static void picker_manager_destroyed(struct wl_resource *resource)
 {
     struct PuWorkspaces *state = wl_resource_get_user_data(resource);
+    if (state->system_menu_manager == resource) {
+        pu_workspaces_system_menu_cancel(state->desktop);
+        state->system_menu_manager = NULL;
+    }
     if (state->picker_manager != resource) return;
     pu_workspaces_picker_cancel(state->desktop);
     state->picker_manager = NULL;
+}
+
+static void enable_system_menu_requests(struct wl_client *client, struct wl_resource *resource, uint32_t enabled)
+{
+    struct PuWorkspaces *state = wl_resource_get_user_data(resource);
+    if (client != state->desktop->shell_client || enabled > 1) {
+        wl_client_post_implementation_error(client, "Invalid trusted system-menu opt-in"); return;
+    }
+    if (!enabled && state->system_menu_manager != resource) return;
+    if (enabled && state->system_menu_manager == resource) return;
+    pu_workspaces_system_menu_cancel(state->desktop);
+    state->system_menu_manager = enabled ? resource : NULL;
 }
 
 static const struct polly_workspace_toplevel_manager_v1_interface toplevel_impl = {
     .destroy = destroy_request, .get_toplevel = get_toplevel,
     .rename = rename_request, .reorder = reorder_request, .restore_begin = restore_begin,
     .enable_layout_picker = enable_layout_picker,
+    .enable_system_menu_requests = enable_system_menu_requests,
 };
 
 static void bind_toplevels(struct wl_client *client, void *data, uint32_t version, uint32_t id)
@@ -1082,6 +1260,7 @@ static void bind_toplevels(struct wl_client *client, void *data, uint32_t versio
     wl_resource_set_implementation(resource, &toplevel_impl, state, picker_manager_destroyed);
     if (version >= 4) polly_workspace_toplevel_manager_v1_send_layout_picker_capabilities(resource, 1);
     if (version >= 6) polly_workspace_toplevel_manager_v1_send_arrangement_capabilities(resource, 1);
+    if (version >= 7) polly_workspace_toplevel_manager_v1_send_system_menu_capabilities(resource, 1);
 }
 
 static void output_bound(struct wl_listener *listener, void *data)
@@ -1101,6 +1280,8 @@ static void output_destroyed(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct Output *output = wl_container_of(listener, output, destroy);
+    if (output->state->system_menu_output == output->output)
+        pu_workspaces_system_menu_cancel(output->state->desktop);
     if (output->state->picker_output == output->output)
         pu_workspaces_picker_cancel(output->state->desktop);
     struct Tracked *tracked;
@@ -1137,6 +1318,7 @@ static void picker_keyboard_grab(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuWorkspaces *state = wl_container_of(listener, state, picker_keyboard_grab);
+    pu_workspaces_system_menu_cancel(state->desktop);
     pu_workspaces_picker_cancel(state->desktop);
 }
 
@@ -1144,6 +1326,7 @@ static void picker_pointer_grab(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuWorkspaces *state = wl_container_of(listener, state, picker_pointer_grab);
+    pu_workspaces_system_menu_cancel(state->desktop);
     pu_workspaces_picker_cancel(state->desktop);
 }
 
@@ -1162,7 +1345,7 @@ bool pu_workspaces_init(struct PuDesktop *desktop)
         if (!desktop->active_workspace) desktop->active_workspace = workspace;
     }
     state->manager = wl_global_create(desktop->display, &ext_workspace_manager_v1_interface, 1, state, bind_manager);
-    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 6, state, bind_toplevels);
+    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 7, state, bind_toplevels);
     state->picker_keyboard_grab.notify = picker_keyboard_grab;
     wl_signal_add(&desktop->seat->events.keyboard_grab_begin, &state->picker_keyboard_grab);
     state->picker_pointer_grab.notify = picker_pointer_grab;
@@ -1174,6 +1357,7 @@ void pu_workspaces_finish(struct PuDesktop *desktop)
 {
     struct PuWorkspaces *state = desktop->workspaces;
     if (!state) return;
+    pu_workspaces_system_menu_cancel(desktop);
     pu_workspaces_picker_cancel(desktop);
     if (state->picker_keyboard_grab.link.next) wl_list_remove(&state->picker_keyboard_grab.link);
     if (state->picker_pointer_grab.link.next) wl_list_remove(&state->picker_pointer_grab.link);

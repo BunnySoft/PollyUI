@@ -55,6 +55,7 @@
       },
       "window": {
         "surfaceStyle": "luna",
+        "systemMenu": true,
         "radius": 7,
         "border": "#00138c",
         "borderWidth": 3,
@@ -237,6 +238,7 @@
         "focus": "#000000"
       },
       "window": {
+        "systemMenu": true,
         "radius": 0,
         "border": "#404040",
         "borderWidth": 4,
@@ -2084,6 +2086,7 @@
       },
       "window": {
         "surfaceStyle": "fluent",
+        "systemMenu": true,
         "clientMaterial": "wallpaper",
         "layoutPicker": true,
         "nativeEffects": "rounded",
