@@ -115,25 +115,122 @@ does not grant that protocol taller targets or Start/menu authority. This
 primitive/SDK extension does not deliver a production Start consumer, change
 theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
 
+### Default-off experimental FIR backend
+
+The published single-output SSE2 filter remains the default. To select the final
+four-phase backend for an entire desktop session, set the startup environment:
+
+```sh
+POLLY_EXPERIMENTAL_FIR=1 polly-desktop
+```
+
+Unset or `POLLY_EXPERIMENTAL_FIR=0` selects the production backend. Only the exact
+strings `0` and `1` are accepted: an empty value, `true`, whitespace or another
+value fails scene/session startup explicitly. Enabling the experiment without
+x86-64 SSE2 also fails explicitly, rather than silently falling back. The
+production backend retains the original scalar fallback on other architectures.
+Set the variable in the environment that launches the compositor, then restart
+the **desktop session**; changing a running application's environment has no
+effect. There is no hot toggle or Settings UI.
+
+Native startup logs identify `production-single-output` or
+`experimental-four-phase`; a once-per-scene `Backdrop FIR executing:` diagnostic
+confirms the actual selected filter implementation when a backdrop is prepared.
+The private typed horizontal/vertical stage interface shares the existing
+capture, normalized kernel, packed intermediate, output, cache/privacy and
+failure-cleanup transaction. Selection is fixed at scene creation, with no
+per-pixel or per-tap environment lookup and no new filter buffer or allocation.
+The internal scene bookkeeping uses the original single scene allocation;
+public scene layouts and effects ABI 4 do not change. Rebuild the strictly
+source-pinned paired SDK and compositor; an old same-ABI library is not accepted.
+
+This switch only selects the FIR implementation. It does not enable Start
+material, alter packaged solid defaults, admit larger recipients or expand
+v7/v8/v9 authority, geometry, sigma, pixel/node/128MiB budgets or public schemas.
+The already-published generic 4096x768 extent is not a new effect of this switch.
+Earlier eight-output and single-tap sliding experiments remain historical
+evidence, not selectable or supported backends.
+
+**Performance target still unmet; further optimization is required.** The one
+frozen four-phase comparison against published SSE2 observed 640x640
+prepare/moving-build medians of 59.222/58.647ms versus 112.512/114.685ms
+(1.900x/1.956x), and 640x660 medians of 59.619/59.467ms versus
+116.202/128.551ms (1.949x/2.162x). Four small-case stages regressed, including
+4096x1 moving-build by 0.0071ms; none was waived. The old goal of at least 2x in
+all four large stages with no positive regression in the other seven cases is
+an experiment-specific engineering target, not an industry standard, functional
+correctness rule or prerequisite for retaining a default-off experiment.
+The observation remains **HOLD**, not a passing performance gate. It is one
+shared-host measurement, not a statistical guarantee, pure-FIR measurement,
+16.7ms/60Hz qualification or default-adoption recommendation. The new dual-path
+SDK has its own correctness qualification and identity; the old library's
+bytes, performance measurements and unsuccessful FIRST records are not relabeled.
+
 The exact separable filter is CPU-bounded, not a real-time performance guarantee.
 When `__x86_64__` and `__SSE2__` are defined, an internal baseline-SSE2 helper
 unpacks exactly one four-byte pixel into four float channels. Each tap uses
 one multiplication and one addition per lane in the original tap order.
-The accumulator is stored to four local floats before the original `lroundf`;
+Four adjacent columns in the horizontal pass, and four adjacent rows at one
+column in the vertical pass, have independent four-channel accumulators.
+Three unpacked input pixels initialize a sliding register window; each tap
+loads and converts only the next four-byte packed pixel, broadcasts its
+coefficient once, then updates all four independent sums in original tap order.
+Only the unweighted input conversion is reused, never a weighted sum or an
+unrounded horizontal result. The tap main loop now expands four ordered phases:
+the next converted pixel replaces cached channels 3, 0, 1 and 2 respectively,
+so the cache names naturally return to the initial phase without register
+rotation after each tap. Each phase still multiplies and adds its own coefficient
+to each output in original order. The main loop requires all four taps to exist;
+the last one to three taps use the previous single-tap rotation loop. A three-tap
+kernel skips the expanded loop entirely. There is no next-tap prefetch.
+Complete output blocks alone use this path, with the
+original single-pixel SSE2 loops handling the last one to three columns or rows.
+Horizontal blocks write only valid intermediate columns. Vertical blocks read
+only those packed columns and write four valid destination rows.
+Each accumulator is stored to four local floats before the original `lroundf`;
 kernel normalization, horizontal packed-byte rounding, vertical premultiplied
 tint and rounded coverage stay unchanged. The four exit lanes use explicit
 original `lroundf` calls and constant byte shifts rather than a runtime channel
 index/packing loop; vertical lanes retain the original component mapping and
 per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
 overhead without a workload threshold or a different short-kernel algorithm.
+The four-phase backend keeps a separate implementation behind the same private
+stage interface. Its original standalone experiment passed exact-byte math,
+guard pages, isolated scene and paired-build checks, but those results do not
+replace qualification of this new selectable SDK.
 There is no SIMD-width neighboring pixel read, approximate rounding, new
-allocated workspace, runtime CPU/policy
-channel, ISA flag, fast-math/FMA policy change or ABI change.
+allocated workspace, automatic CPU/workload adaptation, ISA flag,
+fast-math/FMA policy change or ABI change. The only algorithm-selection policy
+is the explicit startup selector documented above.
 The compile-time fallback retains the original scalar Gaussian source, not
-the earlier four-pixel experiment or a different material. Both guarded and
-explicitly guard-disabled paths passed the same exact-byte fixture on GCC14;
-this is not separate qualification of other architectures, compilers or flags.
+the earlier four-pixel scalar experiment or a different material. The published
+single-output SSE2 and frozen eight-output predecessor passed the exact-byte
+fixture, but those results do not qualify the new four-phase path or other
+architectures, compilers or flags.
 A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
+
+The frozen eight-output predecessor's one comparison against the published
+single-output SSE2 library remained **HOLD**: large-case production medians
+improved only 1.21--1.24x, and the 4096x1 moving-build median regressed from
+4.5902 to 5.0047ms. Its test-driver C flags also differed (`-std=c11` versus
+the reference compiler default), so it was not a fully qualified symmetric
+performance pair. All original observations remain frozen, with neither a
+noise waiver nor a rerun. A future pair must use the same top-level CMake
+entry and explicit C standard/extensions for both roles, and compare actual
+compiler flags for every core translation unit and the scene test driver
+before collecting samples.
+
+The subsequent single-tap sliding-input predecessor completed exact-byte math,
+guard pages, a separately qualified isolated scene resource contract and the
+full same-ROOT compiler pairing precheck. Its one valid nine-case comparison
+against published single-output SSE2 still remained **HOLD**: 640x640 prepare
+was 1.8633085x faster, and 640x660 moving build was 1.9946530x, both below the
+required 2x for those stages. Five small-case stages also had positive median
+regressions. No rounding, tolerance, noise waiver or rerun changes that result.
+Its earlier combined CTest scene `ENOSPC` first failure remains separately
+retained with unknown cause; the isolated scene pass is not a diagnosis or a
+retroactive passing combined run. None of this predecessor evidence qualifies
+the new four-phase candidate's mathematics, runtime or performance.
 
 The original native measurement was about 294ms. Earlier standard-C candidates
 did not achieve the twofold goal and remain independent frozen experiments.

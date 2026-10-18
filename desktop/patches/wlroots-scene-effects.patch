@@ -567,7 +567,7 @@ index e823d62..f0f2f29 100644
  #include "util/array.h"
  #include "util/env.h"
  #include "util/time.h"
-@@ -29,6 +43,169 @@
+@@ -29,6 +43,185 @@
  #define DMABUF_FEEDBACK_DEBOUNCE_FRAMES  30
  #define HIGHLIGHT_DAMAGE_FADEOUT_TIME   250
  
@@ -591,6 +591,22 @@ index e823d62..f0f2f29 100644
 +	float radius;
 +	struct wl_list caches;
 +};
++
++enum backdrop_fir_backend {
++	BACKDROP_FIR_PRODUCTION,
++	BACKDROP_FIR_EXPERIMENTAL,
++};
++
++struct scene_effects {
++	struct wlr_scene scene;
++	enum backdrop_fir_backend fir_backend;
++	bool fir_path_logged;
++};
++
++static inline struct scene_effects *scene_effects_from_scene(struct wlr_scene *scene) {
++	struct scene_effects *effects = wl_container_of(scene, effects, scene);
++	return effects;
++}
 +
 +uint32_t wlr_scene_effects_abi_v4(void) {
 +	return WLR_SCENE_EFFECTS_ABI;
@@ -737,7 +753,7 @@ index e823d62..f0f2f29 100644
  struct wlr_scene_tree *wlr_scene_tree_from_node(struct wlr_scene_node *node) {
  	assert(node->type == WLR_SCENE_NODE_TREE);
  	struct wlr_scene_tree *tree = wl_container_of(node, tree, node);
-@@ -108,6 +285,14 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
+@@ -108,6 +301,14 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
  	wlr_scene_node_set_enabled(node, false);
  
  	struct wlr_scene *scene = scene_node_get_root(node);
@@ -752,7 +768,7 @@ index e823d62..f0f2f29 100644
  	if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
  
-@@ -134,6 +319,11 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
+@@ -134,6 +335,11 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
  		assert(wl_list_empty(&scene_buffer->events.frame_done.listener_list));
  	} else if (node->type == WLR_SCENE_NODE_TREE) {
  		struct wlr_scene_tree *scene_tree = wlr_scene_tree_from_node(node);
@@ -764,15 +780,37 @@ index e823d62..f0f2f29 100644
  
  		if (scene_tree == &scene->tree) {
  			assert(!node->parent);
-@@ -177,6 +367,7 @@ struct wlr_scene *wlr_scene_create(void) {
+@@ -173,10 +379,27 @@ struct wlr_scene *wlr_scene_create(void) {
+ struct wlr_scene *wlr_scene_create(void) {
+-	struct wlr_scene *scene = calloc(1, sizeof(*scene));
+-	if (scene == NULL) {
++	const char *option = getenv("POLLY_EXPERIMENTAL_FIR");
++	if (option && strcmp(option, "0") != 0 && strcmp(option, "1") != 0) {
++		wlr_log(WLR_ERROR, "POLLY_EXPERIMENTAL_FIR must be exactly 0 or 1 (unset defaults to 0)");
++		return NULL;
++	}
++	bool experimental = option && strcmp(option, "1") == 0;
++#if !defined(__x86_64__) || !defined(__SSE2__)
++	if (experimental) {
++		wlr_log(WLR_ERROR, "POLLY_EXPERIMENTAL_FIR=1 requires x86-64 SSE2; refusing unsupported backend");
++		return NULL;
++	}
++#endif
++	struct scene_effects *effects = calloc(1, sizeof(*effects));
++	if (effects == NULL) {
+ 		return NULL;
  	}
++	struct wlr_scene *scene = &effects->scene;
++	effects->fir_backend = experimental ? BACKDROP_FIR_EXPERIMENTAL : BACKDROP_FIR_PRODUCTION;
++	wlr_log(WLR_INFO, "Backdrop FIR backend: %s (POLLY_EXPERIMENTAL_FIR=%d; fixed for scene lifetime)",
++		experimental ? "experimental-four-phase" : "production-single-output", experimental);
  
  	scene_tree_init(&scene->tree, NULL);
 +	wl_list_init(&scene->backdrops);
  
  	wl_list_init(&scene->outputs);
  	wl_list_init(&scene->linux_dmabuf_v1_destroy.link);
-@@ -256,12 +447,16 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
+@@ -256,12 +479,16 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
  
  static void scene_node_opaque_region(struct wlr_scene_node *node, int x, int y,
  		pixman_region32_t *opaque) {
@@ -790,7 +828,7 @@ index e823d62..f0f2f29 100644
  			return;
  		}
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
-@@ -329,12 +524,16 @@ struct render_data {
+@@ -329,12 +556,16 @@ struct render_data {
  
  	struct wlr_render_pass *render_pass;
  	pixman_region32_t damage;
@@ -807,7 +845,7 @@ index e823d62..f0f2f29 100644
  	wlr_region_transform(region, region, transform, data->trans_width, data->trans_height);
  }
  
-@@ -360,6 +559,8 @@ static void scale_box(struct wlr_box *box, float scale) {
+@@ -360,6 +591,8 @@ static void scale_box(struct wlr_box *box, float scale) {
  static void transform_output_box(struct wlr_box *box, const struct render_data *data) {
  	enum wl_output_transform transform = wlr_output_transform_invert(data->transform);
  	scale_box(box, data->scale);
@@ -816,7 +854,7 @@ index e823d62..f0f2f29 100644
  	wlr_box_transform(box, box, transform, data->trans_width, data->trans_height);
  }
  
-@@ -673,9 +874,69 @@ static void scene_update_region(struct wlr_scene *scene,
+@@ -673,9 +906,69 @@ static void scene_update_region(struct wlr_scene *scene,
  	pixman_region32_fini(&visible);
  }
  
@@ -886,7 +924,7 @@ index e823d62..f0f2f29 100644
  
  	int x, y;
  	if (!wlr_scene_node_coords(node, &x, &y)) {
-@@ -711,6 +972,65 @@ static void scene_node_update(struct wlr_scene_node *node,
+@@ -711,6 +1004,65 @@ static void scene_node_update(struct wlr_scene_node *node,
  	pixman_region32_fini(damage);
  }
  
@@ -952,7 +990,7 @@ index e823d62..f0f2f29 100644
  struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
  		int width, int height, const float color[static 4]) {
  	assert(parent);
-@@ -731,6 +1051,94 @@ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
+@@ -731,6 +1083,94 @@ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
  	return scene_rect;
  }
  
@@ -1047,7 +1085,7 @@ index e823d62..f0f2f29 100644
  void wlr_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height) {
  	if (rect->width == width && rect->height == height) {
  		return;
-@@ -848,6 +1256,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
+@@ -848,6 +1288,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
  
  void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buffer,
  		struct wlr_buffer *buffer, const struct wlr_scene_buffer_set_buffer_options *options) {
@@ -1055,7 +1093,7 @@ index e823d62..f0f2f29 100644
  	const struct wlr_scene_buffer_set_buffer_options default_options = {0};
  	if (options == NULL) {
  		options = &default_options;
-@@ -874,6 +1283,10 @@ void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buf
+@@ -874,6 +1315,10 @@ void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buf
  		update = update || scene_buffer->buffer_width != buffer->width ||
  			scene_buffer->buffer_height != buffer->height;
  	}
@@ -1066,7 +1104,7 @@ index e823d62..f0f2f29 100644
  
  	// If this is a buffer change, check if it's a single pixel buffer.
  	// Cache that so we can still apply rendering optimisations even when
-@@ -1160,6 +1573,10 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
+@@ -1160,6 +1605,10 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
  	}
  
  	node->enabled = enabled;
@@ -1077,7 +1115,7 @@ index e823d62..f0f2f29 100644
  
  	scene_node_update(node, &visible);
  }
-@@ -1182,7 +1599,7 @@ void wlr_scene_node_place_above(struct wlr_scene_node *node,
+@@ -1182,7 +1631,7 @@ void wlr_scene_node_place_above(struct wlr_scene_node *node,
  	if (node->link.prev == &sibling->link) {
  		return;
  	}
@@ -1086,7 +1124,7 @@ index e823d62..f0f2f29 100644
  	wl_list_remove(&node->link);
  	wl_list_insert(&sibling->link, &node->link);
  	scene_node_update(node, NULL);
-@@ -1196,7 +1613,7 @@ void wlr_scene_node_place_below(struct wlr_scene_node *node,
+@@ -1196,7 +1645,7 @@ void wlr_scene_node_place_below(struct wlr_scene_node *node,
  	if (node->link.next == &sibling->link) {
  		return;
  	}
@@ -1095,7 +1133,7 @@ index e823d62..f0f2f29 100644
  	wl_list_remove(&node->link);
  	wl_list_insert(sibling->link.prev, &node->link);
  	scene_node_update(node, NULL);
-@@ -1227,6 +1644,38 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
+@@ -1227,6 +1676,38 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
  	if (node->parent == new_parent) {
  		return;
  	}
@@ -1134,7 +1172,7 @@ index e823d62..f0f2f29 100644
  
  	/* Ensure that a node cannot become its own ancestor */
  	for (struct wlr_scene_tree *ancestor = new_parent; ancestor != NULL;
-@@ -1308,6 +1757,10 @@ static bool scene_node_at_iterator(struct wlr_scene_node *node,
+@@ -1308,6 +1789,10 @@ static bool scene_node_at_iterator(struct wlr_scene_node *node,
  
  	double rx = at_data->lx - lx;
  	double ry = at_data->ly - ly;
@@ -1145,7 +1183,7 @@ index e823d62..f0f2f29 100644
  
  	if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-@@ -1357,12 +1810,35 @@ struct render_list_entry {
+@@ -1357,12 +1842,35 @@ struct render_list_entry {
  	int x, y;
  };
  
@@ -1182,7 +1220,7 @@ index e823d62..f0f2f29 100644
  	pixman_region32_translate(&render_region, -data->logical.x, -data->logical.y);
  	logical_to_buffer_coords(&render_region, data, true);
  	pixman_region32_intersect(&render_region, &render_region, &data->damage);
-@@ -1393,6 +1869,37 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1393,6 +1901,37 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  		break;
  	case WLR_SCENE_NODE_RECT:;
  		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
@@ -1220,7 +1258,7 @@ index e823d62..f0f2f29 100644
  
  		wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
  			.box = dst_box,
-@@ -1403,7 +1910,11 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1403,7 +1942,11 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  				.a = scene_rect->color[3],
  			},
  			.clip = &render_region,
@@ -1232,7 +1270,7 @@ index e823d62..f0f2f29 100644
  		break;
  	case WLR_SCENE_NODE_BUFFER:;
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-@@ -1428,6 +1939,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1428,6 +1971,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			data->output->output->renderer);
  		if (texture == NULL) {
  			scene_output_damage(data->output, &render_region);
@@ -1242,7 +1280,7 @@ index e823d62..f0f2f29 100644
  			break;
  		}
  
-@@ -1443,7 +1957,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1443,7 +1989,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			.clip = &render_region,
  			.alpha = &scene_buffer->opacity,
  			.filter_mode = scene_buffer->filter_mode,
@@ -1251,7 +1289,7 @@ index e823d62..f0f2f29 100644
  					!pixman_region32_empty(&opaque) ?
  				WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
  			.wait_timeline = scene_buffer->wait_timeline,
-@@ -1454,7 +1968,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1454,7 +2000,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			.output = data->output,
  			.direct_scanout = false,
  		};
@@ -1262,7 +1300,7 @@ index e823d62..f0f2f29 100644
  
  		if (entry->highlight_transparent_region) {
  			wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
-@@ -1471,6 +1987,537 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1471,6 +2019,826 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  	pixman_region32_fini(&render_region);
  }
  
@@ -1552,6 +1590,306 @@ index e823d62..f0f2f29 100644
 +	__m128i words = _mm_unpacklo_epi8(bytes, zero);
 +	return _mm_cvtepi32_ps(_mm_unpacklo_epi16(words, zero));
 +}
++
++static inline uint32_t backdrop_pack_channels(__m128 accumulated) {
++	float values[4];
++	_mm_storeu_ps(values, accumulated);
++	uint32_t pixel = (uint32_t)lroundf(values[0]);
++	pixel |= (uint32_t)lroundf(values[1]) << 8;
++	pixel |= (uint32_t)lroundf(values[2]) << 16;
++	pixel |= (uint32_t)lroundf(values[3]) << 24;
++	return pixel;
++}
++
++static inline uint32_t backdrop_finish_channels(__m128 accumulated,
++		const float color[4], float radius, int px, int py, int width, int height) {
++	float qx = fabsf(px + 0.5f - width / 2.0f) - width / 2.0f + radius;
++	float qy = fabsf(py + 0.5f - height / 2.0f) - height / 2.0f + radius;
++	float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
++	float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
++	float values[4];
++	_mm_storeu_ps(values, accumulated);
++	values[0] = color[2] * 255 + values[0] * (1 - color[3]);
++	values[1] = color[1] * 255 + values[1] * (1 - color[3]);
++	values[2] = color[0] * 255 + values[2] * (1 - color[3]);
++	values[3] = color[3] * 255 + values[3] * (1 - color[3]);
++	uint32_t pixel = (uint32_t)lroundf(fminf(values[0], 255) * coverage);
++	pixel |= (uint32_t)lroundf(fminf(values[1], 255) * coverage) << 8;
++	pixel |= (uint32_t)lroundf(fminf(values[2], 255) * coverage) << 16;
++	pixel |= (uint32_t)lroundf(fminf(values[3], 255) * coverage) << 24;
++	return pixel;
++}
++struct backdrop_filter_context {
++	void *source, *destination;
++	size_t source_stride, dest_stride;
++	uint32_t *temporary;
++	const float *kernel;
++	int width, height, pad;
++	struct wlr_box physical;
++	float corner_radius, scale;
++	const float *color;
++};
++
++struct backdrop_filter_ops {
++	void (*horizontal)(const struct backdrop_filter_context *filter);
++	void (*vertical)(const struct backdrop_filter_context *filter);
++	const char *name;
++};
++
++static void backdrop_horizontal_production(const struct backdrop_filter_context *filter) {
++	void *source = filter->source;
++	size_t source_stride = filter->source_stride;
++	uint32_t *temporary = filter->temporary;
++	const float *kernel = filter->kernel;
++	int width = filter->width, height = filter->height, pad = filter->pad;
++	for (int py = 0; py < height; py++) {
++		uint32_t *row = (uint32_t *)((uint8_t *)source + py * source_stride);
++		for (int px = pad; px < width - pad; px++) {
++			__m128 accumulated = _mm_setzero_ps();
++			for (int i = -pad; i <= pad; i++) {
++				__m128 channels = backdrop_pixel_channels(row[px + i]);
++				__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
++				accumulated = _mm_add_ps(accumulated, weighted);
++			}
++			float values[4];
++			_mm_storeu_ps(values, accumulated);
++			uint32_t pixel = (uint32_t)lroundf(values[0]);
++			pixel |= (uint32_t)lroundf(values[1]) << 8;
++			pixel |= (uint32_t)lroundf(values[2]) << 16;
++			pixel |= (uint32_t)lroundf(values[3]) << 24;
++			temporary[py * width + px] = pixel;
++		}
++	}
++}
++
++static void backdrop_vertical_production(const struct backdrop_filter_context *filter) {
++	void *destination = filter->destination;
++	size_t dest_stride = filter->dest_stride;
++	uint32_t *temporary = filter->temporary;
++	const float *kernel = filter->kernel;
++	int width = filter->width, pad = filter->pad;
++	struct wlr_box physical = filter->physical;
++	for (int py = 0; py < physical.height; py++) {
++		uint32_t *row = (uint32_t *)((uint8_t *)destination + py * dest_stride);
++		for (int px = 0; px < physical.width; px++) {
++			float radius = filter->corner_radius * filter->scale;
++			float qx = fabsf(px + 0.5f - physical.width / 2.0f) - physical.width / 2.0f + radius;
++			float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
++			float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
++			float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
++			__m128 accumulated = _mm_setzero_ps();
++			for (int i = -pad; i <= pad; i++) {
++				__m128 channels = backdrop_pixel_channels(
++					temporary[(py + pad + i) * width + px + pad]);
++				__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
++				accumulated = _mm_add_ps(accumulated, weighted);
++			}
++			float values[4];
++			_mm_storeu_ps(values, accumulated);
++			values[0] = filter->color[2] * 255 + values[0] * (1 - filter->color[3]);
++			values[1] = filter->color[1] * 255 + values[1] * (1 - filter->color[3]);
++			values[2] = filter->color[0] * 255 + values[2] * (1 - filter->color[3]);
++			values[3] = filter->color[3] * 255 + values[3] * (1 - filter->color[3]);
++			uint32_t pixel = (uint32_t)lroundf(fminf(values[0], 255) * coverage);
++			pixel |= (uint32_t)lroundf(fminf(values[1], 255) * coverage) << 8;
++			pixel |= (uint32_t)lroundf(fminf(values[2], 255) * coverage) << 16;
++			pixel |= (uint32_t)lroundf(fminf(values[3], 255) * coverage) << 24;
++			row[px] = pixel;
++		}
++	}
++}
++
++static void backdrop_horizontal_experimental(const struct backdrop_filter_context *filter) {
++	void *source = filter->source;
++	size_t source_stride = filter->source_stride;
++	uint32_t *temporary = filter->temporary;
++	const float *kernel = filter->kernel;
++	int width = filter->width, height = filter->height, pad = filter->pad;
++	for (int py = 0; py < height; py++) {
++		uint32_t *row = (uint32_t *)((uint8_t *)source + py * source_stride);
++		int px = pad;
++		for (; px + 3 < width - pad; px += 4) {
++			__m128 sum0 = _mm_setzero_ps(), sum1 = _mm_setzero_ps();
++			__m128 sum2 = _mm_setzero_ps(), sum3 = _mm_setzero_ps();
++			__m128 channels0 = backdrop_pixel_channels(row[px - pad]);
++			__m128 channels1 = backdrop_pixel_channels(row[px - pad + 1]);
++			__m128 channels2 = backdrop_pixel_channels(row[px - pad + 2]);
++			int i = -pad;
++			for (; i + 3 <= pad; i += 4) {
++				__m128 channels3 = backdrop_pixel_channels(row[px + i + 3]);
++				__m128 weight = _mm_set1_ps(kernel[i + pad]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels0, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels1, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels2, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels3, weight));
++				channels0 = backdrop_pixel_channels(row[px + i + 4]);
++				weight = _mm_set1_ps(kernel[i + pad + 1]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels1, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels2, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels3, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels0, weight));
++				channels1 = backdrop_pixel_channels(row[px + i + 5]);
++				weight = _mm_set1_ps(kernel[i + pad + 2]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels2, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels3, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels0, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels1, weight));
++				channels2 = backdrop_pixel_channels(row[px + i + 6]);
++				weight = _mm_set1_ps(kernel[i + pad + 3]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels3, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels0, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels1, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels2, weight));
++			}
++			for (; i <= pad; i++) {
++				__m128 channels3 = backdrop_pixel_channels(row[px + i + 3]);
++				__m128 weight = _mm_set1_ps(kernel[i + pad]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels0, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels1, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels2, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels3, weight));
++				channels0 = channels1;
++				channels1 = channels2;
++				channels2 = channels3;
++			}
++			temporary[py * width + px] = backdrop_pack_channels(sum0);
++			temporary[py * width + px + 1] = backdrop_pack_channels(sum1);
++			temporary[py * width + px + 2] = backdrop_pack_channels(sum2);
++			temporary[py * width + px + 3] = backdrop_pack_channels(sum3);
++		}
++		for (; px < width - pad; px++) {
++			__m128 accumulated = _mm_setzero_ps();
++			for (int i = -pad; i <= pad; i++) {
++				__m128 channels = backdrop_pixel_channels(row[px + i]);
++				__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
++				accumulated = _mm_add_ps(accumulated, weighted);
++			}
++			float values[4];
++			_mm_storeu_ps(values, accumulated);
++			uint32_t pixel = (uint32_t)lroundf(values[0]);
++			pixel |= (uint32_t)lroundf(values[1]) << 8;
++			pixel |= (uint32_t)lroundf(values[2]) << 16;
++			pixel |= (uint32_t)lroundf(values[3]) << 24;
++			temporary[py * width + px] = pixel;
++		}
++	}
++}
++
++static void backdrop_vertical_experimental(const struct backdrop_filter_context *filter) {
++	void *destination = filter->destination;
++	size_t dest_stride = filter->dest_stride;
++	uint32_t *temporary = filter->temporary;
++	const float *kernel = filter->kernel;
++	int width = filter->width, pad = filter->pad;
++	struct wlr_box physical = filter->physical;
++	int py = 0;
++	for (; py + 3 < physical.height; py += 4) {
++		uint32_t *row0 = (uint32_t *)((uint8_t *)destination + py * dest_stride);
++		uint32_t *row1 = (uint32_t *)((uint8_t *)destination + (py + 1) * dest_stride);
++		uint32_t *row2 = (uint32_t *)((uint8_t *)destination + (py + 2) * dest_stride);
++		uint32_t *row3 = (uint32_t *)((uint8_t *)destination + (py + 3) * dest_stride);
++		for (int px = 0; px < physical.width; px++) {
++			__m128 sum0 = _mm_setzero_ps(), sum1 = _mm_setzero_ps();
++			__m128 sum2 = _mm_setzero_ps(), sum3 = _mm_setzero_ps();
++			__m128 channels0 = backdrop_pixel_channels(temporary[py * width + px + pad]);
++			__m128 channels1 = backdrop_pixel_channels(temporary[(py + 1) * width + px + pad]);
++			__m128 channels2 = backdrop_pixel_channels(temporary[(py + 2) * width + px + pad]);
++			int i = -pad;
++			for (; i + 3 <= pad; i += 4) {
++				__m128 channels3 = backdrop_pixel_channels(
++					temporary[(py + pad + i + 3) * width + px + pad]);
++				__m128 weight = _mm_set1_ps(kernel[i + pad]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels0, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels1, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels2, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels3, weight));
++				channels0 = backdrop_pixel_channels(
++					temporary[(py + pad + i + 4) * width + px + pad]);
++				weight = _mm_set1_ps(kernel[i + pad + 1]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels1, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels2, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels3, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels0, weight));
++				channels1 = backdrop_pixel_channels(
++					temporary[(py + pad + i + 5) * width + px + pad]);
++				weight = _mm_set1_ps(kernel[i + pad + 2]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels2, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels3, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels0, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels1, weight));
++				channels2 = backdrop_pixel_channels(
++					temporary[(py + pad + i + 6) * width + px + pad]);
++				weight = _mm_set1_ps(kernel[i + pad + 3]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels3, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels0, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels1, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels2, weight));
++			}
++			for (; i <= pad; i++) {
++				__m128 channels3 = backdrop_pixel_channels(
++					temporary[(py + pad + i + 3) * width + px + pad]);
++				__m128 weight = _mm_set1_ps(kernel[i + pad]);
++				sum0 = _mm_add_ps(sum0, _mm_mul_ps(channels0, weight));
++				sum1 = _mm_add_ps(sum1, _mm_mul_ps(channels1, weight));
++				sum2 = _mm_add_ps(sum2, _mm_mul_ps(channels2, weight));
++				sum3 = _mm_add_ps(sum3, _mm_mul_ps(channels3, weight));
++				channels0 = channels1;
++				channels1 = channels2;
++				channels2 = channels3;
++			}
++			float radius = filter->corner_radius * filter->scale;
++			row0[px] = backdrop_finish_channels(sum0, filter->color, radius,
++				px, py, physical.width, physical.height);
++			row1[px] = backdrop_finish_channels(sum1, filter->color, radius,
++				px, py + 1, physical.width, physical.height);
++			row2[px] = backdrop_finish_channels(sum2, filter->color, radius,
++				px, py + 2, physical.width, physical.height);
++			row3[px] = backdrop_finish_channels(sum3, filter->color, radius,
++				px, py + 3, physical.width, physical.height);
++		}
++	}
++	for (; py < physical.height; py++) {
++		uint32_t *row = (uint32_t *)((uint8_t *)destination + py * dest_stride);
++		for (int px = 0; px < physical.width; px++) {
++			float radius = filter->corner_radius * filter->scale;
++			float qx = fabsf(px + 0.5f - physical.width / 2.0f) - physical.width / 2.0f + radius;
++			float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
++			float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
++			float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
++			__m128 accumulated = _mm_setzero_ps();
++			for (int i = -pad; i <= pad; i++) {
++				__m128 channels = backdrop_pixel_channels(
++					temporary[(py + pad + i) * width + px + pad]);
++				__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
++				accumulated = _mm_add_ps(accumulated, weighted);
++			}
++			float values[4];
++			_mm_storeu_ps(values, accumulated);
++			values[0] = filter->color[2] * 255 + values[0] * (1 - filter->color[3]);
++			values[1] = filter->color[1] * 255 + values[1] * (1 - filter->color[3]);
++			values[2] = filter->color[0] * 255 + values[2] * (1 - filter->color[3]);
++			values[3] = filter->color[3] * 255 + values[3] * (1 - filter->color[3]);
++			uint32_t pixel = (uint32_t)lroundf(fminf(values[0], 255) * coverage);
++			pixel |= (uint32_t)lroundf(fminf(values[1], 255) * coverage) << 8;
++			pixel |= (uint32_t)lroundf(fminf(values[2], 255) * coverage) << 16;
++			pixel |= (uint32_t)lroundf(fminf(values[3], 255) * coverage) << 24;
++			row[px] = pixel;
++		}
++	}
++}
++
++static const struct backdrop_filter_ops backdrop_production_ops = {
++	.horizontal = backdrop_horizontal_production,
++	.vertical = backdrop_vertical_production,
++	.name = "production-single-output",
++};
++
++static const struct backdrop_filter_ops backdrop_experimental_ops = {
++	.horizontal = backdrop_horizontal_experimental,
++	.vertical = backdrop_vertical_experimental,
++	.name = "experimental-four-phase",
++};
++
 +#endif
 +
 +static bool backdrop_prepare(struct wlr_scene_rect *rect, const struct render_data *data) {
@@ -1647,23 +1985,32 @@ index e823d62..f0f2f29 100644
 +		for (int i = 0; i <= 2 * pad; i++) {
 +			kernel[i] /= sum;
 +		}
++#if defined(__x86_64__) && defined(__SSE2__)
++		struct scene_effects *effects = scene_effects_from_scene(scene);
++		const struct backdrop_filter_ops *ops = effects->fir_backend == BACKDROP_FIR_EXPERIMENTAL ?
++			&backdrop_experimental_ops : &backdrop_production_ops;
++		if (!effects->fir_path_logged) {
++			wlr_log(WLR_INFO, "Backdrop FIR executing: %s", ops->name);
++			effects->fir_path_logged = true;
++		}
++		struct backdrop_filter_context filter = {
++			.source = source, .destination = destination,
++			.source_stride = source_stride, .dest_stride = dest_stride,
++			.temporary = temporary, .kernel = kernel, .width = width,
++			.height = height, .pad = pad, .physical = physical,
++			.corner_radius = rect->corner_radius, .scale = data->scale, .color = rect->color,
++		};
++		ops->horizontal(&filter);
++		ops->vertical(&filter);
++#else
++		struct scene_effects *effects = scene_effects_from_scene(scene);
++		if (!effects->fir_path_logged) {
++			wlr_log(WLR_INFO, "Backdrop FIR executing: production-single-output");
++			effects->fir_path_logged = true;
++		}
 +		for (int py = 0; py < height; py++) {
 +			uint32_t *row = (uint32_t *)((uint8_t *)source + py * source_stride);
 +			for (int px = pad; px < width - pad; px++) {
-+#if defined(__x86_64__) && defined(__SSE2__)
-+				__m128 accumulated = _mm_setzero_ps();
-+				for (int i = -pad; i <= pad; i++) {
-+					__m128 channels = backdrop_pixel_channels(row[px + i]);
-+					__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
-+					accumulated = _mm_add_ps(accumulated, weighted);
-+				}
-+				float values[4];
-+				_mm_storeu_ps(values, accumulated);
-+				uint32_t pixel = (uint32_t)lroundf(values[0]);
-+				pixel |= (uint32_t)lroundf(values[1]) << 8;
-+				pixel |= (uint32_t)lroundf(values[2]) << 16;
-+				pixel |= (uint32_t)lroundf(values[3]) << 24;
-+#else
 +				uint32_t pixel = 0;
 +				for (int channel = 0; channel < 32; channel += 8) {
 +					float value = 0;
@@ -1672,7 +2019,6 @@ index e823d62..f0f2f29 100644
 +					}
 +					pixel |= (uint32_t)lroundf(value) << channel;
 +				}
-+#endif
 +				temporary[py * width + px] = pixel;
 +			}
 +		}
@@ -1684,25 +2030,6 @@ index e823d62..f0f2f29 100644
 +				float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
 +				float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
 +				float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
-+#if defined(__x86_64__) && defined(__SSE2__)
-+				__m128 accumulated = _mm_setzero_ps();
-+				for (int i = -pad; i <= pad; i++) {
-+					__m128 channels = backdrop_pixel_channels(
-+						temporary[(py + pad + i) * width + px + pad]);
-+					__m128 weighted = _mm_mul_ps(channels, _mm_set1_ps(kernel[i + pad]));
-+					accumulated = _mm_add_ps(accumulated, weighted);
-+				}
-+				float values[4];
-+				_mm_storeu_ps(values, accumulated);
-+				values[0] = rect->color[2] * 255 + values[0] * (1 - rect->color[3]);
-+				values[1] = rect->color[1] * 255 + values[1] * (1 - rect->color[3]);
-+				values[2] = rect->color[0] * 255 + values[2] * (1 - rect->color[3]);
-+				values[3] = rect->color[3] * 255 + values[3] * (1 - rect->color[3]);
-+				uint32_t pixel = (uint32_t)lroundf(fminf(values[0], 255) * coverage);
-+				pixel |= (uint32_t)lroundf(fminf(values[1], 255) * coverage) << 8;
-+				pixel |= (uint32_t)lroundf(fminf(values[2], 255) * coverage) << 16;
-+				pixel |= (uint32_t)lroundf(fminf(values[3], 255) * coverage) << 24;
-+#else
 +				uint32_t pixel = 0;
 +				for (int channel = 0; channel < 32; channel += 8) {
 +					float value = 0;
@@ -1713,10 +2040,10 @@ index e823d62..f0f2f29 100644
 +					value = rect->color[component] * 255 + value * (1 - rect->color[3]);
 +					pixel |= (uint32_t)lroundf(fminf(value, 255) * coverage) << channel;
 +				}
-+#endif
 +				row[px] = pixel;
 +			}
 +		}
++#endif
 +	}
 +	if (dest_access) {
 +		wlr_buffer_end_data_ptr_access(cache->buffer);
@@ -1800,7 +2127,7 @@ index e823d62..f0f2f29 100644
  static void scene_handle_linux_dmabuf_v1_destroy(struct wl_listener *listener,
  		void *data) {
  	struct wlr_scene *scene =
-@@ -1756,7 +2803,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
+@@ -1756,7 +3124,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
  	} else if (node->type == WLR_SCENE_NODE_RECT) {
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  
@@ -1809,7 +2136,7 @@ index e823d62..f0f2f29 100644
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
  
-@@ -1772,6 +2819,7 @@ struct render_list_constructor_data {
+@@ -1772,6 +3140,7 @@ struct render_list_constructor_data {
  	bool calculate_visibility;
  	bool highlight_transparent_region;
  	bool fractional_scale;
@@ -1817,7 +2144,7 @@ index e823d62..f0f2f29 100644
  };
  
  static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer) {
-@@ -1786,6 +2834,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
+@@ -1786,6 +3155,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
  static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		int lx, int ly, void *_data) {
  	struct render_list_constructor_data *data = _data;
@@ -1857,7 +2184,7 @@ index e823d62..f0f2f29 100644
  
  	if (scene_node_invisible(node)) {
  		return false;
-@@ -1800,7 +2881,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
+@@ -1800,7 +3202,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  		float *black = (float[4]){ 0.f, 0.f, 0.f, 1.f };
  
@@ -1866,7 +2193,7 @@ index e823d62..f0f2f29 100644
  			return false;
  		}
  	}
-@@ -2046,6 +3127,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
+@@ -2046,6 +3448,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
  
  bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		struct wlr_output_state *state, const struct wlr_scene_output_state_options *options) {
@@ -1874,7 +2201,7 @@ index e823d62..f0f2f29 100644
  	struct wlr_scene_output_state_options default_options = {0};
  	if (!options) {
  		options = &default_options;
-@@ -2073,6 +3155,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2073,6 +3476,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		.logical = { .x = scene_output->x, .y = scene_output->y },
  		.output = scene_output,
  	};
@@ -1883,7 +2210,7 @@ index e823d62..f0f2f29 100644
  
  	int resolution_width, resolution_height;
  	output_pending_resolution(output, state,
-@@ -2117,6 +3201,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2117,6 +3522,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  
  	struct render_list_entry *list_data = list_con.render_list->data;
  	int list_len = list_con.render_list->size / sizeof(*list_data);
@@ -1921,7 +2248,7 @@ index e823d62..f0f2f29 100644
  
  	if (debug_damage == WLR_SCENE_DEBUG_DAMAGE_RERENDER) {
  		scene_output_damage_whole(scene_output);
-@@ -2330,7 +3445,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2330,7 +3766,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  	wlr_output_add_software_cursors_to_render_pass(output, render_pass, &render_data.damage);
  	pixman_region32_fini(&render_data.damage);
  

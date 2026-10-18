@@ -33,6 +33,13 @@ add_test(NAME desktop-live-publication COMMAND "${PACKAGE_NODE_EXECUTABLE}" --te
     "${CMAKE_CURRENT_SOURCE_DIR}/publish-live-iso.mjs")
 set_tests_properties(desktop-live-publication PROPERTIES TIMEOUT 30)
 find_program(CURSOR_PYTHON_EXECUTABLE python3 REQUIRED)
+add_executable(pollywm-fir-backend-test fir-backend.c)
+target_link_libraries(pollywm-fir-backend-test PRIVATE pollywm-core)
+target_compile_options(pollywm-fir-backend-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+set_target_properties(pollywm-fir-backend-test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
+add_test(NAME desktop-fir-backend COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fir-backend.py" $<TARGET_FILE:pollywm-fir-backend-test>)
+set_tests_properties(desktop-fir-backend PROPERTIES TIMEOUT 30)
 if (EXISTS "/opt/wlroots-0.19.3.tar.gz")
     pkg_get_variable(PU_WLROOTS_PREFIX wlroots-0.19 prefix)
     add_test(NAME desktop-wlroots-effects-dependency COMMAND "${CURSOR_PYTHON_EXECUTABLE}"

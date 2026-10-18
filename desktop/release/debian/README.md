@@ -893,3 +893,27 @@ This Debian feedback is separate from the earlier Alpine report. Keep exact
 candidate revisions, package inventories and known failures with results.
 See the [maintenance policy](../../../docs/desktop-base-maintenance.md) for
 promotion, data and rollback limits.
+## Experimental FIR backend in paired desktop builds
+
+`POLLY_EXPERIMENTAL_FIR=1 polly-desktop` selects the final four-phase FIR
+implementation at compositor scene startup. Unset or exactly `0` keeps the
+production single-output backend. Empty/non-`0`/`1` values and explicit
+enablement without x86-64 SSE2 fail startup. Configure the compositor's launch
+environment and restart the desktop session; no service/host setting is changed
+by the option itself, and there is no hot Settings toggle.
+
+Release builders must rebuild the SDK from the current
+`wlroots-effects.json`/patch pin and build/package the matching compositor.
+ABI/SONAME remain effects4 because public layouts and APIs are unchanged;
+an older same-ABI source pin is still rejected. Never overwrite retained SDKs
+or label this new library as the published `c6ea` binary. Startup and first-use
+native diagnostics report the selected implementation.
+
+The experiment remains default-off: its historical large-case observations
+were about 1.90--2.16x faster, but three of four large stages missed the
+experiment's 2x goal and four small stages regressed. That goal is not a
+functional or industry standard; retaining the code for future optimization
+does not turn its performance **HOLD** into PASS. No new performance pair is
+implied by this integration. See the [desktop backend documentation](../../README.md#default-off-experimental-fir-backend).
+Packaged Start material/solid defaults, recipient authority and all existing
+geometry, precision, resource and scalar-fallback contracts remain unchanged.
