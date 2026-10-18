@@ -199,8 +199,9 @@ stage interface. Its original standalone experiment passed exact-byte math,
 guard pages, isolated scene and paired-build checks, but those results do not
 replace qualification of this new selectable SDK.
 There is no SIMD-width neighboring pixel read, approximate rounding, new
-allocated workspace, runtime CPU/policy
-channel, ISA flag, fast-math/FMA policy change or ABI change.
+allocated workspace, automatic CPU/workload adaptation, ISA flag,
+fast-math/FMA policy change or ABI change. The only algorithm-selection policy
+is the explicit startup selector documented above.
 The compile-time fallback retains the original scalar Gaussian source, not
 the earlier four-pixel scalar experiment or a different material. The published
 single-output SSE2 and frozen eight-output predecessor passed the exact-byte
