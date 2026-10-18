@@ -37,6 +37,8 @@ bool pu_decoration_ready(struct PuDesktopView *view);
 /* Observe the latest complete server frame without requesting or presenting one. */
 bool pu_decoration_presented_current(const struct PuDesktopView *view);
 bool pu_decoration_layout_settled(const struct PuDesktopView *view);
+/* Read-only input geometry; focus/hover repaint is not a placement fence. */
+bool pu_decoration_shown_geometry(struct PuDesktopView *view);
 /* Zero denotes a frame which is not current; no scene hit-testing is involved. */
 uint32_t pu_decoration_presented_revision(const struct PuDesktopView *view);
 void pu_decoration_update(struct PuDesktopView *view);

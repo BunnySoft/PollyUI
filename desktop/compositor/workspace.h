@@ -29,6 +29,11 @@ void pu_workspaces_picker_motion(struct PuDesktop *desktop, struct PuDesktopView
 void pu_workspaces_picker_cancel(struct PuDesktop *desktop);
 void pu_workspaces_picker_validate(struct PuDesktop *desktop);
 void pu_workspaces_picker_input(struct PuDesktop *desktop, struct wlr_surface *surface);
+bool pu_workspaces_system_menu_arm(struct PuDesktopView *view);
+void pu_workspaces_system_menu_release(struct PuDesktop *desktop, struct PuDesktopView *hit);
+bool pu_workspaces_system_menu_key(struct PuDesktopView *view);
+void pu_workspaces_system_menu_cancel(struct PuDesktop *desktop);
+void pu_workspaces_system_menu_validate(struct PuDesktop *desktop);
 void pu_workspaces_adopt_parent(struct PuDesktopView *view);
 bool pu_workspaces_output_add(struct PuDesktop *desktop, struct wlr_output *output);
 

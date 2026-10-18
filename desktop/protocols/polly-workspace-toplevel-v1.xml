@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_workspace_toplevel_v1">
-  <interface name="polly_workspace_toplevel_manager_v1" version="6">
+  <interface name="polly_workspace_toplevel_manager_v1" version="7">
     <description summary="trusted workspace membership for foreign toplevels">
       Workspace listing, creation, removal and activation use ext-workspace-v1.
       This restricted extension associates foreign toplevels with workspaces.
@@ -9,6 +9,7 @@
       Version 4 pairs with version 4 children for a native-caption hover grant.
       Version 5 pairs with version 5 children for display-local menu cascade.
       Version 6 pairs with version 6 children for horizontal/vertical arrangement.
+      Version 7 adds opt-in native system-menu input requests, not menu authority.
       Older bindings retain their original menu semantics and have no picker.
     </description>
     <enum name="error">
@@ -81,8 +82,21 @@
     <event name="arrangement_capabilities" since="6">
       <arg name="supported" type="uint" summary="one supports both bounded v6 arrangements; zero does not"/>
     </event>
+    <request name="enable_system_menu_requests" since="7">
+      <description summary="opt into native title right-click and Alt+Space">
+        Only the authenticated Shell may enable this paired v7 feature. One
+        selects this exact manager binding; zero disables only its own opt-in.
+        Replacement, disable or destruction retires armed gestures and pending
+        requests. Without opt-in the compositor preserves the old input path.
+        This does not register a menu surface or authorize any window command.
+      </description>
+      <arg name="enabled" type="uint"/>
+    </request>
+    <event name="system_menu_capabilities" since="7">
+      <arg name="supported" type="uint" summary="one supports paired v7 native menu requests"/>
+    </event>
   </interface>
-  <interface name="polly_workspace_toplevel_v1" version="6">
+  <interface name="polly_workspace_toplevel_v1" version="7">
     <request name="destroy" type="destructor"/>
     <request name="move_to">
       <description summary="move the toplevel family without activating it">
@@ -253,5 +267,46 @@
       <arg name="epoch" type="uint"/>
       <arg name="arrangement" type="uint" enum="arrangement"/>
     </request>
+    <enum name="menu_origin" since="7">
+      <entry name="title" value="1" summary="complete native TITLE right-button gesture"/>
+      <entry name="keyboard" value="2" summary="unhandled exact Alt+Space press"/>
+    </enum>
+    <event name="system_menu_requested" since="7">
+      <description summary="one-shot read-only native input projection">
+        The serial is nonzero and increasing without wrap. The target is this
+        actual tracked child, never a client-supplied ID. Anchor coordinates
+        are output-local logical coordinates. A title gesture uses its release
+        point's live output (including a straddling caption); keyboard input
+        uses the presented window's main output. The output box is global.
+        Consume once before opening the ordinary menu. No placement grant,
+        surface registration, seat access or foreign geometry setter is added.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="origin" type="uint" enum="menu_origin"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="output_name" type="string"/>
+      <arg name="output_x" type="int"/>
+      <arg name="output_y" type="int"/>
+      <arg name="output_width" type="int"/>
+      <arg name="output_height" type="int"/>
+    </event>
+    <request name="consume_system_menu" since="7">
+      <description summary="retire and recheck a read-only input request">
+        Rechecks the exact child, mapped lifetime, workspace, output, presented
+        geometry and current input policy. Consumes even on rejection. An
+        accepted result is not menu authority: open_menu is still required.
+      </description>
+      <arg name="serial" type="uint"/>
+    </request>
+    <event name="system_menu_consumed" since="7">
+      <arg name="serial" type="uint"/>
+      <arg name="accepted" type="uint"/>
+    </event>
+    <event name="system_menu_cancelled" since="7">
+      <arg name="serial" type="uint"/>
+    </event>
   </interface>
 </protocol>

@@ -1,6 +1,47 @@
 # PollyOS 当前批次交接
 
-## 2026-10-15 当前交付与盘点
+## 2026-10-18 当前集中手测 ISO
+
+当前固定入口为 **`D:\temp\PollyOS\PollyOS.iso`**，与以下版本文件为同一 inode 的硬链接：
+
+```text
+D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-ddd0a5e-ddd0a5e-c6ff921eb996\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso
+```
+
+实际大小 **711,297,024 字节**，SHA256：
+
+```text
+c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1
+```
+
+runtime、overlay、media producer 均为 clean
+`ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1`，tree
+`dcb36e9cac07ecfd5a202ad1b96b663357271eda`，实际 GUI 自报相同版本和源码。
+后续交付说明提交不改变该镜像来源。只采用已发布 C6/ABI4/pin01a SDK，
+未采用 b49/Dacc/0ad FIR 候选；标准 Start 默认实色，显示桌面与 Shell 独立
+WindowChrome 拆分未实现。
+
+实际 ISO initramfs **328 条** runtime/overlay 路径的 bytes/mode/owner、来源回执和
+意外 Polly 文件检查通过；EFI/GRUB、字体/PNG、cursor、sourceInfo/SBOM 与 SDK
+打包 RPATH 链已核。Windows 标准发布器复核完整交付包，并原子更新固定入口；
+没有写入旧 ISO inode 或改动任何用户 VM、光盘句柄、磁盘、账户或宿主服务。
+冻结包中原 `stableAlias: Parent publication pending` 是构建交接时状态，父发布
+回执已另行确认固定路径更新成功，不改写原始校验文件。
+
+唯一一次原 fixture 基础启动为 **OVMF UEFI/KVM、4 GiB、2 vCPU**，只读光盘、
+无 guest disk/NIC/guest host-share/host audio；普通 PAM、真实 DRM 桌面、
+工作区切换、原生中文提交和剪贴板原 marker 全部通过。只以 QMP quit 退出自有
+QEMU，不冒正常用户关机。**完整新架构 Apps、默认 splash、Hyper-V、物理设备、
+E22 原图和实时性能仍未完成。** 这是无安装器、无持久 guest disk 的开发 Live，
+不用于敏感工作；原安装版 VHDX 保留，不随本次更新。
+
+建议本轮集中手测真实标题右键/Alt+Space、半屏与恢复/拖边、普通菜单层叠/平铺、
+六主题切换和常用 Settings/Files/中文输入；这些用户平台结果尚未宣称通过。
+已打开的 VM 光盘句柄可能仍指向旧 inode，需要用户自行重新选择介质；本次没有
+替用户操作现有 VM。E22 最新工作表及新旧编号见
+[当前任务、依赖与顺序](POLLYOS-E22-STATUS.md)。
+
+## 2026-10-15 历史交付与盘点（保留）
 
 功能组合 `6298ff3e57c687a21fd6e9f8edce0b3803c7f3f9` 已正常推送至
 `origin/main`，远端 SHA 已独立核对。此前本地八个提交均已包含，包括 opt-in Mac
