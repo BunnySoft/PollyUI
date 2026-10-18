@@ -44,17 +44,22 @@ async function run() {
       console.log('SYSTEM_MENU_CLIENT_DOWN ' + JSON.stringify({ button: event.button,
         x: event.clientX, y: event.clientY, target: event.target === target }));
       check(event.target === target, 'actual right down targets the plain SDK client node');
-      if (event.button === 2) downs++;
+      if (event.button === 2) {
+        check(event.clientX === 20 && event.clientY === 20, 'SDK right down retains the actual source-local point');
+        downs++;
+      }
     };
     const up = event => {
       console.log('SYSTEM_MENU_CLIENT_UP ' + JSON.stringify({ button: event.button,
         x: event.clientX, y: event.clientY, target: event.target === target }));
       check(event.target === target, 'actual right up targets the same SDK client node');
       if (event.button !== 2) return;
+      check(event.clientX === 20 && event.clientY === 20, 'SDK right up retains the same source-local point');
       ups++;
     };
     const context = event => {
       if (event.button !== 2) return;
+      check(event.target === target, 'SDK contextmenu follows the same original target and button pair');
       contexts++;
       const once = downs === 1 && ups === 1 && contexts === 1;
       target.style.backgroundColor = once ? '#33cc66' : '#ff0000';

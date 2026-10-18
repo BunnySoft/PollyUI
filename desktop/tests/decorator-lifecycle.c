@@ -65,7 +65,11 @@ static int cascade_controls[3] = {-1, -1, -1};
 static struct {
     struct wl_protocol_logger *logger;
     uint32_t requested, cancelled, consumed, held, enables, held_enables;
+    uint32_t child, applied, held_applied, commit_serial, applied_serial;
+    uint64_t requested_window;
+    struct wl_client *request_client;
     uint64_t generation, held_generation;
+    bool invalid;
 } system_trace;
 
 static void system_protocol_log(void *data, enum wl_protocol_logger_type direction,
@@ -75,17 +79,48 @@ static void system_protocol_log(void *data, enum wl_protocol_logger_type directi
     const char *interface = wl_resource_get_class(message->resource);
     const char *name = message->message->name;
     if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_workspace_toplevel_v1")) {
-        if (!strcmp(name, "system_menu_requested")) system_trace.requested = message->arguments[0].u;
-        else if (!strcmp(name, "system_menu_cancelled")) system_trace.cancelled = message->arguments[0].u;
+        if (!strcmp(name, "system_menu_requested")) {
+            if (message->arguments_count != 11 || !message->arguments ||
+                wl_resource_get_version(message->resource) < 7 || !desktop.focused) {
+                system_trace.invalid = true; return;
+            }
+            system_trace.requested = message->arguments[0].u;
+            system_trace.child = wl_resource_get_id(message->resource);
+            system_trace.request_client = wl_resource_get_client(message->resource);
+            system_trace.requested_window = desktop.focused->workspace_window;
+        } else if (!strcmp(name, "system_menu_cancelled")) {
+            if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+            system_trace.cancelled = message->arguments[0].u;
+        }
     } else if (direction == WL_PROTOCOL_LOGGER_REQUEST && !strcmp(interface, "polly_workspace_toplevel_v1") &&
-        !strcmp(name, "consume_system_menu")) system_trace.consumed = message->arguments[0].u;
+        !strcmp(name, "consume_system_menu")) {
+        if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+        system_trace.consumed = message->arguments[0].u;
+    }
     else if (direction == WL_PROTOCOL_LOGGER_REQUEST &&
         !strcmp(interface, "polly_workspace_toplevel_manager_v1") &&
-        !strcmp(name, "enable_system_menu_requests")) system_trace.enables++;
+        !strcmp(name, "enable_system_menu_requests")) {
+        if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+        system_trace.enables++;
+    } else if (direction == WL_PROTOCOL_LOGGER_REQUEST && !strcmp(interface, "polly_appearance_v1") &&
+        !strcmp(name, "commit") && wl_resource_get_client(message->resource) == desktop.shell_client) {
+        if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+        system_trace.commit_serial = message->arguments[0].u;
+    } else if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_appearance_v1") &&
+        !strcmp(name, "applied") && wl_resource_get_client(message->resource) == desktop.shell_client) {
+        if (message->arguments_count != 3 || !message->arguments) { system_trace.invalid = true; return; }
+        if (message->arguments[1].u == 1) {
+            system_trace.applied_serial = message->arguments[0].u;
+            system_trace.applied++;
+        }
+    }
     else if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_appearance_v1") &&
         !strcmp(name, "render_request")) {
+        if (message->arguments_count != 4 || !message->arguments) { system_trace.invalid = true; return; }
         const struct wl_array *array = message->arguments[0].a;
-        if (array->size != PU_FRAME_META_WORDS * sizeof(uint32_t)) return;
+        if (!array || !array->data || array->size != PU_FRAME_META_WORDS * sizeof(uint32_t)) {
+            system_trace.invalid = true; return;
+        }
         uint32_t meta[PU_FRAME_META_WORDS];
         memcpy(meta, array->data, sizeof(meta));
         uint64_t generation = (uint64_t)meta[PU_FRAME_GENERATION_LO] | (uint64_t)meta[PU_FRAME_GENERATION_HI] << 32;
@@ -3535,19 +3570,25 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                     CHECK(wait_presented_frame(views[i]));
                 }
             } else if (!strcmp(operation, "retheme-before")) {
-                CHECK(system_trace.requested && system_trace.requested != system_trace.consumed &&
-                    system_trace.generation && !picker_menu());
+                CHECK(!system_trace.invalid && system_trace.requested && system_trace.child &&
+                    system_trace.request_client == desktop.shell_client &&
+                    system_trace.requested_window == views[0]->workspace_window &&
+                    system_trace.requested != system_trace.consumed && system_trace.generation && !picker_menu());
                 system_trace.held = system_trace.requested;
                 system_trace.held_generation = system_trace.generation;
                 system_trace.held_enables = system_trace.enables;
+                system_trace.held_applied = system_trace.applied;
             } else if (!strcmp(operation, "retheme-after")) {
                 for (int i = 0; i < 1200 && system_trace.generation == system_trace.held_generation; i++) CHECK(pump());
-                CHECK(system_trace.cancelled == system_trace.held && system_trace.held &&
+                CHECK(!system_trace.invalid && system_trace.cancelled == system_trace.held && system_trace.held &&
                     system_trace.consumed != system_trace.held &&
                     system_trace.enables == system_trace.held_enables &&
+                    system_trace.applied == system_trace.held_applied + 1 &&
+                    system_trace.applied_serial == system_trace.commit_serial &&
                     system_trace.generation > system_trace.held_generation && !picker_menu());
-                printf("SYSTEM_MENU_RETHEME serial=%u cancelled=%u generationBefore=%llu generationAfter=%llu optinRequestsBefore=%u optinRequestsAfter=%u\n",
-                    system_trace.held, system_trace.cancelled,
+                printf("SYSTEM_MENU_RETHEME child=%u window=%llu serial=%u cancelled=%u commit=%u accepted=1 generationBefore=%llu generationAfter=%llu optinRequestsBefore=%u optinRequestsAfter=%u\n",
+                    system_trace.child, (unsigned long long)system_trace.requested_window,
+                    system_trace.held, system_trace.cancelled, system_trace.applied_serial,
                     (unsigned long long)system_trace.held_generation, (unsigned long long)system_trace.generation,
                     system_trace.held_enables, system_trace.enables);
             } else if (!strcmp(operation, "focus") || !strcmp(operation, "title-down") ||
