@@ -3492,16 +3492,20 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 else {
                     CHECK(system_focus(view));
                     int saved = control;
+                    struct TestReply previous = reply;
+                    uint64_t target = view->workspace_window;
+                    struct wlr_surface *surface = view->toplevel->base->surface;
                     control = cascade_controls[slot];
-                    CHECK(command(TEST_QUERY, 0, 0));
+                    bool before_ok = command(TEST_QUERY, 0, 0);
                     int before = reply.keys;
-                    system_alt_space(false);
-                    CHECK(command(TEST_QUERY, 0, 0));
-                    if (reply.keys != before + (old ? 4 : 2))
-                        fprintf(stderr, "SYSTEM_MENU_KEYS slot=%d before=%d after=%d expectedDelta=%d focusedTarget=%d layer=%p\n",
-                            slot, before, reply.keys, old ? 4 : 2, desktop.focused == view, (void *)desktop.focused_layer);
-                    CHECK(reply.keys == before + (old ? 4 : 2));
-                    control = saved;
+                    if (before_ok) system_alt_space(false);
+                    bool after_ok = before_ok && command(TEST_QUERY, 0, 0);
+                    int after = reply.keys;
+                    control = saved; reply = previous;
+                    CHECK(before_ok && after_ok);
+                    printf("SYSTEM_MENU_KEYS slot=%d window=%llu surface=%p before=%d after=%d expectedDelta=%d\n",
+                        slot, (unsigned long long)target, (void *)surface, before, after, old ? 4 : 2);
+                    CHECK(after == before + (old ? 4 : 2));
                     keyboard_requests++;
                 }
             } else if (!strcmp(operation, "menu-ready")) {
