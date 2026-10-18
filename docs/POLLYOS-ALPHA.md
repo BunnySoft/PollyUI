@@ -5,14 +5,16 @@
 
 **最新交付：** 当前集中手测 Live ISO 已发布到
 `D:\temp\PollyOS\PollyOS.iso`，实际 runtime/overlay/media producer 均为
-clean `ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1`，版本 `0.1.0-alpha.8`。
-711,297,024 字节，SHA256
-`c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1`。
-实际 ISO 的 328 条 runtime/overlay 路径及完整交付包校验通过；
-唯一一次 OVMF UEFI/KVM 基础启动通过，覆盖普通用户 PAM、DRM 桌面、工作区切换、
-原生中文与剪贴板。完整新架构 Apps、默认 splash、Hyper-V 和物理设备资格未完成。
+clean `8433048a705f2f7b8501d4966ad669ddee7daa73`，版本 `0.1.0-alpha.8`。
+711,337,984 字节，SHA256
+`db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315`。
+实际 ISO 的 328 条 runtime/overlay 路径及 125 条交付校验通过；
+新编运行时配套 `40a2...` / ABI4 / pin `7b58...` 原生库，FIR/Yoga 可选后端
+均已包含且默认关闭。**本次 UEFI/QEMU、Hyper-V 和物理启动均未执行**，
+不借旧 DDD 的 KVM 结果；完整新架构 Apps、默认 splash 和实时资格未完成。
 镜像包含已交原生窗口菜单、半屏/拖动恢复/拖边、基础 Max 悬停、层叠/平铺等当前源码，
-不包含暂停的显示桌面或未采用的 FIR 候选，标准 Start 仍默认实色。
+不包含暂停的显示桌面；最终 FIR 和成套 Yoga 修正可启动时显式选择，
+不默认采用实验路径，标准 Start 仍默认实色。旧 DDD ISO 及其证据保留。
 安装版 VHDX 仍是下述历史 `4e6b004`，未随 Live 更新，完整 Alpha 门槛仍未关闭。
 下文 2026-10-09 的旧媒体、“未推送”和短测结果是原批次快照，不覆盖本段或
 [最新交接](POLLYOS-HANDOFF.md)。E22 当前任务及 ISO 记录见
@@ -41,7 +43,7 @@ Alpha **不等于**空白磁盘安装器、受保护生产桌面、完整 XP 1:1
 | 原生打开保存 | 真实本地文件选择/读取、新建保存、已有文本文件强观察覆盖/变化重问、Keep/Cancel、焦点和关闭回收已具；不是完整编辑器或第三方 Portal |
 | 图形账户入口 | 新默认 UEFI guest 已真实双密码首设、PAM 错误密码拒绝/正确重试、普通登录及重启后再登录；旧 Hyper-V 首启历史日志未知，不回填归因或替代新介质现场测试 |
 | 注销与电源流程 | 正常注销回 greetd/可再登录，普通 App close-veto/Cancel/实际保存、标准 Reboot 与文档/偏好持久性已实测；Shutdown GUI 最终提交仍未资格通过 |
-| 媒体历史与当前入口 | 历史 `4e6b004` 未初始化 VHDX 保留；当前 Live 为页首 `ddd0a5e` 集中手测 ISO，未因此完成完整 Alpha 冻结 |
+| 媒体历史与当前入口 | 历史 `4e6b004` 未初始化 VHDX 与 DDD ISO 保留；当前 Live 为页首 `8433048` 重生成 ISO，未因此完成完整 Alpha 冻结 |
 
 本地主分支的新功能组合基线为 `1dac93d`，保留 `ce73a3c` 的第四批功能、
 控制台 user-sessions 服务依赖与闲置窗口交互修复，包含注销/保存、Power 流程和标准电源授权配方。

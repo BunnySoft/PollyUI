@@ -4,12 +4,13 @@
 > `b68faa6566043c791b36f8b244323b08378156aa`。本文用于技术介绍、设计约束说明和开发交接；
 > 后续文档提交不改变已经生成的镜像及其源码版本。
 
-**2026-10-18 当前状态补充：** 最新 memory-only Live 为 clean `ddd0a5e` 的
+**2026-10-18 当前状态补充：** 最新 memory-only Live 为 clean `8433048` 的
 `0.1.0-alpha.8` 集中手测 ISO，固定入口 `D:\temp\PollyOS\PollyOS.iso`，
-711,297,024 字节，SHA256
-`c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1`。
-实际镜像内容与唯一一次 OVMF/KVM 基础启动通过，不替代完整 Apps、默认 splash、
-Hyper-V 或物理资格。安装版 VHDX、历史实机结果和原批次证据不重标。
+711,337,984 字节，SHA256
+`db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315`。
+实际镜像内容及新配对原生库核验通过，包含默认关闭的 FIR/Yoga 可选后端。
+本次没有执行 UEFI/QEMU、Hyper-V 或物理启动，不借旧 DDD 结果；完整 Apps、
+默认 splash 和实时资格未完成。安装版 VHDX、旧 ISO 和历史证据不重标。
 最新介质、已知限制及重整后的 E22 任务见
 [当前交接](POLLYOS-HANDOFF.md)、[状态列表](POLLYOS-E22-STATUS.md)和
 [唯一计划数据](POLLYOS-PLAN.json)。

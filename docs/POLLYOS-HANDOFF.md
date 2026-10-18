@@ -1,5 +1,43 @@
 # PollyOS 当前批次交接
 
+## 2026-10-18 重新生成并发布的 8433048 ISO
+
+最新固定入口为 **`D:\temp\PollyOS\PollyOS.iso`**，已原子更新为以下新版本文件
+的硬链接；旧 DDD 版本文件与校验值保留，不覆盖其 inode：
+
+```text
+D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso
+```
+
+实际大小 **711,337,984 字节**，SHA256：
+
+```text
+db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315
+```
+
+runtime、overlay、media producer 均为 clean
+`8433048a705f2f7b8501d4966ad669ddee7daa73`，tree
+`bae6140171a1555274a346dec0a66bdc2b7a318a`，实际 GUI 自报 `0.1.0-alpha.8`
+及相同源码身份；后续文档提交不改变该介质来源。新编 GUI 包含 Yoga 选择后端，
+WM 配套实际 `40a2a97b...` / ABI4 / pin `7b58c4a0...` 原生库，重定位后库
+SHA256 为 `e3c228fa56a703aa7c3783f57e12ab0a9800b5c98ce64fffc6e74d8c18dd2688`。
+依赖随 ISO 打包，不需用户安装 SDK。
+
+`POLLY_EXPERIMENTAL_FIR` 与 `POLLY_EXPERIMENTAL_LAYOUT` **默认均关闭**，
+保留启动时显式选择；未新增 Settings 或启动菜单开关，标准 Start 仍实色。
+1451 个 canonical Git 源文件、实际新编/普通 UID1000 打包 Shell/WM、
+布局选择/拒绝、ABI/source-pin 负例以及全部 240 项依赖核验通过。
+真实 ISO 的 **328 条** runtime/overlay 路径、17 overlays 的字节/模式/所有者/
+来源、EFI/GRUB/字体/43 PNG/cursor、新库重定位和 SBOM 链已核；
+Windows 标准发布器独立复验 **125 条**交付校验后更新固定入口。
+
+**本次没有执行 UEFI/QEMU、Hyper-V 或物理启动。** 旧 DDD 的一次 KVM 结果
+只属于旧介质，未借作新 ISO 通过；完整 Apps、默认 splash、E22 和实时性能
+也未因此完成。没有改任何用户 VM、光盘句柄、磁盘或宿主设置。
+已打开的光盘句柄可能仍指向旧 inode，需用户自行重新选择介质。
+冻结包的 `Parent publication pending` 是原交接状态，父实际发布回执另存，
+不改写原包校验文件。安装版 VHDX 和旧 ISO 保持不变。
+
 ## 2026-10-18 探索代码收敛与采用策略
 
 本轮按用户要求，把有价值的探索收敛为后续开发基础，不再把上一轮“两倍提速、
@@ -57,12 +95,13 @@ style/textwrap/DOM 回归；实际像素验证保留 legacy 的已知缺口，�
 
 最终 FIR 的历史大区域四阶段约提速 1.90–2.16 倍、耗时约 59ms，但三个阶段
 未达原两倍目标且小场景有回退。实验纳入不把 R11 改为通过，不代表实时
-16.7ms/60Hz、默认 Start 材质或完整 E22 已交付。当前集中手测 ISO 的源码、
-SDK 和校验值仍以以下冻结交付为准，本次不重建或重标该介质。
+16.7ms/60Hz、默认 Start 材质或完整 E22 已交付。该源码集成批次未重建当时的
+DDD ISO；后续用户要求重建的 843 ISO 见页首，两个版本分别保留真实来源。
 
-## 2026-10-18 当前集中手测 ISO
+## 2026-10-18 上次 DDD 集中手测 ISO（历史保留）
 
-当前固定入口为 **`D:\temp\PollyOS\PollyOS.iso`**，与以下版本文件为同一 inode 的硬链接：
+上次发布时固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 指向以下版本文件；
+现已更新为页首 843 ISO，以下旧版本及原证据仍保留：
 
 ```text
 D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-ddd0a5e-ddd0a5e-c6ff921eb996\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso

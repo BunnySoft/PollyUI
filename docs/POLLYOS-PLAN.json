@@ -5562,6 +5562,7 @@
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-18按用户重新生成ISO请求交付clean8433048/treebae6140实际alpha.8 runtime/overlay/media：711337984B、SHAdb95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315，新imagea65e39e836a9d8edc9706c475a90a6353a851d727f335d81493a698f0db11a3b。1451canonicalGitHEAD/index/rawblob+完整0644/0755、新ReleaseGUI含Yoga/新pinWM、actual843dirtyfalse/普通UID1000 installedShellWM/布局unset0legacy-1coherent-invalid拒绝/ABI-sourcepin两负例均FIRST0。只读复制既有已资格SDK40a2/ABI4/pin7b58的119files，仅ownPCprefix变化、116headers与旧库同，非重编SDK或借04e冒843二进制；RPATH后e3c228fa56a703aa7c3783f57e12ab0a9800b5c98ce64fffc6e74d8c18dd2688，actualISO/SBOM/sourceInfo链一致。实际240pins与immutablebase同、Plymouth两包closure/polkit126-2过，真实ISO全328runtime-overlay路径/17overlays bytes/mode/owner/origin/无意外namespace、EFI/GRUB/font43PNG/cursor均FIRST0。新版本目录pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81一次hostcopy后原子rename；父标准verifyBundle独立125checksum核与完整来源/defaultOFF核后，标准publisher原子hardlink更新D:\\temp\\PollyOS\\PollyOS.iso，新version/alias同inode1125899908171485/links2，旧DDD文件仍原inode562949954748740且SHA不变。父首只读observer误用旧flatSDK/uefiBaseline字段停，按真实pairedSdk/uefiBoot读后通过，无bundle修改或产品重跑。两个实验startup-latched默认OFF、无新Settings/bootmenu，标准Startsolid与原性能HOLD不变；用户不可回复本次VM授权询问，严格没有运行任何QEMU/UEFI/HyperV/physical，boot全部NOTRUN，不借DDD旧KVM通过。ownhelpers全0，旧媒体/卷/证据不覆、不改用户VM光盘/磁盘/host设置。完整Apps/splash/E22/实时能力未关闭。",
     "- 2026-10-18按用户新裁决完成探索收敛：已盘点57直属子会话与另外30历史本地支线，已采纳历史修复不因SHA非祖先重复收养（安装期限b12147f、Luna兼容c49f409已在主线）。正常merge a6e2a4c保38b+a0/502的成套可选Yoga，1f2f99e保b49/Dacc/0ad历史并只支持生产baseline与最终fourphase两个FIR后端；两开关默认关闭、启动时固定，shared接口不绕权限/预算或扩Start默认。Yoga当前Win/Linux各4CTest+两mode原6组回归与真实paint/clip/startup拒绝通过，native主线代码逐path同冻结502；FIR新ABI4/pin7b58与SDK40a2独立完整exact/guard/双scene/selector/resources/negativepins通过，主线八paths同04e，父组合Node包/主题/配置12项通过、文档生成一致。旧2x是单轮工程目标，不是功能/行业/实验源码入库标准，原性能HOLD、首次observer/源挂载/harness失败全部保留不重标；被替代batch8/sliding不再维护为支持路径但不删历史，lroundf研究不变成未经证明替换。两单元按各自实际source/native资格说明，不冒一份combinedHEAD新整套binary或新benchmark/新ISO；原ddd/C6已发布ISO内容与SHA不变。R11实时/默认采用与全部E22仍未完成。",
     "- 2026-10-18用户明确允许按最新状态增删更新E22，已重建现行25条：C1–C7为已交限定能力，R01–R18为实际剩余，4条可先核独立功能缺口/14条依前置或资料决策阻塞。原35整条scope/status/requires/evidence与新映射无损保存在POLLYOS-E22-HISTORY.json，不把历史partial偷偷改done。明确依赖与每项关闭条件，原141需求覆盖不丢；旧完整task卡/依赖迁移前备份，非E22任务不清空。当前没有新功能/native试验，ShowDesktop暂停仅研究且0源码改动。此次清单重整不是完成六主题/原图/实时性能。",
     "- 2026-10-18按用户要求完成原35编号E22状态/依赖/完成顺序审计，基线98cd4a4。原编号精确7done（2/16/17/18/19/20/35）、24in_progress代表部分交付而非24个后台任务、4blocked（1/3/4/11）。操作侧栏若只跟踪剩余范围可pending，不与canonical部分交付混读；已纠正XP1/3待料blocked、native11旧VMguard86阻塞已过时、fonts5已有真实Linux复杂文本/字族/输入与caption运行（773b747隔离GUI与相关日志）、bar9不再等b03共享实现、BigSur33真实lower-scene Gaussian+tint已交、Mac34分组/固定/相邻放大已交、Tiger27已真实alpha、Modern23实际builtin rounded/三Mac rounded-shadow、标准Start24已独立v9显式正确性而默认solid/可用性能未过等过期说法。原所有FIRST失败与未证因果不改绿，已完成的限定机制也不再列全未实现。现有requires稀疏：仅E22.3有1+2、E22.20有已done可信菜单关闭；不能把旧文件空数组冒完整依赖图。本次收口计划的共享依赖是对应主题参考1/4、字体5/资源6、共享状态与输入7/8/9→已有面板10；XP12/13→XP3，Classic14/15基于4及共有控件/资源，三Mac窗框25/28/31与Dock几何26/29/32后收行为34，几何26→透明27、29→Lion材质30、32→vibrancy33，共有E13 clip/shadow与真实采样原语已交不重复造。上述字体/参考依赖指对应主题子范围，不要求另五主题全验完才开工；Tiger透明不依赖Win11大Start滤波性能，MacDock也不拿Win11全部预算实验当新硬前置。最终安排：先并行补参考1/4及字体资源5/6输入，再共享5–10；Classic14/15、XP12/13后XP3；Modern21/23/22；Mac窗框25/28/31、Dock几何26/29/32后34；Tiger27/BigSur33以及真正尚缺实现的Lion30反射；重材质24单列性能/默认采用关键路径，最后11对所选支持平台/部件做跨主题原生状态-DPI汇总，才可关E22。已done7项不重开，不新增全交叉测试矩阵；原图只据同版/DPI/状态/授权来源，缺资料明记blocked，不能用截图转换/软件preview造证。完整Win11Snap、显示桌面、新账号管理、额外DWM/Metal后端不临时塞成外观编号前置，未支持后端明列不冒已支持。为停止编号外扩展，ShowDesktop3ba已明确安全暂停，确认只读研究/branchrename、源码和实现文件0/commit0/build-native-test进程0、持久会话保留不archive；窗口Chrome从Shell拆分另列架构欠项不在此次偷偷实施。所有代码扩展回到对应原编号具体剩余点，不再以大量独立切片完成代替原35收口；在合格参考与授权字体/art等外部关键输入齐之前，不能诚实承诺全部35done。此次审计/列表与顺序交付完成，不是系统/全部E22完成。",
@@ -5696,20 +5697,33 @@
     "inspectionCheckpoint": {
       "status": "done",
       "label": "当前已交GUI集中手测ISO",
-      "trigger": "本轮任务文档同步与已交功能冻结后生成一次候选，不等待所有E22原图资料齐全。",
-      "scope": "此已交付ISO冻结于clean ddd0a5e源码，采用SDK C6/ABI4/pin01a；运行时/媒体来源、ISO SHA256和未完成项以以下回执为准。保默认solid，不含后续合入的FIR/Yoga可选后端与启动开关，不用当前main重标旧介质。",
+      "trigger": "根据用户重新生成ISO请求，以已推送8433048源码重新编译并交付一次新候选；旧DDD版本及其证据保留。",
+      "scope": "最新ISO冻结于clean8433048源码，使用已资格新配对SDK40a2/ABI4/pin7b58，实际新编GUI含Yoga与新pinWM；两实验startup开关均默认OFF、标准Start仍solid。源码/媒体来源、ISO SHA256及未启动限制以以下新回执为准，不重标旧介质。",
       "boundary": "只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。",
+      "previousPublications": [
+        {
+          "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-ddd0a5e-ddd0a5e-c6ff921eb996\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
+          "bytes": 711297024,
+          "sha256": "c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1",
+          "runtimeSourceRevision": "ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1",
+          "mediaProducerRevision": "ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1",
+          "runtimeImageID": "6f355f2259d236a8a760194bed3c64c8d9b89943c4b037a7fd751e9411d4f9d6",
+          "payloadPathsVerified": 328,
+          "baseline": "旧DDD介质唯一一次OVMF UEFI/KVM基础启动通过；此历史结果不用于新843ISO资格。",
+          "retained": true
+        }
+      ],
       "publication": {
         "alias": "D:\\temp\\PollyOS\\PollyOS.iso",
-        "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-ddd0a5e-ddd0a5e-c6ff921eb996\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
-        "bytes": 711297024,
-        "sha256": "c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1",
-        "runtimeSourceRevision": "ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1",
-        "mediaProducerRevision": "ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1",
-        "runtimeImageID": "6f355f2259d236a8a760194bed3c64c8d9b89943c4b037a7fd751e9411d4f9d6",
+        "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
+        "bytes": 711337984,
+        "sha256": "db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315",
+        "runtimeSourceRevision": "8433048a705f2f7b8501d4966ad669ddee7daa73",
+        "mediaProducerRevision": "8433048a705f2f7b8501d4966ad669ddee7daa73",
+        "runtimeImageID": "a65e39e836a9d8edc9706c475a90a6353a851d727f335d81493a698f0db11a3b",
         "payloadPathsVerified": 328,
-        "baseline": "唯一一次OVMF UEFI/KVM、4GiB/2vCPU、只读ISO、无guestdisk/NIC的原fixture FIRST通过；普通PAM/真实DRM桌面/工作区切换/原生中文提交与剪贴板通过。",
-        "limits": "完整新架构Apps/default splash/Hyper-V/物理设备未验；无安装器/持久guestdisk。此介质标准Start默认solid，不含后续FIR/Yoga可选后端或启动开关；不是全部E22或实时性能完成。",
+        "baseline": "本次新843ISO的UEFI/QEMU、Hyper-V与物理启动均NOT RUN；已完成新编native/package及真实ISO内容核验，不借旧DDD启动证据。",
+        "limits": "完整新架构Apps/default splash/物理与实时资格未验，无安装器/持久guestdisk。新配对SDK与FIR/Yoga开关已打包，两实验均默认OFF、标准Startsolid；原性能HOLD和E22剩余不改绿。",
         "aliasNote": "稳定路径与版本文件为同一inode的硬链接；已打开的VM光盘句柄可能仍指向旧inode，需用户自行重新选择介质，未操作任何existingVM。"
       }
     }

@@ -1,5 +1,19 @@
 # Memory-only UEFI development image
 
+**2026-10-18 regenerated current-source candidate:** the stable Windows path
+`D:\temp\PollyOS\PollyOS.iso` now points to a new versioned Alpha.8 ISO built from
+clean runtime/overlay/media source `8433048a705f2f7b8501d4966ad669ddee7daa73`.
+It is 711337984 bytes, SHA-256
+`db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315`.
+The new matched ABI4/pin7b58 native library and both default-off backend switches
+are packaged. All 328 actual runtime/overlay paths and 125 delivery checksums
+were verified, followed by atomic hard-link publication. **This ISO has not been
+booted in UEFI/QEMU, Hyper-V or on physical hardware.** Earlier DDD baseline and
+historical physical results below do not qualify this new image. Previous
+versioned media and the installed VHDX remain unchanged.
+See the [current handoff](../docs/POLLYOS-HANDOFF.md) for the versioned path,
+source/SDK chain and remaining limitations.
+
 **Alpha.8 physical feedback (2026-10-11):** the user reported that actual testing
 of the delivered Alpha.8 ISO passed. Record this as user-reported physical
 acceptance, not an independently measured hardware/cursor-plane, per-feature or
@@ -134,6 +148,33 @@ files/settings stay in RAM and disappear when the Live system stops.
 Do not use this image to protect sensitive information. It does not establish
 production signing trust, encrypted persistence, a recovery partition or
 hardware compatibility.
+
+## Optional native backends in current-source builds
+
+Source `8433048` includes two independent startup experiments, both disabled by
+default. Images built from earlier revisions do not acquire these switches from
+later documentation or from renaming their ISO.
+
+| Startup environment | Unset or exact `0` | Exact `1` |
+| --- | --- | --- |
+| `POLLY_EXPERIMENTAL_FIR` | Production single-output FIR | Final four-phase FIR |
+| `POLLY_EXPERIMENTAL_LAYOUT` | Legacy Yoga pixel-grid behavior | Paired coherent edge/raw-cache corrections |
+
+Set these variables in the environment that launches the desktop session,
+before the compositor and GUI applications start. They are not GRUB kernel
+parameters or live Settings toggles. Selection is fixed for the scene/process
+lifetime; changing an already-running application's environment does not switch
+its backend. Empty strings, `true`, `01` and whitespace are rejected explicitly.
+FIR opt-in also requires the actual native library to support x86-64 SSE2.
+
+The current source requires its matched ABI4/pin7b58 wlroots library, including
+when both switches are off; the old C6/pin01a library cannot satisfy that source
+identity. The ISO packages the required library, so users do not install an SDK.
+FIR selection does not enable Start material or change recipient permissions,
+memory limits or the default solid Start. Historical FIR performance remains
+below its complete engineering target. Coherent layout corrects known fractional
+edge/cache inconsistencies but has no measured speedup claim; legacy retains
+the known one-pixel edge limitation. See the [backend handoff](../docs/POLLYOS-HANDOFF.md).
 
 ## Continuous Live startup (source-wired; new media acceptance pending)
 
