@@ -1,5 +1,5 @@
 import { dockSurfaceWidth, dockBackdropMaterial, shellBackdropMaterial,
-  applicationMenuPlacement, applicationMenuHeight, layoutPickerPlacement } from './desktop/shared/ui/theme-layout.mjs';
+  applicationMenuPlacement, applicationMenuHeight, layoutPickerPlacement, systemMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
@@ -53,6 +53,39 @@ export function createDesktopShell({ host = window, configuration, report = cons
   let menu = null;
   let pickerEnabled = false, previousPickerChanged = null, pickerScope = null, pickerChanged = null;
   let pickerTheme = null, pickerOutputs = '';
+  let systemMenuEnabled = false, systemMenuTheme = null, systemMenuOutputs = '';
+  let systemMenuScope = null, systemMenuChanged = null, previousSystemMenuChanged = null;
+  let systemMenuSerial = 0;
+  function configureSystemMenu(enabled) {
+    systemMenuEnabled = false;
+    if (typeof native?.systemMenuCapability !== 'function' || native.systemMenuCapability() !== true) return;
+    native.enableSystemMenuRequests(enabled);
+    systemMenuEnabled = enabled;
+  }
+  function receiveSystemMenu(scope) {
+    if (!running || scope !== systemMenuScope) return;
+    try {
+      const request = native.takeSystemMenuRequest();
+      if (!request || !Number.isInteger(request.serial) || request.serial <= systemMenuSerial) return;
+      systemMenuSerial = request.serial;
+      if (!systemMenuEnabled || getDesktopTheme(themeId).window.systemMenu !== true ||
+          native.systemMenuCapability() !== true) return;
+      const outputs = host.displays().filter(output => output.x === request.outputX && output.y === request.outputY &&
+        output.width === request.outputWidth && output.height === request.outputHeight);
+      const named = outputs.filter(output => (output.name ?? bundles.get(output.id)?.identity?.name) === request.outputName);
+      const matches = named.length ? named : outputs;
+      if (matches.length > 1) throw new Error('Native system-menu output projection is ambiguous');
+      const output = matches[0];
+      const workspace = native.workspaces().find(workspace => workspace.active);
+      const target = native.windows().find(window => window.id === request.windowId &&
+        window.workspaceId === workspace?.id);
+      if (!output || !bundles.has(output.id) || !target || target.minimized || target.fullscreen ||
+          target.placement === undefined || target.placementPending ||
+          !['title', 'keyboard'].includes(request.origin)) return;
+      if (menu?.mode === 'windows' && menu.windowId === target.id && menu.output === output.id) return;
+      openMenu(output.id, 'windows', target.id, { systemMenuRequest: request });
+    } catch (failure) { windowFailure(failure); errorKind = 'placement'; }
+  }
   function configurePicker(enabled) {
     pickerEnabled = false;
     if (typeof native?.layoutPickerCapability !== 'function' || native.layoutPickerCapability() !== true) return;
@@ -711,6 +744,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const outputs = host.displays();
     const pickerSignature = JSON.stringify(outputs);
     const pickerReconfigured = pickerTheme !== theme || pickerOutputs !== pickerSignature;
+    const systemMenuReconfigured = systemMenuTheme !== theme || systemMenuOutputs !== pickerSignature;
+    if (systemMenuReconfigured) {
+      if (menu?.systemMenuRequest) closeMenu();
+      if (systemMenuEnabled) configureSystemMenu(false);
+    }
     if (pickerReconfigured) {
       if (menu?.mode === 'layout-picker') closeMenu();
       if (pickerEnabled) configurePicker(false);
@@ -821,6 +859,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
       configurePicker(theme.window.layoutPicker === true);
       pickerTheme = theme;
       pickerOutputs = pickerSignature;
+    }
+    if (systemMenuReconfigured) {
+      configureSystemMenu(theme.window.systemMenu === true);
+      systemMenuTheme = theme;
+      systemMenuOutputs = pickerSignature;
     }
     if (publicationFailure) throw publicationFailure;
   }
@@ -1268,6 +1311,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         height: applicationMenuHeight(theme, height),
         ...applicationMenuPlacement(theme, width),
         ...(mode === 'layout-picker' ? layoutPickerPlacement(theme, initial?.pickerOffer) : {}),
+        ...(mode === 'windows' && initial?.systemMenuRequest ? systemMenuPlacement(theme, initial.systemMenuRequest) : {}),
         // Placement already includes panel/menu-bar offsets in full-output coordinates.
         exclusiveZone: -1,
         keyboard: 'exclusive', transparent: true,
@@ -1889,6 +1933,22 @@ export function createDesktopShell({ host = window, configuration, report = cons
       host.close();
       if (launcher) reloadApplications();
       running = true;
+      systemMenuScope = {};
+      systemMenuSerial = 0;
+      if (typeof native?.systemMenuCapability === 'function' && native.systemMenuCapability() === true) {
+        const scope = systemMenuScope;
+        previousSystemMenuChanged = native.onSystemMenuRequested;
+        const previous = previousSystemMenuChanged;
+        systemMenuChanged = () => {
+          if (!running || scope !== systemMenuScope) return;
+          receiveSystemMenu(scope);
+          if (typeof previous === 'function') {
+            try { previous(); }
+            catch (failure) { report('[shell] Previous system-menu observer failed: ' + String(failure)); }
+          }
+        };
+        native.onSystemMenuRequested = systemMenuChanged;
+      }
       pickerScope = {};
       if (typeof native?.layoutPickerOffer === 'function') {
         const scope = pickerScope;
@@ -1914,7 +1974,17 @@ export function createDesktopShell({ host = window, configuration, report = cons
       try { reconcile(themeId, false); }
       catch (failure) {
         compositorAppearance = null;
-        running = false; throw failure;
+        running = false;
+        if (systemMenuEnabled) {
+          try { configureSystemMenu(false); }
+          catch (cleanup) { report('[shell] Cannot retire failed system-menu startup: ' + String(cleanup)); }
+        }
+        systemMenuScope = null;
+        if (systemMenuChanged && native?.onSystemMenuRequested === systemMenuChanged)
+          native.onSystemMenuRequested = previousSystemMenuChanged;
+        systemMenuChanged = null;
+        systemMenuTheme = null; systemMenuOutputs = '';
+        throw failure;
       }
       timer = setInterval(refresh, 1000);
       if (typeof native?.backdropError === 'function') {
@@ -1947,6 +2017,15 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return this;
     },
     stop() {
+      if (systemMenuEnabled) {
+        try { configureSystemMenu(false); }
+        catch (failure) { report('[shell] Cannot stop native system-menu input: ' + String(failure)); }
+      }
+      systemMenuScope = null;
+      if (systemMenuChanged && native?.onSystemMenuRequested === systemMenuChanged)
+        native.onSystemMenuRequested = previousSystemMenuChanged;
+      systemMenuChanged = null;
+      systemMenuTheme = null; systemMenuOutputs = '';
       if (pickerEnabled) {
         try { configurePicker(false); }
         catch (failure) { report('[shell] Cannot stop caption picker: ' + String(failure)); }

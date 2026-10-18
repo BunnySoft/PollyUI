@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "server.h"
 #include "decoration.h"
+#include "decoration-frame.h"
 #include "decorator-process.h"
 #include "workspace.h"
 #include "shortcut-control.h"
@@ -61,6 +62,107 @@ static struct PuWorkspace *picker_workspace;
 static int picker_wire_control = -1;
 static pid_t cascade_pids[2];
 static int cascade_controls[3] = {-1, -1, -1};
+static struct {
+    struct wl_protocol_logger *logger;
+    uint32_t requested, cancelled, consumed, held, enables, held_enables;
+    uint32_t child, applied, held_applied, commit_serial, applied_serial;
+    uint64_t requested_window;
+    struct wl_client *request_client;
+    struct wl_client *csd_client;
+    struct wlr_surface *csd_surface;
+    struct {
+        struct wl_resource *resource;
+        uint32_t id, down, up, down_serial, up_serial;
+    } csd_pointers[2];
+    uint64_t generation, held_generation;
+    bool invalid;
+} system_trace;
+
+static void system_protocol_log(void *data, enum wl_protocol_logger_type direction,
+    const struct wl_protocol_logger_message *message)
+{
+    (void)data;
+    const char *interface = wl_resource_get_class(message->resource);
+    const char *name = message->message->name;
+    if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "wl_pointer") &&
+        !strcmp(name, "button") && wl_resource_get_client(message->resource) == system_trace.csd_client) {
+        if (message->arguments_count != 4 || !message->arguments ||
+            desktop.seat->pointer_state.focused_surface != system_trace.csd_surface) {
+            system_trace.invalid = true; return;
+        }
+        if (message->arguments[2].u == BTN_RIGHT) {
+            unsigned slot;
+            for (slot = 0; slot < 2; slot++)
+                if (!system_trace.csd_pointers[slot].resource ||
+                    system_trace.csd_pointers[slot].resource == message->resource) break;
+            if (slot == 2) { system_trace.invalid = true; return; }
+            system_trace.csd_pointers[slot].resource = message->resource;
+            system_trace.csd_pointers[slot].id = wl_resource_get_id(message->resource);
+            if (message->arguments[3].u == WL_POINTER_BUTTON_STATE_PRESSED) {
+                system_trace.csd_pointers[slot].down++;
+                system_trace.csd_pointers[slot].down_serial = message->arguments[0].u;
+            } else {
+                system_trace.csd_pointers[slot].up++;
+                system_trace.csd_pointers[slot].up_serial = message->arguments[0].u;
+            }
+        }
+        return;
+    }
+    if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_workspace_toplevel_v1")) {
+        if (!strcmp(name, "system_menu_requested")) {
+            if (message->arguments_count != 11 || !message->arguments ||
+                wl_resource_get_version(message->resource) < 7 || !desktop.focused) {
+                system_trace.invalid = true; return;
+            }
+            system_trace.requested = message->arguments[0].u;
+            system_trace.child = wl_resource_get_id(message->resource);
+            system_trace.request_client = wl_resource_get_client(message->resource);
+            system_trace.requested_window = desktop.focused->workspace_window;
+        } else if (!strcmp(name, "system_menu_cancelled")) {
+            if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+            system_trace.cancelled = message->arguments[0].u;
+        }
+    } else if (direction == WL_PROTOCOL_LOGGER_REQUEST && !strcmp(interface, "polly_workspace_toplevel_v1") &&
+        !strcmp(name, "consume_system_menu")) {
+        if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+        system_trace.consumed = message->arguments[0].u;
+    }
+    else if (direction == WL_PROTOCOL_LOGGER_REQUEST &&
+        !strcmp(interface, "polly_workspace_toplevel_manager_v1") &&
+        !strcmp(name, "enable_system_menu_requests")) {
+        if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+        system_trace.enables++;
+    } else if (direction == WL_PROTOCOL_LOGGER_REQUEST && !strcmp(interface, "polly_appearance_v1") &&
+        !strcmp(name, "commit") && wl_resource_get_client(message->resource) == desktop.shell_client) {
+        if (message->arguments_count != 1 || !message->arguments) { system_trace.invalid = true; return; }
+        system_trace.commit_serial = message->arguments[0].u;
+    } else if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_appearance_v1") &&
+        !strcmp(name, "applied") && wl_resource_get_client(message->resource) == desktop.shell_client) {
+        if (message->arguments_count != 3 || !message->arguments) { system_trace.invalid = true; return; }
+        if (message->arguments[1].u == 1) {
+            system_trace.applied_serial = message->arguments[0].u;
+            system_trace.applied++;
+        }
+    }
+    else if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_appearance_v1") &&
+        !strcmp(name, "render_request")) {
+        if (message->arguments_count != 4 || !message->arguments) { system_trace.invalid = true; return; }
+        const struct wl_array *array = message->arguments[0].a;
+        if (!array || !array->data || array->size != PU_FRAME_META_WORDS * sizeof(uint32_t)) {
+            system_trace.invalid = true; return;
+        }
+        uint32_t meta[PU_FRAME_META_WORDS];
+        memcpy(meta, array->data, sizeof(meta));
+        uint64_t generation = (uint64_t)meta[PU_FRAME_GENERATION_LO] | (uint64_t)meta[PU_FRAME_GENERATION_HI] << 32;
+        if (generation > system_trace.generation) system_trace.generation = generation;
+    }
+}
+
+static void system_trace_stop(void)
+{
+    if (system_trace.logger) wl_protocol_logger_destroy(system_trace.logger);
+    memset(&system_trace, 0, sizeof(system_trace));
+}
 
 static void finish_picker_grabs(void)
 {
@@ -3093,6 +3195,601 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old, bool ar
     return true;
 }
 
+static void system_button(bool down)
+{
+    struct wlr_pointer_button_event event = {.pointer = &pointer, .time_msec = ++clock_ms,
+        .button = BTN_RIGHT, .state = down ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED};
+    wlr_pointer_notify_button(&pointer, &event);
+    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+}
+
+static struct PuDesktopView *system_live_view(struct PuDesktopView *view, uint64_t id, struct wlr_surface *surface)
+{
+    struct PuDesktopView *candidate;
+    wl_list_for_each(candidate, &desktop.views, link)
+        if (candidate == view && candidate->workspace_window == id &&
+            candidate->toplevel->base->surface == surface) return candidate;
+    return NULL;
+}
+
+static bool system_focus_view(struct PuDesktopView *view, bool caption)
+{
+    CHECK(view && view->mapped && view->workspace_window);
+    uint64_t id = view->workspace_window;
+    struct wlr_surface *surface = view->toplevel->base->surface;
+    for (int i = 0; i < 1200 && (picker_menu() || desktop.focused_layer); i++) CHECK(pump());
+    CHECK(!picker_menu() && !desktop.focused_layer);
+    struct PuDesktopView *current = system_live_view(view, id, surface);
+    CHECK(current);
+    view = current;
+    pu_desktop_focus_mapped(&desktop, view->workspace_window);
+    motion(view->tree->node.x + 20, view->tree->node.y + 20);
+    if (caption) CHECK(wait_presented_frame(view));
+    else for (int i = 0; i < 1200; i++) {
+        current = system_live_view(view, id, surface);
+        CHECK(current);
+        if (pu_decoration_layout_settled(current)) break;
+        CHECK(pump());
+    }
+    current = system_live_view(view, id, surface);
+    CHECK(current && pu_decoration_layout_settled(current) && desktop.focused == current && !desktop.focused_layer &&
+        desktop.seat->keyboard_state.focused_surface == surface);
+    return true;
+}
+
+static bool system_focus(struct PuDesktopView *view) { return system_focus_view(view, true); }
+
+static bool system_title(struct PuDesktopView *view, bool down)
+{
+    if (down) {
+        CHECK(system_focus(view));
+        struct wlr_box inset = {0};
+        pu_decoration_inset(view, &inset, false);
+        CHECK(inset.y > 0 && pu_decoration_hit(view, 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
+        motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
+        CHECK(wait_presented_frame(view));
+    }
+    system_button(down);
+    return true;
+}
+
+static void system_alt_space(bool repeat)
+{
+    picker_key(KEY_LEFTALT, true);
+    picker_key(KEY_SPACE, true);
+    if (repeat) picker_key(KEY_SPACE, true);
+    picker_key(KEY_SPACE, false);
+    picker_key(KEY_LEFTALT, false);
+}
+
+#ifdef POLLY_WORKSPACE_TOPLEVEL_V1_CONSUME_SYSTEM_MENU_SINCE_VERSION
+static struct TestReply system_body_reply;
+static struct PuDesktopView *system_child(void)
+{
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop.views, link)
+        if (view->mapped && view->toplevel->app_id &&
+            !strcmp(view->toplevel->app_id, "org.pollywm.test.8")) return view;
+    return NULL;
+}
+
+static bool system_body_request(struct TestRequest request)
+{
+    struct TestReply previous = reply;
+    int saved = control;
+    control = picker_wire_control;
+    bool ok = cascade_send(request);
+    system_body_reply = reply;
+    control = saved; reply = previous;
+    return ok;
+}
+static bool system_body(enum TestCommand operation)
+{
+    return system_body_request((struct TestRequest){.command = operation});
+}
+
+static bool system_trusted(const char *wire, bool version7)
+{
+    int sockets[2];
+    CHECK(!socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets) &&
+        !fcntl(sockets[1], F_SETFD, 0));
+    CHECK(!setenv(version7 ? "POLLY_TEST_WORKSPACE_V7" : "POLLY_TEST_WORKSPACE_V6", "1", 1));
+    char number[32]; snprintf(number, sizeof(number), "%d", sockets[1]);
+    char *args[] = {(char *)wire, "--trusted", number, NULL};
+    bool started = pu_desktop_spawn_shell(&desktop, args);
+    unsetenv("POLLY_TEST_WORKSPACE_V7"); unsetenv("POLLY_TEST_WORKSPACE_V6");
+    close(sockets[1]);
+    CHECK(started);
+    picker_wire_control = control; control = sockets[0];
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_capability == (uint32_t)version7);
+    return true;
+}
+
+static bool system_consume(uint32_t serial, bool accepted)
+{
+    CHECK(cascade_send((struct TestRequest){.command = TEST_SYSTEM_MENU_CONSUME, .id = 7, .serial = serial}));
+    CHECK(reply.system_menu_reply == serial && reply.system_menu_accepted == (uint32_t)accepted);
+    return true;
+}
+
+static bool system_menu_protocol(const char *wire)
+{
+    CHECK(command(TEST_UNCONSTRAINED, 0, 0));
+    struct PuDesktopView *view = wire_view();
+    CHECK(system_trusted(wire, false) && system_focus(view) && system_body(TEST_QUERY));
+    int keys = system_body_reply.keys;
+    system_alt_space(false);
+    CHECK(system_body(TEST_QUERY) && system_body_reply.keys == keys + 4);
+    CHECK(system_title(view, true) && !desktop.suppressed_button && system_title(view, false));
+    CHECK(command(TEST_QUERY, 0, 0) && !reply.system_menu_requests && command(TEST_QUIT, 0, 0));
+    close(control); control = picker_wire_control; picker_wire_control = -1;
+    for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid && system_trusted(wire, true) && system_focus(view));
+    CHECK(system_consume(0, false));
+    puts("PASS: actual server child dispatches a since7 consume opcode and returns explicit rejection without a Wayland method/version error");
+    CHECK(system_body(TEST_QUERY));
+    keys = system_body_reply.keys;
+    system_alt_space(false);
+    CHECK(system_body(TEST_QUERY) && system_body_reply.keys == keys + 4 &&
+        command(TEST_QUERY, 0, 0) && !reply.system_menu_requests);
+    CHECK(command(TEST_SYSTEM_MENU_ENABLE, 1, 0) && system_focus(view) && system_body(TEST_QUERY));
+    keys = system_body_reply.keys;
+    system_alt_space(true);
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == 1 &&
+        reply.system_menu_target == 7 && reply.system_menu_origin == 2);
+    uint32_t serial = reply.system_menu_serial;
+    CHECK(system_body(TEST_QUERY) && system_body_reply.keys == keys + 2 &&
+        !system_body_reply.workspace_capability && !system_body_reply.system_menu_capability &&
+        system_consume(serial + 1, false) && reply.system_menu_serial == serial &&
+        system_consume(serial, true) && system_consume(serial, false));
+    puts("PASS: actual v6 binding and v7 without opt-in forward Alt/Space pairs; opt-in consumes Space and repeat once without replaying keys");
+
+    CHECK(system_title(view, true) && desktop.suppressed_button == BTN_RIGHT &&
+        command(TEST_QUERY, 0, 0) && reply.system_menu_requests == 1);
+    motion(view->tree->node.x + 20, view->tree->node.y + 20);
+    CHECK(system_title(view, false) && !desktop.suppressed_button &&
+        command(TEST_QUERY, 0, 0) && reply.system_menu_requests == 1);
+    CHECK(system_title(view, true) && system_title(view, false) && command(TEST_QUERY, 0, 0) &&
+        reply.system_menu_requests == 2 && reply.system_menu_origin == 1);
+    serial = reply.system_menu_serial;
+    CHECK(command(TEST_SYSTEM_MENU_OWNER, 1, 0) && system_consume(serial, false) &&
+        command(TEST_SYSTEM_MENU_OWNER, 2, 0) && command(TEST_SYSTEM_MENU_OWNER, 3, 0));
+    CHECK(system_focus(view));
+    system_alt_space(false);
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == 3 &&
+        system_consume(reply.system_menu_serial, true));
+    puts("PASS: only complete same-title right gestures offer; old manager disable/destroy cannot disable its replacement owner");
+
+    for (unsigned guard = 0; guard < 8; guard++) {
+        CHECK(system_focus(view));
+        unsigned requests = reply.system_menu_requests;
+        if (guard == 0) {
+            picker_keyboard_impl = *desktop.seat->keyboard_state.default_grab->interface;
+            picker_keyboard_grab.interface = &picker_keyboard_impl;
+            wlr_seat_keyboard_start_grab(desktop.seat, &picker_keyboard_grab);
+            CHECK(wlr_seat_keyboard_has_grab(desktop.seat));
+        } else if (guard == 1) {
+            picker_pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
+            picker_pointer_grab.interface = &picker_pointer_impl;
+            wlr_seat_pointer_start_grab(desktop.seat, &picker_pointer_grab);
+            CHECK(wlr_seat_pointer_has_grab(desktop.seat));
+        } else if (guard == 2) CHECK(command(TEST_SHORTCUT_RECORDING, 1, 0));
+        else if (guard == 3) desktop.session_exit_pending = true;
+        else if (guard == 4) CHECK(system_body(TEST_HOLD) && system_body(TEST_MAXIMIZE) && view->geometry_pending);
+        else if (guard == 5) CHECK(system_body(TEST_FULLSCREEN) && cascade_wait_client(view, PU_DESKTOP_FULLSCREEN));
+        else if (guard == 6) {
+            char locker[PATH_MAX]; const char *slash = strrchr(wire, '/');
+            CHECK(slash && snprintf(locker, sizeof(locker), "%.*s/polly-lock-test-client",
+                (int)(slash - wire), wire) < (int)sizeof(locker));
+            char *args[] = {locker, "unlock", NULL};
+            CHECK(pu_session_lock_spawn(&desktop, args) && pu_session_lock_active(&desktop));
+        } else if (guard == 7) {
+            CHECK(cascade_send((struct TestRequest){.command = TEST_LAYER_MAP, .id = 3, .layer = {
+                .layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, .width = 260, .height = 140, .zone = -1,
+                .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+                .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE}}));
+            for (int i = 0; i < 1200 && !desktop.focused_layer; i++) CHECK(pump());
+            CHECK(desktop.focused_layer && desktop.focused_layer->presented);
+        }
+        system_alt_space(false);
+        CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == requests);
+        finish_picker_grabs();
+        if (guard == 2) CHECK(command(TEST_SHORTCUT_RECORDING, 0, 0));
+        else if (guard == 3) desktop.session_exit_pending = false;
+        else if (guard == 4) CHECK(system_body(TEST_RELEASE) && wait_presented_frame(view) &&
+            system_body(TEST_UNMAXIMIZE));
+        else if (guard == 5) CHECK(system_body(TEST_UNFULLSCREEN));
+        else if (guard == 6) {
+            for (int i = 0; i < 1200 && pu_session_lock_active(&desktop); i++) CHECK(pump());
+            CHECK(!pu_session_lock_active(&desktop));
+        } else if (guard == 7) {
+            CHECK(command(TEST_UNMAP, 0, 0));
+        }
+        pu_desktop_focus_mapped(&desktop, view->workspace_window);
+        CHECK(wait_presented_frame(view));
+    }
+    CHECK(system_focus(view) && system_body(TEST_QUERY));
+    keys = system_body_reply.keys;
+    picker_key(KEY_LEFTCTRL, true); system_alt_space(false); picker_key(KEY_LEFTCTRL, false);
+    picker_key(KEY_LEFTSHIFT, true); system_alt_space(false); picker_key(KEY_LEFTSHIFT, false);
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == 3 &&
+        system_body(TEST_QUERY) && system_body_reply.keys == keys + 12);
+    struct TestRequest bind = {.command = TEST_SHORTCUT_BIND, .id = 3, .serial = 4};
+    snprintf(bind.key, sizeof(bind.key), "space");
+    CHECK(cascade_send(bind) && cascade_send((struct TestRequest){.command = TEST_SHORTCUT_COMMIT, .serial = 91}) &&
+        !reply.shortcut_error[0]);
+    system_alt_space(false);
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == 3 && view->geometry_pending);
+    CHECK(system_body(TEST_QUERY) && wait_presented_frame(view) && view->mode == PU_DESKTOP_MAXIMIZED);
+    snprintf(bind.key, sizeof(bind.key), "Up"); bind.serial = 8;
+    CHECK(cascade_send(bind) && cascade_send((struct TestRequest){.command = TEST_SHORTCUT_COMMIT, .serial = 92}) &&
+        !reply.shortcut_error[0] &&
+        system_body(TEST_UNMAXIMIZE) && system_focus(view));
+    picker_key(KEY_LEFTALT, true);
+    struct wlr_box inset = {0}; pu_decoration_inset(view, &inset, false);
+    motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
+    system_button(true);
+    CHECK(desktop.grab == PU_DESKTOP_RESIZE && desktop.suppressed_button == BTN_RIGHT);
+    system_button(false); picker_key(KEY_LEFTALT, false);
+    CHECK(system_body(TEST_QUERY) && system_focus(view));
+    puts("PASS: actual grabs, recording, exiting, pending, fullscreen, lock, exclusive focus and modifiers reject; configured Alt+Space and original Alt+right resize take precedence");
+
+    CHECK(system_body_request((struct TestRequest){.command = TEST_TRANSIENT, .id = 1, .edges = 8}));
+    struct PuDesktopView *other = system_child();
+    CHECK(other);
+    wlr_scene_node_set_position(&other->tree->node, 500, 160);
+    CHECK(system_focus(other) && wait_presented_frame(view) && desktop.focused != view && pause_renderer());
+    unsigned inactive_requests = reply.system_menu_requests;
+    inset = (struct wlr_box){0};
+    pu_decoration_inset(view, &inset, false);
+    motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
+    struct wlr_box close_box = {0}, max_box = {0}, min_box = {0};
+    bool close_shown = pu_decoration_button_box(view, PU_DECORATION_CLOSE, &close_box);
+    bool max_shown = pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, &max_box);
+    bool min_shown = pu_decoration_button_box(view, PU_DECORATION_MINIMIZE, &min_box);
+    printf("SYSTEM_MENU_INACTIVE window=%llu surface=%p client=%dx%d presented=%d,%d,%d,%d mode=%d "
+        "shownGeometry=%d latest=%d pending=%d,%d inset=%d,%d point=40,%.1f hit=%d "
+        "close=%d:%d,%d,%d,%d max=%d:%d,%d,%d,%d min=%d:%d,%d,%d,%d\n",
+        (unsigned long long)view->workspace_window, (void *)view->toplevel->base->surface,
+        view->toplevel->base->geometry.width, view->toplevel->base->geometry.height,
+        view->tree->node.x, view->tree->node.y, view->presented_box.width, view->presented_box.height,
+        view->mode, pu_decoration_shown_geometry(view), pu_decoration_presented_current(view),
+        view->geometry_pending, view->resize_pending, inset.x, inset.y, -inset.y / 2.0,
+        pu_decoration_hit(view, 40, -inset.y / 2.0),
+        close_shown, close_box.x, close_box.y, close_box.width, close_box.height,
+        max_shown, max_box.x, max_box.y, max_box.width, max_box.height,
+        min_shown, min_box.x, min_box.y, min_box.width, min_box.height);
+    CHECK(pu_decoration_hit(view, 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
+    system_button(true);
+    CHECK(desktop.focused == view && desktop.suppressed_button == BTN_RIGHT &&
+        !pu_decoration_presented_current(view));
+    system_button(false);
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == inactive_requests + 1 && reply.system_menu_serial &&
+        system_consume(reply.system_menu_serial, true) && !pu_decoration_presented_current(view));
+    CHECK(resume_renderer() && wait_presented_frame(view) &&
+        system_body_request((struct TestRequest){.command = TEST_DESTROY, .id = 4}));
+    puts("PASS: real inactive-title right down/up activates normally and consumes a read-only request while the same paused renderer still holds the inactive caption; no frame is forced or placement fence relaxed");
+
+    for (unsigned modal = 0; modal < 2; modal++) {
+        CHECK(system_body_request((struct TestRequest){.command = TEST_TRANSIENT, .edges = 8 | modal}));
+        struct PuDesktopView *child = system_child();
+        CHECK(child && system_focus(child));
+        unsigned dialog_requests = reply.system_menu_requests;
+        system_alt_space(false);
+        CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == dialog_requests + 1 &&
+            reply.system_menu_target == 8 && reply.system_menu_serial);
+        uint32_t child_serial = reply.system_menu_serial;
+        CHECK(cascade_send((struct TestRequest){.command = TEST_SYSTEM_MENU_CONSUME,
+            .id = 8, .serial = child_serial}) && reply.system_menu_accepted == 1);
+        struct wlr_box anchor, bounds;
+        if (modal) CHECK(!pu_desktop_system_menu_anchor(view, false, &anchor, &bounds));
+        else {
+            CHECK(system_focus(view));
+            system_alt_space(false);
+            CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_target == 7 &&
+                system_consume(reply.system_menu_serial, true));
+        }
+        CHECK(system_body_request((struct TestRequest){.command = TEST_DESTROY, .id = 4}) &&
+            system_focus(view));
+    }
+    puts("PASS: focused ordinary and modal dialogs can request single-window menus; an ordinary parent remains eligible with a nonmodal child, while its blocked modal parent remains rejected");
+
+    CHECK(system_focus(view) && system_body(TEST_QUERY));
+    int before_buttons = system_body_reply.buttons;
+    unsigned before_requests = reply.system_menu_requests;
+    uint64_t armed_window = view->workspace_window;
+    CHECK(system_title(view, true) && desktop.suppressed_button == BTN_RIGHT);
+    view = NULL;
+    CHECK(system_body(TEST_QUERY) && system_body(TEST_UNMAP) && !wire_view() && system_body(TEST_REMAP));
+    view = wire_view();
+    CHECK(view && view->workspace_window > armed_window && system_body(TEST_UNCONSTRAINED));
+    system_button(false);
+    CHECK(!desktop.suppressed_button && command(TEST_QUERY, 0, 0) &&
+        reply.system_menu_requests == before_requests && system_body(TEST_QUERY) &&
+        system_body_reply.buttons == before_buttons);
+    puts("PASS: native title press crossing an actual unmap/remap generation is cancelled and its paired release remains suppressed instead of leaking to the remapped application");
+
+    for (unsigned retirement = 0; retirement < 5; retirement++) {
+        CHECK(system_focus(view));
+        unsigned requests = reply.system_menu_requests;
+        system_alt_space(false);
+        CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == requests + 1 &&
+            reply.system_menu_target == 7 && reply.system_menu_origin == 2);
+        serial = reply.system_menu_serial;
+        uint64_t old_window = view->workspace_window;
+        CHECK(serial);
+        if (retirement == 0) CHECK(command(TEST_SYSTEM_MENU_ENABLE, 0, 0));
+        else if (retirement == 1) { pu_workspace_step(&desktop, 1); }
+        else if (retirement == 2) {
+            view = NULL;
+            CHECK(system_body(TEST_QUERY) && system_body(TEST_UNMAP));
+        }
+        else if (retirement == 3) {
+            struct wlr_output_state state;
+            wlr_output_state_init(&state); wlr_output_state_set_custom_mode(&state, 1000, 650, 60000);
+            CHECK(wlr_output_commit_state(view->output, &state)); wlr_output_state_finish(&state);
+        } else wlr_output_destroy(view->output);
+        if (retirement != 2) CHECK(system_consume(serial, false));
+        if (retirement == 0) CHECK(command(TEST_SYSTEM_MENU_ENABLE, 1, 0));
+        else if (retirement == 1) { pu_workspace_step(&desktop, -1); }
+        else if (retirement == 2) {
+            uint32_t results = reply.system_menu_results;
+            CHECK(cascade_send((struct TestRequest){.command = TEST_SYSTEM_MENU_RETIRED_CONSUME,
+                .serial = serial}) && reply.system_menu_results == results);
+            CHECK(!wire_view() && system_body(TEST_REMAP));
+            view = wire_view();
+            CHECK(view && view->workspace_window > old_window && system_body(TEST_UNCONSTRAINED) &&
+                command(TEST_QUERY, 0, 0));
+        }
+    }
+    CHECK(command(TEST_QUIT, 0, 0));
+    close(control); control = picker_wire_control; picker_wire_control = -1;
+    for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid);
+    puts("PASS: disabling, workspace changes, mapped-generation retirement, output geometry and output loss retire one-shot requests without granting a menu epoch");
+    return true;
+}
+#endif
+
+static bool system_menu_consumer(const char *ui, const char *wire, bool old)
+{
+    struct PuDesktopView *views[3];
+    CHECK(cascade_clients(wire, views));
+    backdrop_guard_views(views[0], views[1], views[2]);
+    system_trace.logger = wl_display_add_protocol_logger(desktop.display, system_protocol_log, NULL);
+    CHECK(system_trace.logger);
+    app_pid = fork();
+    CHECK(app_pid >= 0);
+    if (!app_pid) {
+        setenv("WAYLAND_DISPLAY", desktop.socket_name, 1);
+        execl(ui, ui, "--app-id", "org.pollyui.system-menu-public",
+            "desktop/tests/system-menu-shell.mjs", "public", (char *)NULL);
+        _exit(127);
+    }
+    for (int i = 0; i < 1200 && !find("SystemMenu.client.body"); i++) CHECK(pump());
+    CHECK(find("SystemMenu.client.body"));
+    char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
+        "desktop/tests/system-menu-shell.mjs", old ? "old" : "current", NULL};
+    CHECK(pu_desktop_spawn_shell(&desktop, shell));
+    struct wlr_output *head = views[0]->output, *peer = NULL;
+    struct wlr_output_layout_output *entry;
+    wl_list_for_each(entry, &desktop.layout->outputs, link) if (entry->output != head) peer = entry->output;
+    CHECK(peer);
+    unsigned title_releases = 0, keyboard_requests = 0;
+    bool success = false;
+    uint64_t deadline = milliseconds() + 30000;
+    while (desktop.shell_pid && milliseconds() < deadline) {
+        CHECK(pump());
+        struct PuDesktopLayer *marker, *tmp;
+        wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
+            const char *name = marker->surface->namespace;
+            if (!marker->surface->surface->mapped || !name || strncmp(name, "system-", 7)) continue;
+            char operation[32];
+            int slot = 0, x = 0, y = 0;
+            CHECK(sscanf(name, "system-%31s", operation) == 1 && !cascade_marker_watch.linked);
+            struct wlr_layer_surface_v1 *role = marker->surface;
+            struct wl_resource *resource = role->resource;
+            cascade_marker_watch = (struct BackdropWatch){.event = "system menu marker destroyed", .linked = true};
+            cascade_marker_watch.listener.notify = backdrop_retired;
+            wl_resource_add_destroy_listener(resource, &cascade_marker_watch.listener);
+            if (!strcmp(operation, "ready")) {
+                for (unsigned i = 0; i < 3; i++) {
+                    wlr_scene_node_set_position(&views[i]->tree->node, 80 + (int)i * 200, 160);
+                    CHECK(wait_presented_frame(views[i]));
+                }
+            } else if (!strcmp(operation, "retheme-before")) {
+                CHECK(!system_trace.invalid && system_trace.requested && system_trace.child &&
+                    system_trace.request_client == desktop.shell_client &&
+                    system_trace.requested_window == views[0]->workspace_window &&
+                    system_trace.requested != system_trace.consumed && system_trace.generation && !picker_menu());
+                system_trace.held = system_trace.requested;
+                system_trace.held_generation = system_trace.generation;
+                system_trace.held_enables = system_trace.enables;
+                system_trace.held_applied = system_trace.applied;
+            } else if (!strcmp(operation, "retheme-after")) {
+                for (int i = 0; i < 1200 && system_trace.generation == system_trace.held_generation; i++) CHECK(pump());
+                CHECK(!system_trace.invalid && system_trace.cancelled == system_trace.held && system_trace.held &&
+                    system_trace.consumed != system_trace.held &&
+                    system_trace.enables == system_trace.held_enables &&
+                    system_trace.applied == system_trace.held_applied + 1 &&
+                    system_trace.applied_serial == system_trace.commit_serial &&
+                    system_trace.generation > system_trace.held_generation && !picker_menu());
+                printf("SYSTEM_MENU_RETHEME child=%u window=%llu serial=%u cancelled=%u commit=%u accepted=1 generationBefore=%llu generationAfter=%llu optinRequestsBefore=%u optinRequestsAfter=%u\n",
+                    system_trace.child, (unsigned long long)system_trace.requested_window,
+                    system_trace.held, system_trace.cancelled, system_trace.applied_serial,
+                    (unsigned long long)system_trace.held_generation, (unsigned long long)system_trace.generation,
+                    system_trace.held_enables, system_trace.enables);
+            } else if (!strcmp(operation, "focus") || !strcmp(operation, "title-down") ||
+                !strcmp(operation, "title-up") || !strcmp(operation, "alt-space")) {
+                CHECK(sscanf(name, "system-%*s %d", &slot) == 1 && slot >= 0 && slot < 3);
+                struct PuDesktopView *view = views[slot];
+                if (!strcmp(operation, "title-up")) {
+                    CHECK(system_title(view, false) && !desktop.suppressed_button);
+                    title_releases++;
+                } else if (!strcmp(operation, "title-down")) {
+                    CHECK(system_title(view, true) && !picker_menu() &&
+                        desktop.suppressed_button == (old ? 0u : BTN_RIGHT));
+                } else if (!strcmp(operation, "focus")) CHECK(system_focus(view));
+                else {
+                    CHECK(system_focus(view));
+                    int saved = control;
+                    struct TestReply previous = reply;
+                    uint64_t target = view->workspace_window;
+                    struct wlr_surface *surface = view->toplevel->base->surface;
+                    control = cascade_controls[slot];
+                    bool before_ok = command(TEST_QUERY, 0, 0);
+                    int before = reply.keys;
+                    if (before_ok) system_alt_space(false);
+                    bool after_ok = before_ok && command(TEST_QUERY, 0, 0);
+                    int after = reply.keys;
+                    control = saved; reply = previous;
+                    CHECK(before_ok && after_ok);
+                    printf("SYSTEM_MENU_KEYS slot=%d window=%llu surface=%p before=%d after=%d expectedDelta=%d\n",
+                        slot, (unsigned long long)target, (void *)surface, before, after, old ? 4 : 2);
+                    CHECK(after == before + (old ? 4 : 2));
+                    keyboard_requests++;
+                }
+            } else if (!strcmp(operation, "menu-ready")) {
+                struct PuDesktopLayer *menu = picker_menu();
+                CHECK(menu && desktop.focused_layer == menu &&
+                    desktop.seat->keyboard_state.focused_surface == menu->surface->surface &&
+                    menu->surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY &&
+                    menu->surface->current.exclusive_zone == -1);
+                CHECK(cascade_committed_output(menu->surface->output));
+            } else if (!strcmp(operation, "key")) {
+                CHECK(sscanf(name, "system-key %d %d", &x, &y) == 2);
+                if (y) picker_key(KEY_LEFTSHIFT, true);
+                picker_key((uint32_t)x, true); picker_key((uint32_t)x, false);
+                if (y) picker_key(KEY_LEFTSHIFT, false);
+            } else if (!strcmp(operation, "click")) {
+                CHECK(sscanf(name, "system-click %d %d", &x, &y) == 2);
+                struct PuDesktopLayer *menu = picker_menu();
+                CHECK(menu && menu == desktop.focused_layer && x >= 0 && y >= 0 &&
+                    x < menu->pending_box.width && y < menu->pending_box.height);
+                motion(menu->pending_box.x + x, menu->pending_box.y + y);
+                CHECK(desktop.seat->pointer_state.focused_surface == menu->surface->surface);
+                button(true); button(false);
+            } else if (!strcmp(operation, "client")) {
+                struct PuDesktopView *client = find("SystemMenu.client.body");
+                CHECK(client && system_focus_view(client, false));
+                uint64_t id = client->workspace_window;
+                struct wlr_surface *surface = client->toplevel->base->surface;
+                struct wlr_box box, inset = {0};
+                struct PuDesktopOwner *owner = NULL;
+                pu_decoration_inset(client, &inset, false);
+                CHECK(inset.x == 0 && inset.y == 0 && !pu_decoration_mode_pending(client) &&
+                    pu_desktop_surface_box(&desktop, surface, &box, &owner) && owner && owner->view == client &&
+                    box.width > 20 && box.height > 20);
+                motion(box.x + 20, box.y + 20);
+                bool ready = false;
+                for (int i = 0; i < 1200; i++) {
+                    struct PuDesktopView *current = system_live_view(client, id, surface);
+                    CHECK(current);
+                    if (body_pixel(current, 0x456789)) { ready = true; break; }
+                    CHECK(pump());
+                }
+                CHECK(ready && desktop.seat->pointer_state.focused_surface == surface &&
+                    fabs(desktop.seat->pointer_state.sx - 20) < 0.01 &&
+                    fabs(desktop.seat->pointer_state.sy - 20) < 0.01);
+                printf("SYSTEM_MENU_CSD window=%llu surface=%p surfaceBox=%d,%d,%d,%d geometry=%d,%d,%d,%d pointer=%.1f,%.1f inset=%d,%d rightDown=1 rightUp=1\n",
+                    (unsigned long long)id, (void *)surface, box.x, box.y, box.width, box.height,
+                    client->toplevel->base->geometry.x, client->toplevel->base->geometry.y,
+                    client->toplevel->base->geometry.width, client->toplevel->base->geometry.height,
+                    desktop.seat->pointer_state.sx, desktop.seat->pointer_state.sy, inset.x, inset.y);
+                system_trace.csd_client = wl_resource_get_client(surface->resource);
+                system_trace.csd_surface = surface;
+                system_button(true); system_button(false);
+                CHECK(!system_trace.invalid && system_trace.csd_pointers[0].resource &&
+                    !desktop.suppressed_button && !picker_menu());
+                for (unsigned i = 0; i < 2; i++) {
+                    if (!system_trace.csd_pointers[i].resource) continue;
+                    printf("SYSTEM_MENU_CSD_PROTOCOL pointer=%u surface=%p down=%u downSerial=%u up=%u upSerial=%u\n",
+                        system_trace.csd_pointers[i].id, (void *)surface,
+                        system_trace.csd_pointers[i].down, system_trace.csd_pointers[i].down_serial,
+                        system_trace.csd_pointers[i].up, system_trace.csd_pointers[i].up_serial);
+                    CHECK(system_trace.csd_pointers[i].down == 1 && system_trace.csd_pointers[i].up == 1 &&
+                        system_trace.csd_pointers[i].down_serial && system_trace.csd_pointers[i].up_serial);
+                }
+            } else if (!strcmp(operation, "client-check")) {
+                struct PuDesktopView *client = find("SystemMenu.client.body");
+                CHECK(client && find("SystemMenu.client.ok") && !find("SystemMenu.client.duplicate") &&
+                    body_pixel(client, 0x33cc66) && !picker_menu());
+            } else if (!strcmp(operation, "client-alt-space")) {
+                struct PuDesktopView *client = find("SystemMenu.client.body");
+                CHECK(client && system_focus_view(client, false));
+                system_alt_space(false);
+            } else if (!strcmp(operation, "client-finish")) {
+                struct PuDesktopView *client = find("SystemMenu.client.body");
+                CHECK(client && app_pid > 0);
+                wlr_xdg_toplevel_send_close(client->toplevel);
+                bool done = false;
+                int status = 0;
+                for (int i = 0; i < 1200; i++) {
+                    pid_t result = waitpid(app_pid, &status, WNOHANG);
+                    if (result == app_pid) { app_pid = 0; done = true; break; }
+                    CHECK(result == 0 && pump());
+                }
+                CHECK(done && WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
+                    !find("SystemMenu.client.body") && !find("SystemMenu.client.ok"));
+                system_trace.csd_client = NULL;
+                system_trace.csd_surface = NULL;
+            } else if (!strcmp(operation, "placed")) {
+                CHECK(wait_presented_frame(views[0]) && views[0]->mode == PU_DESKTOP_TILED_LEFT);
+            } else if (!strcmp(operation, "cascade-check")) {
+                for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
+                CHECK(views[0]->mode == PU_DESKTOP_FLOATING && cascade_steps(views));
+            } else if (!strcmp(operation, "short")) {
+                struct wlr_output_state state;
+                wlr_output_state_init(&state); wlr_output_state_set_custom_mode(&state, 640, 241, 60000);
+                CHECK(wlr_output_commit_state(peer, &state)); wlr_output_state_finish(&state);
+                wlr_output_layout_add(desktop.layout, peer, -640, -241);
+            } else if (!strcmp(operation, "cross")) {
+                bool panel_ready = false;
+                for (int i = 0; i < 1200 && !panel_ready; i++) {
+                    struct PuDesktopLayer *panel;
+                    wl_list_for_each(panel, &desktop.layers, link)
+                        if (panel->surface->output == peer && panel->presented && panel->surface->surface->mapped &&
+                            panel->surface->current.exclusive_zone == 48) panel_ready = true;
+                    if (!panel_ready) CHECK(pump());
+                }
+                CHECK(panel_ready && system_focus(views[0]) && begin_title_drag(views[0]));
+                motion(-500, -140); button(false);
+                CHECK(wait_presented_frame(views[0]) && views[0]->output == head);
+                struct wlr_box bounds;
+                CHECK(pu_desktop_picker_output(views[0], &bounds) == peer &&
+                    bounds.x == -640 && bounds.y == -241 && bounds.height == 241);
+            } else if (!strcmp(operation, "wheel")) {
+                struct PuDesktopLayer *menu = picker_menu();
+                CHECK(menu && menu->surface->output == peer && menu->pending_box.x >= -640 &&
+                    menu->pending_box.y >= -241 && menu->pending_box.x + menu->pending_box.width <= 0 &&
+                    menu->pending_box.y + menu->pending_box.height <= 0);
+                motion(menu->pending_box.x + menu->pending_box.width / 2.0,
+                    menu->pending_box.y + menu->pending_box.height / 2.0);
+                struct wlr_pointer_axis_event event = {.pointer = &pointer, .time_msec = ++clock_ms,
+                    .orientation = WL_POINTER_AXIS_VERTICAL_SCROLL, .delta = 60, .delta_discrete = 120,
+                    .source = WL_POINTER_AXIS_SOURCE_WHEEL};
+                wl_signal_emit_mutable(&pointer.events.axis, &event);
+                wl_signal_emit_mutable(&pointer.events.frame, NULL);
+            } else if (!strcmp(operation, "success")) success = true;
+            else CHECK(false);
+            CHECK(!cascade_marker_watch.retired);
+            struct PuDesktopLayer *current = NULL, *candidate;
+            wl_list_for_each(candidate, &desktop.layers, link)
+                if (candidate->surface == role && candidate->surface->resource == resource) current = candidate;
+            CHECK(current);
+            cascade_marker_stop();
+            wlr_layer_surface_v1_destroy(current->surface);
+            break;
+        }
+    }
+    CHECK(!desktop.shell_pid && desktop.shell_exited && WIFEXITED(desktop.shell_status) &&
+        WEXITSTATUS(desktop.shell_status) == 0 && success && title_releases == (old ? 3u : 5u) &&
+        keyboard_requests == (old ? 3u : 4u) && !picker_menu());
+    puts(old ? "PASS: actual frozen workspace v6 provider forwards both native gestures; new GUI retains ordinary Half, Restore and Cascade" :
+        "PASS: three independent clients and Windows presets open one production ordinary menu per native gesture; real SDK CSD right-click, key pairs, coupled placement and negative-origin short-head input remain correct");
+    return true;
+}
+
 static bool suite(const char *ui, const char *wire, const char *mode)
 {
     char *decorator[] = {(char *)ui, "--decorator", "--app-id", "org.pollyui.decorator",
@@ -3104,6 +3801,11 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(start_wire(wire));
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
+#ifdef POLLY_WORKSPACE_TOPLEVEL_V1_CONSUME_SYSTEM_MENU_SINCE_VERSION
+    if (!strcmp(mode, "system-menu-protocol")) return system_menu_protocol(wire);
+#endif
+    if (!strcmp(mode, "system-menu") || !strcmp(mode, "system-menu-old"))
+        return system_menu_consumer(ui, wire, !strcmp(mode, "system-menu-old"));
     if (!strcmp(mode, "cascade-protocol")) return cascade_protocol(wire);
     if (!strcmp(mode, "cascade") || !strcmp(mode, "cascade-old"))
         return cascade_consumer(ui, wire, !strcmp(mode, "cascade-old"), false);
@@ -3265,6 +3967,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         passed = suite(argv[1], argv[2], argv[3]);
+        system_trace_stop();
         cascade_marker_stop();
         shell_fixture_cleanup();
         if (!resume_renderer()) passed = false;

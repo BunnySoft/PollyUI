@@ -50,6 +50,12 @@ struct DesktopWindow {
     char placement_message[128];
 };
 
+struct SystemMenuRequest {
+    uint32_t serial, target, origin;
+    int32_t x, y, width, height, output_x, output_y, output_width, output_height;
+    char output_name[128];
+};
+
 static struct {
     JSContext *ctx;
     JSValue api;
@@ -84,6 +90,10 @@ static struct {
     int32_t picker_x, picker_y, picker_width, picker_height;
     int32_t picker_output_x, picker_output_y, picker_output_width, picker_output_height;
     char picker_output_name[128];
+    bool system_menu_capability, system_menu_enabled, system_menu_changed;
+    struct SystemMenuRequest system_menu;
+    uint32_t system_menu_last_serial, system_menu_reply;
+    bool system_menu_accepted;
 } control;
 
 static void session_status(void *data, struct polly_session_status_v1 *status, uint32_t serial, uint32_t input_method)
@@ -147,11 +157,25 @@ static void arrangement_capability(void *data, struct polly_workspace_toplevel_m
     control.arrangement_capability = supported == 1;
     control.changed = 1;
 }
+static void system_menu_capability(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)data; (void)manager;
+    if (supported > 1) { control.failed = control.changed = 1; return; }
+    control.system_menu_capability = supported == 1;
+}
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .restored = workspace_restored,
     .layout_picker_capabilities = picker_capability,
     .arrangement_capabilities = arrangement_capability,
+    .system_menu_capabilities = system_menu_capability,
 };
+
+static void clear_system_menu(uint32_t target)
+{
+    if (target && control.system_menu.target != target) return;
+    memset(&control.system_menu, 0, sizeof(control.system_menu));
+    control.system_menu_changed = true;
+}
 
 static void clear_picker(uint32_t target)
 {
@@ -166,6 +190,7 @@ static void workspace_membership(void *data, struct polly_workspace_toplevel_v1 
     (void)handle;
     struct DesktopWindow *window = data;
     clear_picker(window->id);
+    clear_system_menu(window->id);
     window->pending_workspace = workspace ? ext_workspace_handle_v1_get_user_data(workspace) : NULL;
     window->workspace_changed = 1;
 }
@@ -174,6 +199,7 @@ static void workspace_window_closed(void *data, struct polly_workspace_toplevel_
 {
     struct DesktopWindow *window = data;
     clear_picker(window->id);
+    clear_system_menu(window->id);
     polly_workspace_toplevel_v1_destroy(handle);
     window->workspace_handle = NULL;
     window->workspace = window->pending_workspace = NULL;
@@ -240,10 +266,51 @@ static void layout_dismissed(void *data, struct polly_workspace_toplevel_v1 *han
     if (control.picker_target == window->id && control.picker_token == token) clear_picker(window->id);
 }
 
+static void system_menu_requested(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t origin, int32_t x, int32_t y, int32_t width, int32_t height,
+    const char *name, int32_t ox, int32_t oy, int32_t ow, int32_t oh)
+{
+    struct DesktopWindow *window = data;
+    if (!control.system_menu_capability || polly_workspace_toplevel_v1_get_version(handle) < 7 ||
+        !serial || serial <= control.system_menu_last_serial || (origin != 1 && origin != 2) ||
+        width < 1 || height < 1 || width > 32768 || height > 32768 ||
+        ow < 1 || oh < 1 || ow > 32768 || oh > 32768 || x < 0 || y < 0 ||
+        (int64_t)x + width > ow || (int64_t)y + height > oh ||
+        !name[0] || strlen(name) >= sizeof(control.system_menu.output_name)) {
+        control.failed = control.changed = 1; return;
+    }
+    control.system_menu_last_serial = serial;
+    if (!control.system_menu_enabled) return;
+    control.system_menu = (struct SystemMenuRequest){.serial = serial, .target = window->id,
+        .origin = origin, .x = x, .y = y, .width = width, .height = height,
+        .output_x = ox, .output_y = oy, .output_width = ow, .output_height = oh};
+    snprintf(control.system_menu.output_name, sizeof(control.system_menu.output_name), "%s", name);
+    control.system_menu_changed = true;
+}
+
+static void system_menu_cancelled(void *data, struct polly_workspace_toplevel_v1 *handle, uint32_t serial)
+{
+    (void)handle;
+    struct DesktopWindow *window = data;
+    if (window->id == control.system_menu.target && serial == control.system_menu.serial)
+        clear_system_menu(window->id);
+}
+
+static void system_menu_consumed(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t accepted)
+{
+    (void)data; (void)handle;
+    if (accepted > 1) { control.failed = control.changed = 1; return; }
+    control.system_menu_reply = serial;
+    control.system_menu_accepted = accepted == 1;
+}
+
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = workspace_membership, .closed = workspace_window_closed,
     .placement_state = placement_state, .result = placement_result,
     .layout_offer = layout_offer, .layout_dismissed = layout_dismissed,
+    .system_menu_requested = system_menu_requested, .system_menu_cancelled = system_menu_cancelled,
+    .system_menu_consumed = system_menu_consumed,
 };
 
 static void watch_workspace(struct DesktopWindow *window)
@@ -428,6 +495,7 @@ static void closed(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
 {
     struct DesktopWindow *window = data;
     clear_picker(window->id);
+    clear_system_menu(window->id);
     struct DesktopWindow **link = &control.windows;
     while (*link && *link != window) link = &(*link)->next;
     if (*link) *link = window->next;
@@ -502,7 +570,7 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             control.failed = control.changed = 1;
     } else if (!control.workspace_toplevels && !strcmp(interface, "polly_workspace_toplevel_manager_v1")) {
         control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
-            version < 6 ? version : 6);
+            version < 7 ? version : 7);
         if (!control.workspace_toplevels ||
             polly_workspace_toplevel_manager_v1_add_listener(control.workspace_toplevels,
                 &workspace_control_listener, NULL) < 0) control.failed = control.changed = 1;
@@ -565,6 +633,10 @@ static void disconnect_control(void)
     control.workspaces_ready = control.workspaces_changed = 0;
     control.picker_capability = false;
     control.arrangement_capability = false;
+    control.system_menu_capability = control.system_menu_enabled = false;
+    control.system_menu_last_serial = control.system_menu_reply = 0;
+    control.system_menu_accepted = false;
+    clear_system_menu(0);
     clear_picker(0);
     if (control.manager) {
         zwlr_foreign_toplevel_manager_v1_stop(control.manager);
@@ -1019,6 +1091,62 @@ static JSValue layout_picker_capability(JSContext *ctx, JSValueConst self, int a
         polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 4 && control.picker_capability);
 }
 
+static JSValue system_menu_supported(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    return JS_NewBool(ctx, control.workspace_toplevels &&
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 7 &&
+        control.system_menu_capability);
+}
+
+static JSValue enable_system_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsBool(argv[0])) return JS_ThrowTypeError(ctx, "System-menu opt-in must be boolean");
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    if (!control.system_menu_capability || polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 7)
+        return JS_ThrowTypeError(ctx, "Native system-menu input is unsupported by this provider");
+    control.system_menu_enabled = JS_ToBool(ctx, argv[0]);
+    clear_system_menu(0);
+    polly_workspace_toplevel_manager_v1_enable_system_menu_requests(control.workspace_toplevels, control.system_menu_enabled);
+    if (!roundtrip()) return JS_ThrowInternalError(ctx, "System-menu opt-in transport outcome is unknown");
+    return JS_UNDEFINED;
+}
+
+static JSValue take_system_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    struct SystemMenuRequest request = control.system_menu;
+    if (!control.system_menu_enabled || !request.serial) return JS_NULL;
+    clear_system_menu(0);
+    struct DesktopWindow *window;
+    for (window = control.windows; window; window = window->next)
+        if (window->id == request.target && window->workspace_handle) break;
+    if (!window) return JS_NULL;
+    control.system_menu_reply = 0;
+    polly_workspace_toplevel_v1_consume_system_menu(window->workspace_handle, request.serial);
+    if (!roundtrip() || control.system_menu_reply != request.serial)
+        return JS_ThrowInternalError(ctx, "System-menu consumption transport outcome is unknown; no retry was performed");
+    if (!control.system_menu_accepted) return JS_NULL;
+    JSValue value = JS_NewObject(ctx);
+    if (JS_IsException(value)) return value;
+    const char *names[] = {"serial", "windowId", "x", "y", "width", "height",
+        "outputX", "outputY", "outputWidth", "outputHeight"};
+    int64_t numbers[] = {request.serial, request.target, request.x, request.y, request.width, request.height,
+        request.output_x, request.output_y, request.output_width, request.output_height};
+    for (unsigned i = 0; i < sizeof(numbers) / sizeof(numbers[0]); i++)
+        if (!property(ctx, value, names[i], JS_NewInt64(ctx, numbers[i]))) {
+            JS_FreeValue(ctx, value); return JS_EXCEPTION;
+        }
+    if (!property(ctx, value, "outputName", JS_NewString(ctx, request.output_name)) ||
+        !property(ctx, value, "origin", JS_NewString(ctx, request.origin == 1 ? "title" : "keyboard"))) {
+        JS_FreeValue(ctx, value); return JS_EXCEPTION;
+    }
+    return value;
+}
+
 static JSValue enable_layout_picker(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self;
@@ -1305,6 +1433,10 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
         !property(ctx, api, "enableLayoutPicker", JS_NewCFunction(ctx, enable_layout_picker, "enableLayoutPicker", 1)) ||
         !property(ctx, api, "dismissLayoutPicker", JS_NewCFunction(ctx, dismiss_layout_picker, "dismissLayoutPicker", 1)) ||
         !property(ctx, api, "onLayoutPickerChanged", JS_NULL) ||
+        !property(ctx, api, "systemMenuCapability", JS_NewCFunction(ctx, system_menu_supported, "systemMenuCapability", 0)) ||
+        !property(ctx, api, "enableSystemMenuRequests", JS_NewCFunction(ctx, enable_system_menu, "enableSystemMenuRequests", 1)) ||
+        !property(ctx, api, "takeSystemMenuRequest", JS_NewCFunction(ctx, take_system_menu, "takeSystemMenuRequest", 0)) ||
+        !property(ctx, api, "onSystemMenuRequested", JS_NULL) ||
         !property(ctx, api, "closeWindowMenu", JS_NewCFunction(ctx, close_window_menu, "closeWindowMenu", 1)) ||
         !property(ctx, api, "tileWindow", JS_NewCFunctionMagic(ctx, place_window, "tileWindow", 3, JS_CFUNC_generic_magic, 0)) ||
         !property(ctx, api, "restoreFloatingWindow", JS_NewCFunctionMagic(ctx, place_window,
@@ -1361,6 +1493,11 @@ int pu_desktop_windows_pump(void)
     worked += pu_theme_client_pump();
     worked += pu_output_client_pump();
     worked += pu_decoration_client_pump();
+    if (control.ctx && control.system_menu_changed) {
+        control.system_menu_changed = false;
+        notify("onSystemMenuRequested");
+        worked++;
+    }
     if (control.ctx && control.picker_changed) {
         control.picker_changed = false;
         notify("onLayoutPickerChanged");

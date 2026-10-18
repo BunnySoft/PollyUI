@@ -95,6 +95,8 @@ struct Client {
     struct ext_workspace_group_handle_v1 *workspace_group;
     struct polly_workspace_toplevel_manager_v1 *workspace_toplevels;
     struct polly_workspace_toplevel_v1 *retired_placement;
+    struct polly_workspace_toplevel_manager_v1 *previous_system_manager;
+    uint32_t workspace_toplevel_global;
     struct Workspace workspace[32];
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
@@ -774,14 +776,50 @@ static void arrangement_supported(void *data, struct polly_workspace_toplevel_ma
     (void)manager;
     ((struct Client *)data)->reply.arrangement_capability = supported;
 }
+static void system_menu_supported(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)manager;
+    ((struct Client *)data)->reply.system_menu_capability = supported;
+}
+static void system_menu_requested(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t origin, int32_t x, int32_t y, int32_t width, int32_t height,
+    const char *name, int32_t ox, int32_t oy, int32_t ow, int32_t oh)
+{
+    (void)handle; (void)x; (void)y; (void)width; (void)height; (void)name;
+    (void)ox; (void)oy; (void)ow; (void)oh;
+    struct Foreign *foreign = data;
+    struct TestReply *reply = &foreign->client->reply;
+    if (sscanf(foreign->app_id, "org.pollywm.test.%u", &reply->system_menu_target) != 1) die("system-menu target");
+    reply->system_menu_serial = serial;
+    reply->system_menu_origin = origin;
+    reply->system_menu_requests++;
+}
+static void system_menu_cancelled(void *data, struct polly_workspace_toplevel_v1 *handle, uint32_t serial)
+{
+    (void)handle;
+    struct TestReply *reply = &((struct Foreign *)data)->client->reply;
+    if (reply->system_menu_serial == serial) reply->system_menu_serial = 0;
+    reply->system_menu_cancellations++;
+}
+static void system_menu_consumed(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t accepted)
+{
+    (void)handle;
+    struct TestReply *reply = &((struct Foreign *)data)->client->reply;
+    reply->system_menu_reply = serial; reply->system_menu_accepted = accepted;
+    reply->system_menu_results++;
+}
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .layout_picker_capabilities = picker_supported,
     .arrangement_capabilities = arrangement_supported,
+    .system_menu_capabilities = system_menu_supported,
 };
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = membership, .closed = membership_closed,
     .placement_state = placement_state, .result = placement_result,
     .layout_offer = picker_offer, .layout_dismissed = picker_dismissed,
+    .system_menu_requested = system_menu_requested, .system_menu_cancelled = system_menu_cancelled,
+    .system_menu_consumed = system_menu_consumed,
 };
 static void track_foreign(struct Foreign *foreign)
 {
@@ -937,7 +975,9 @@ static void global(void *data, struct wl_registry *registry,
         ext_workspace_manager_v1_add_listener(client->workspaces, &workspaces_listener, client);
         client->reply.workspace_capability = 1;
     } else if (strcmp(interface, polly_workspace_toplevel_manager_v1_interface.name) == 0) {
+        client->workspace_toplevel_global = name;
         client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
+            version >= 7 && getenv("POLLY_TEST_WORKSPACE_V7") ? 7 :
             version >= 6 && getenv("POLLY_TEST_WORKSPACE_V6") ? 6 :
             version >= 5 && getenv("POLLY_TEST_WORKSPACE_V5") ? 5 :
             version >= 4 && getenv("POLLY_TEST_WORKSPACE_V4") ? 4 : version >= 3 ? 3 : 1);
@@ -1178,7 +1218,7 @@ int main(int argc, char **argv)
     } else {
         if (!client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
         if (client.appearance && !getenv("POLLY_TEST_WORKSPACE_V4") && !getenv("POLLY_TEST_WORKSPACE_V5") &&
-            !getenv("POLLY_TEST_WORKSPACE_V6"))
+            !getenv("POLLY_TEST_WORKSPACE_V6") && !getenv("POLLY_TEST_WORKSPACE_V7"))
             configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
     }
     bool running = true;
@@ -1201,6 +1241,7 @@ int main(int argc, char **argv)
             request.command == TEST_WORKSPACE_MOVE ||
             request.command == TEST_MENU_CASCADE ||
             request.command == TEST_MENU_ARRANGE ||
+            request.command == TEST_SYSTEM_MENU_CONSUME ||
             (request.command >= TEST_MENU_OPEN && request.command <= TEST_MENU_CLOSE) ||
             request.command == TEST_PICKER_OPEN || request.command == TEST_PICKER_DISMISS ?
             find_foreign(&client, request.id) : NULL;
@@ -1364,6 +1405,39 @@ int main(int argc, char **argv)
             break;
         case TEST_PICKER_ENABLE:
             polly_workspace_toplevel_manager_v1_enable_layout_picker(client.workspace_toplevels, request.id);
+            break;
+        case TEST_SYSTEM_MENU_ENABLE:
+            polly_workspace_toplevel_manager_v1_enable_system_menu_requests(client.workspace_toplevels, request.id);
+            break;
+        case TEST_SYSTEM_MENU_CONSUME:
+            polly_workspace_toplevel_v1_consume_system_menu(foreign->workspace_handle, request.serial);
+            break;
+        case TEST_SYSTEM_MENU_RETIRED_CONSUME:
+            if (!client.retired_placement) die("retired system-menu child missing");
+            polly_workspace_toplevel_v1_consume_system_menu(client.retired_placement, request.serial);
+            break;
+        case TEST_SYSTEM_MENU_OWNER:
+            if (request.id == 1) {
+                if (client.previous_system_manager) die("duplicate system-menu manager fixture");
+                client.previous_system_manager = client.workspace_toplevels;
+                client.workspace_toplevels = wl_registry_bind(registry, client.workspace_toplevel_global,
+                    &polly_workspace_toplevel_manager_v1_interface, 7);
+                polly_workspace_toplevel_manager_v1_add_listener(client.workspace_toplevels, &workspace_control_listener, &client);
+                for (size_t i = 0; i < 16; i++) {
+                    struct Foreign *item = &client.foreign[i];
+                    if (item->workspace_handle) polly_workspace_toplevel_v1_destroy(item->workspace_handle);
+                    item->workspace_handle = NULL;
+                    track_foreign(item);
+                }
+                polly_workspace_toplevel_manager_v1_enable_system_menu_requests(client.workspace_toplevels, 1);
+            } else if (request.id == 2) {
+                if (!client.previous_system_manager) die("old system-menu manager missing");
+                polly_workspace_toplevel_manager_v1_enable_system_menu_requests(client.previous_system_manager, 0);
+            } else if (request.id == 3) {
+                if (!client.previous_system_manager) die("old system-menu manager missing");
+                polly_workspace_toplevel_manager_v1_destroy(client.previous_system_manager);
+                client.previous_system_manager = NULL;
+            } else die("invalid system-menu owner fixture");
             break;
         case TEST_PICKER_OPEN:
             polly_workspace_toplevel_v1_open_layout_picker(foreign->workspace_handle, request.serial,
@@ -1578,6 +1652,7 @@ int main(int argc, char **argv)
     if (client.workspaces) { ext_workspace_manager_v1_stop(client.workspaces); ext_workspace_manager_v1_destroy(client.workspaces); }
     if (client.retired_placement) polly_workspace_toplevel_v1_destroy(client.retired_placement);
     if (client.workspace_toplevels) polly_workspace_toplevel_manager_v1_destroy(client.workspace_toplevels);
+    if (client.previous_system_manager) polly_workspace_toplevel_manager_v1_destroy(client.previous_system_manager);
     if (client.dialogs) xdg_wm_dialog_v1_destroy(client.dialogs);
     if (client.foreign_manager) zwlr_foreign_toplevel_manager_v1_destroy(client.foreign_manager);
     if (client.appearance) polly_appearance_v1_destroy(client.appearance);

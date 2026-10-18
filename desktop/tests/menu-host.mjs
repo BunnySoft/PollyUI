@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 
 // Run: node --test .\desktop\tests\menu-host.mjs
 register('./menu-host-loader.mjs', import.meta.url);
@@ -18,7 +19,7 @@ const { applicationCatalog } = await import('./desktop/shell/applications.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
 const { startMenuView } = await import('./desktop/shell/start-menu.mjs');
 const { parseLocalUserProfile } = await import('./desktop/shared/user-profile.mjs');
-const { layoutPickerPlacement } = await import('./desktop/shared/ui/theme-layout.mjs');
+const { layoutPickerPlacement, systemMenuPlacement } = await import('./desktop/shared/ui/theme-layout.mjs');
 const { validateTheme } = await import('./desktop/shared/ui/theme-schema.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
@@ -703,6 +704,156 @@ function pickerFixture(options) {
   };
   native.onLayoutPickerChanged = state.previousPickerObserver;
 }
+
+function systemMenuFixture(options) {
+  arrangementFixture(options);
+  const { native, state, calls } = options;
+  native.systemMenuCapability = () => state.systemMenuSupported !== false;
+  native.enableSystemMenuRequests = enabled => {
+    calls.push(['system-menu-enabled', enabled]);
+    state.menuRequest = null;
+  };
+  native.takeSystemMenuRequest = () => {
+    calls.push(['take-system-menu']);
+    const request = state.menuRequest;
+    state.menuRequest = null;
+    return request;
+  };
+  state.previousSystemMenuObserver = () => {
+    calls.push(['previous-system-menu']);
+    if (state.previousSystemMenuThrows) throw new Error('fixture system-menu observer failure');
+  };
+  native.onSystemMenuRequested = state.previousSystemMenuObserver;
+}
+function requestSystemMenu(f, serial = 1, extra = {}) {
+  f.state.menuRequest = { serial, windowId: 10, origin: 'title', x: 350, y: 40, width: 1, height: 1,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1', ...extra };
+  f.native.onSystemMenuRequested();
+  return f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-actions'));
+}
+scenario('native system menu uses the ordinary registered menu once, retains batch commands and retires action callbacks', f => {
+  const preferences = JSON.stringify(f.saved.snapshot);
+  const menu = requestSystemMenu(f);
+  assert.ok(menu);
+  assert.equal(menu.document.getElementById('shell-layout-picker'), null);
+  assert.ok(menu.document.getElementById('shell-window-cascade'));
+  assert.ok(menu.document.getElementById('shell-window-tile-horizontal'));
+  assert.ok(f.calls.some(call => call[0] === 'open-window-menu' && call[1] === 10));
+  assert.deepEqual(menu.options.anchors, ['top', 'left']);
+  assert.equal(menu.options.margins.left, 350);
+  const count = f.created.length;
+  f.native.onSystemMenuRequested();
+  requestSystemMenu(f, 1);
+  requestSystemMenu(f, 2, { origin: 'keyboard' });
+  assert.equal(menu.closed, false);
+  assert.equal(f.created.length, count, 'duplicate or same-target request does not toggle or replace the live menu');
+  const left = find(menu, 'shell-window-tile-left'), held = callback(left, 'click');
+  click(left); held(event('click', { currentTarget: left }));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 41]]);
+  assert.equal(menu.closed, true);
+  f.native.onSystemMenuRequested();
+  assert.equal(f.created.length, count, 'a consumed request cannot reopen after action or close');
+  assert.equal(JSON.stringify(f.saved.snapshot), preferences);
+}, systemMenuFixture);
+
+scenario('system-menu opt-in is stable across refresh and all Windows presets; Mac presets remain neutral', f => {
+  for (const id of ['xp', 'server2003', 'modern']) {
+    assert.equal(f.shell.selectTheme(id), true);
+    assert.deepEqual(f.calls.filter(call => call[0] === 'system-menu-enabled').at(-1), ['system-menu-enabled', true]);
+    const start = f.calls.length;
+    f.shell.refresh(true); f.shell.refresh(); f.native.onWindowsChanged();
+    assert.equal(f.calls.slice(start).some(call => call[0] === 'system-menu-enabled'), false);
+  }
+  const menu = requestSystemMenu(f);
+  for (const id of ['aqua', 'lion', 'bigsur']) {
+    assert.equal(f.shell.selectTheme(id), true);
+    assert.equal(menu.closed, true);
+    assert.deepEqual(f.calls.filter(call => call[0] === 'system-menu-enabled').at(-1), ['system-menu-enabled', false]);
+    assert.equal(requestSystemMenu(f, 5), undefined);
+  }
+}, systemMenuFixture);
+
+scenario('old provider receives neither system-menu subscription nor unsupported requests, ordinary taskbar actions survive', f => {
+  assert.equal(f.native.onSystemMenuRequested, f.state.previousSystemMenuObserver);
+  f.shell.selectTheme('xp'); f.shell.selectTheme('modern');
+  assert.equal(f.calls.some(call => call[0] === 'system-menu-enabled'), false);
+  const menu = f.shell.showWindowActions(1, 10);
+  click(find(menu, 'shell-window-cascade'));
+  assert.equal(f.calls.filter(call => call[0] === 'cascade').length, 1);
+}, options => { systemMenuFixture(options); options.state.systemMenuSupported = false; });
+
+scenario('system-menu current-start scope and previous observer survive null, disabled, open and restarted notifications', f => {
+  f.native.onSystemMenuRequested();
+  const menu = requestSystemMenu(f);
+  const retired = f.native.onSystemMenuRequested;
+  f.native.onSystemMenuRequested();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-system-menu').length, 3);
+  const error = f.shell.getState().error;
+  f.state.previousSystemMenuThrows = true;
+  f.native.onSystemMenuRequested();
+  f.expectedWarnings.push('[shell] Previous system-menu observer failed: Error: fixture system-menu observer failure');
+  assert.equal(f.shell.getState().error, error);
+  f.state.previousSystemMenuThrows = false;
+  f.shell.selectTheme('aqua');
+  f.native.onSystemMenuRequested();
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.filter(call => call[0] === 'previous-system-menu').length, 5);
+  f.shell.stop();
+  assert.equal(f.native.onSystemMenuRequested, f.state.previousSystemMenuObserver);
+  f.shell.start(); f.shell.selectTheme('modern');
+  f.state.menuRequest = { serial: 8, windowId: 10, origin: 'keyboard', x: 1, y: 1, width: 1, height: 1,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1' };
+  const count = f.calls.length;
+  retired();
+  assert.equal(f.calls.length, count);
+  f.native.onSystemMenuRequested();
+  assert.ok(f.created.some(window => !window.closed && window.document.getElementById('shell-window-actions')));
+}, systemMenuFixture);
+
+scenario('system-menu consumption rechecks target workspace, state and live output before opening', f => {
+  for (const invalid of [{ windowId: 999 }, { outputX: -100 }, { outputWidth: 1 }, { origin: 'picker' }])
+    assert.equal(requestSystemMenu(f, ++f.state.requestSerial, invalid), undefined);
+  for (const invalid of [{ minimized: true }, { fullscreen: true }, { placementPending: true }, { workspaceId: 9 }]) {
+    const previous = { ...f.state.windows[0] };
+    Object.assign(f.state.windows[0], invalid);
+    assert.equal(requestSystemMenu(f, ++f.state.requestSerial), undefined);
+    f.state.windows[0] = previous;
+  }
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+}, options => { systemMenuFixture(options); options.state.requestSerial = 0; });
+
+scenario('system-menu output projection rejects ambiguous mirrored geometry with a visible diagnostic', f => {
+  f.state.outputs[1] = { ...f.state.outputs[0], id: 2 };
+  f.shell.refresh(true);
+  assert.equal(requestSystemMenu(f), undefined);
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+  assert.match(f.shell.getState().error, /output projection is ambiguous/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, systemMenuFixture);
+
+test('system-menu schema is strict optional, Windows-only in byte-equivalent builtin/fallback catalogs and clamps its own popup', () => {
+  const builtin = JSON.parse(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url)));
+  const fallback = JSON.parse(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url)));
+  assert.deepEqual(builtin, fallback);
+  for (const theme of builtin.themes)
+    assert.equal(theme.window.systemMenu === true, ['xp', 'server2003', 'modern'].includes(theme.id));
+  const legacy = JSON.parse(JSON.stringify(getDesktopTheme('modern')));
+  delete legacy.window.systemMenu;
+  assert.doesNotThrow(() => validateTheme(legacy));
+  for (const value of [true, false]) assert.doesNotThrow(() => validateTheme({
+    ...legacy, window: { ...legacy.window, systemMenu: value },
+  }));
+  for (const value of [0, 1, 'true', null, {}]) assert.throws(() => validateTheme({
+    ...legacy, window: { ...legacy.window, systemMenu: value },
+  }));
+  for (const [width, height, x, y] of [[1280, 720, 1200, 700], [320, 241, 310, 230], [1, 1, -8, -8]]) {
+    const result = systemMenuPlacement(legacy, { x, y, width: 1, height: 1,
+      outputX: -2000, outputY: -400, outputWidth: width, outputHeight: height });
+    assert.ok(result.width <= width && result.height <= height);
+    assert.ok(result.margins.left >= 0 && result.margins.left + result.width <= width);
+    assert.ok(result.margins.top >= 0 && result.margins.top + result.height <= height);
+  }
+});
 function offerPicker(f, token = 1, extra = {}) {
   f.state.offer = { token, windowId: 10, x: 1200, y: 0, width: 46, height: 33,
     outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1', ...extra };

@@ -72,3 +72,17 @@ export function layoutPickerPlacement(theme, offer) {
     below + height <= offer.outputHeight ? below : offer.y - height));
   return { width, height, anchors: ['top', 'left'], margins: { left, top } };
 }
+
+export function systemMenuPlacement(theme, request) {
+  for (const key of ['x', 'y', 'width', 'height', 'outputX', 'outputY', 'outputWidth', 'outputHeight'])
+    if (!Number.isInteger(request?.[key])) throw new TypeError('Invalid native system-menu anchor');
+  if (request.width < 1 || request.height < 1 || request.outputWidth < 1 || request.outputHeight < 1)
+    throw new RangeError('Native system-menu anchor has no live output');
+  const width = Math.max(1, Math.min(theme.layout.menuWidth, request.outputWidth));
+  const height = Math.max(1, Math.min(theme.layout.menuHeight, request.outputHeight));
+  const left = Math.max(0, Math.min(request.outputWidth - width, request.x));
+  const below = request.y + request.height;
+  const top = Math.max(0, Math.min(request.outputHeight - height,
+    below + height <= request.outputHeight ? below : request.y - height));
+  return { width, height, anchors: ['top', 'left'], margins: { left, top } };
+}
