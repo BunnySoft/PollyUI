@@ -1023,7 +1023,7 @@
       "label": "E22.R11 材质性能与采用决策",
       "kind": "gate",
       "parent": "e22",
-      "scope": "集中原24的可用性能gate：依据完整open/动态更新的真实预算选择可发布策略，保持原精度/输入/内存合同；若需跨原lroundf调用/质量或平台边界必须明确新裁决。关闭条件：预声明预算与非回退要求有实际合格结果，或明确不采用而不声称默认实时交付。",
+      "scope": "集中原24的可用性能gate：依据完整open/动态更新的真实预算选择默认采用策略，保持原精度/输入/内存合同。允许通过统一内部后端接口纳入默认关闭、启动时显式选择的实验实现；源码纳入不等于默认采用或性能达标，旧两倍工程目标不作为实验源码入库门槛。若需跨原lroundf调用/质量或平台边界必须明确新裁决。关闭条件：预声明预算与非回退要求有实际合格结果，或明确不采用而不声称默认实时交付。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1035,7 +1035,7 @@
         "e22-delivered-4",
         "e22-delivered-6"
       ],
-      "evidence": "c6ea约113–117ms大FIR，b49标准配对缺口与Dacc/0ad有效pair工程HOLD全部冻结；数值舍入HOST可行但完整异常/部署绑定未证。无重复样本/噪声豁免或下一实验授权。"
+      "evidence": "c6ea约113–117ms大FIR，b49标准配对缺口与Dacc/0ad有效pair工程HOLD全部冻结；最终0ad大区域四阶段约1.90–2.16倍、仍有小场景回退，不改写原门槛结果或声称16.7ms。2026-10-18用户明确授权以统一接口隔离实现、系统启动开关选择，将最终四相位作为默认关闭的后续优化基础；正在独立收口生产/实验双路径，旧batch8/sliding退出活动实现但保历史。数值舍入HOST可行但完整异常/部署绑定未证，不授权改lroundf或重跑冻结性能比较。"
     },
     {
       "id": "e22-remaining-12",
@@ -1201,9 +1201,9 @@
         "live"
       ],
       "sources": [],
-      "status": "blocked",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留，但父最终review/主线集成暂停，均未合入或发布。依用户要求作为非阻塞Bug停放，主线继续可见图标/字号等修复；后续须同时保证paint/clip、fresh/cache和旧整数语义，不单收38b。 2026-10-18任务重整：依旧暂停非阻塞，移出E22活动收口列表，不自动恢复vendor/变更舍入规则。"
+      "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留。2026-10-18用户明确要求盘点并合并有价值探索，恢复该成套修复的当前主线审查与资格，不单收38b。当前GUI实际relayout新建/计算/释放Yoga树，idle由既有version/viewport门禁跳过；库的deep-cache修复不冒当前GUI高频缓存故障。须保paint/clip、fresh/cache、旧整数/text/scale0语义并如实说明恢复遍历及ancestor-walk成本，不升级Yoga或在App补像素；不成为其余E22任务的新前置。"
     },
     {
       "id": "bug-live-listener-redispatch",
