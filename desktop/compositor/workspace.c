@@ -1225,6 +1225,9 @@ static void enable_layout_picker(struct wl_client *client, struct wl_resource *r
 static void picker_manager_destroyed(struct wl_resource *resource)
 {
     struct PuWorkspaces *state = wl_resource_get_user_data(resource);
+    struct Tracked *tracked;
+    wl_list_for_each(tracked, &state->tracked, link)
+        if (tracked->toplevel_manager == resource) tracked->toplevel_manager = NULL;
     if (state->system_menu_manager == resource) {
         pu_workspaces_system_menu_cancel(state->desktop);
         state->system_menu_manager = NULL;

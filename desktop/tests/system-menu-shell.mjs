@@ -127,6 +127,13 @@ async function run() {
     item.title === 'SystemMenu.client.ok'), 'SDK CSD client received its single right-button down/up');
   check(!current(), 'client-body right click does not create a native menu');
   await signal('client-check');
+  if (mode !== 'old') {
+    const before = registrations;
+    await signal('client-alt-space');
+    const clientMenu = await readyMenu(before);
+    await key(1);
+    await until(() => clientMenu.window.closed, 'focused real SDK CSD window also supports Alt+Space without a native title');
+  }
   await signal('focus 0');
   let before = registrations;
   if (mode === 'old') {

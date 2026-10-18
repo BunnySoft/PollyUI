@@ -3135,6 +3135,15 @@ static void system_alt_space(bool repeat)
 
 #ifdef POLLY_WORKSPACE_TOPLEVEL_V1_CONSUME_SYSTEM_MENU_SINCE_VERSION
 static struct TestReply system_body_reply;
+static struct PuDesktopView *system_child(void)
+{
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop.views, link)
+        if (view->mapped && view->toplevel->app_id &&
+            !strcmp(view->toplevel->app_id, "org.pollywm.test.8")) return view;
+    return NULL;
+}
+
 static bool system_body_request(struct TestRequest request)
 {
     struct TestReply previous = reply;
@@ -3297,10 +3306,11 @@ static bool system_menu_protocol(const char *wire)
     puts("PASS: actual grabs, recording, exiting, pending, fullscreen, lock, exclusive focus and modifiers reject; configured Alt+Space and original Alt+right resize take precedence");
 
     CHECK(system_body_request((struct TestRequest){.command = TEST_TRANSIENT, .id = 1, .edges = 8}));
-    struct PuDesktopView *other = find("org.pollywm.test.8");
+    struct PuDesktopView *other = system_child();
     CHECK(other);
     wlr_scene_node_set_position(&other->tree->node, 500, 160);
     CHECK(system_focus(other) && wait_presented_frame(view) && desktop.focused != view && pause_renderer());
+    unsigned inactive_requests = reply.system_menu_requests;
     pu_decoration_inset(view, &inset, false);
     motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
     CHECK(pu_decoration_hit(view, 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
@@ -3308,7 +3318,7 @@ static bool system_menu_protocol(const char *wire)
     CHECK(desktop.focused == view && desktop.suppressed_button == BTN_RIGHT &&
         !pu_decoration_presented_current(view));
     system_button(false);
-    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_serial &&
+    CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == inactive_requests + 1 && reply.system_menu_serial &&
         system_consume(reply.system_menu_serial, true) && !pu_decoration_presented_current(view));
     CHECK(resume_renderer() && wait_presented_frame(view) &&
         system_body_request((struct TestRequest){.command = TEST_DESTROY, .id = 4}));
@@ -3316,10 +3326,12 @@ static bool system_menu_protocol(const char *wire)
 
     for (unsigned modal = 0; modal < 2; modal++) {
         CHECK(system_body_request((struct TestRequest){.command = TEST_TRANSIENT, .edges = 8 | modal}));
-        struct PuDesktopView *child = find("org.pollywm.test.8");
+        struct PuDesktopView *child = system_child();
         CHECK(child && system_focus(child));
+        unsigned dialog_requests = reply.system_menu_requests;
         system_alt_space(false);
-        CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_target == 8 && reply.system_menu_serial);
+        CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == dialog_requests + 1 &&
+            reply.system_menu_target == 8 && reply.system_menu_serial);
         uint32_t child_serial = reply.system_menu_serial;
         CHECK(cascade_send((struct TestRequest){.command = TEST_SYSTEM_MENU_CONSUME,
             .id = 8, .serial = child_serial}) && reply.system_menu_accepted == 1);
@@ -3336,10 +3348,27 @@ static bool system_menu_protocol(const char *wire)
     }
     puts("PASS: focused ordinary and modal dialogs can request single-window menus; an ordinary parent remains eligible with a nonmodal child, while its blocked modal parent remains rejected");
 
+    CHECK(system_focus(view) && system_body(TEST_QUERY));
+    int before_buttons = system_body_reply.buttons;
+    unsigned before_requests = reply.system_menu_requests;
+    uint64_t armed_window = view->workspace_window;
+    CHECK(system_title(view, true) && desktop.suppressed_button == BTN_RIGHT);
+    view = NULL;
+    CHECK(system_body(TEST_UNMAP) && !wire_view() && system_body(TEST_REMAP));
+    view = wire_view();
+    CHECK(view && view->workspace_window > armed_window && system_body(TEST_UNCONSTRAINED));
+    system_button(false);
+    CHECK(!desktop.suppressed_button && command(TEST_QUERY, 0, 0) &&
+        reply.system_menu_requests == before_requests && system_body(TEST_QUERY) &&
+        system_body_reply.buttons == before_buttons);
+    puts("PASS: native title press crossing an actual unmap/remap generation is cancelled and its paired release remains suppressed instead of leaking to the remapped application");
+
     for (unsigned retirement = 0; retirement < 6; retirement++) {
         CHECK(system_focus(view));
+        unsigned requests = reply.system_menu_requests;
         system_alt_space(false);
-        CHECK(command(TEST_QUERY, 0, 0));
+        CHECK(command(TEST_QUERY, 0, 0) && reply.system_menu_requests == requests + 1 &&
+            reply.system_menu_target == 7 && reply.system_menu_origin == 2);
         serial = reply.system_menu_serial;
         uint64_t old_window = view->workspace_window;
         CHECK(serial);
@@ -3352,7 +3381,7 @@ static bool system_menu_protocol(const char *wire)
         else if (retirement == 3) CHECK(command(TEST_APPEARANCE, 0, 0));
         else if (retirement == 4) {
             struct wlr_output_state state;
-            wlr_output_state_init(&state); wlr_output_state_set_custom_mode(view->output, 1000, 650, 60000);
+            wlr_output_state_init(&state); wlr_output_state_set_custom_mode(&state, 1000, 650, 60000);
             CHECK(wlr_output_commit_state(view->output, &state)); wlr_output_state_finish(&state);
         } else wlr_output_destroy(view->output);
         if (retirement != 2) CHECK(system_consume(serial, false));
@@ -3473,6 +3502,13 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 struct PuDesktopView *client = find("SystemMenu.client.body");
                 CHECK(client && find("SystemMenu.client.ok") && !find("SystemMenu.client.duplicate") &&
                     body_pixel(client, 0x33cc66) && !picker_menu());
+            } else if (!strcmp(operation, "client-alt-space")) {
+                struct PuDesktopView *client = find("SystemMenu.client.body");
+                CHECK(client);
+                pu_desktop_focus_mapped(&desktop, client->workspace_window);
+                for (int i = 0; i < 1200 && !pu_decoration_layout_settled(client); i++) CHECK(pump());
+                CHECK(pu_decoration_layout_settled(client));
+                system_alt_space(false);
             } else if (!strcmp(operation, "placed")) {
                 CHECK(wait_presented_frame(views[0]) && views[0]->mode == PU_DESKTOP_TILED_LEFT);
             } else if (!strcmp(operation, "cascade-check")) {
@@ -3480,7 +3516,7 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 CHECK(views[0]->mode == PU_DESKTOP_FLOATING && cascade_steps(views));
             } else if (!strcmp(operation, "short")) {
                 struct wlr_output_state state;
-                wlr_output_state_init(&state); wlr_output_state_set_custom_mode(peer, 640, 241, 60000);
+                wlr_output_state_init(&state); wlr_output_state_set_custom_mode(&state, 640, 241, 60000);
                 CHECK(wlr_output_commit_state(peer, &state)); wlr_output_state_finish(&state);
                 wlr_output_layout_add(desktop.layout, peer, -640, -241);
             } else if (!strcmp(operation, "cross")) {
