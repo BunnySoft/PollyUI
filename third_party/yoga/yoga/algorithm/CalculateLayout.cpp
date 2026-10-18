@@ -22,6 +22,7 @@
 #include <yoga/algorithm/FlexDirection.h>
 #include <yoga/algorithm/FlexLine.h>
 #include <yoga/algorithm/PixelGrid.h>
+#include <yoga/algorithm/PixelGridBackend.h>
 #include <yoga/algorithm/SizingMode.h>
 #include <yoga/algorithm/TrailingPosition.h>
 #include <yoga/debug/AssertFatal.h>
@@ -2352,7 +2353,10 @@ void calculateLayout(
   Event::publish<Event::LayoutPassStart>(node);
   LayoutData markerData = {};
   // Cached descendants must remain solver inputs, not rounded paint outputs.
-  restoreUnroundedLayout(node);
+  const bool coherent = YGPixelGridUsesCoherentBackend();
+  if (coherent) {
+    restoreUnroundedLayout(node);
+  }
 
   // Increment the generation count. This will force the recursive routine to
   // visit all dirty nodes at least once. Subsequent visits will be skipped if
@@ -2429,8 +2433,13 @@ void calculateLayout(
           0, // tree root
           gCurrentGenerationCount.load(std::memory_order_relaxed))) {
     node->setPosition(node->getLayout().direction(), ownerWidth, ownerHeight);
+    if (!coherent) {
+      roundLayoutResultsToPixelGrid(node, 0.0f, 0.0f);
+    }
   }
-  roundLayoutResultsToPixelGrid(node, 0.0f, 0.0f);
+  if (coherent) {
+    roundLayoutResultsToPixelGrid(node, 0.0f, 0.0f);
+  }
 
   Event::publish<Event::LayoutPassEnd>(node, {&markerData});
 }

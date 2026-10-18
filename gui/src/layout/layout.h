@@ -9,6 +9,7 @@
 
 #include "model/node.h"
 
+int pu_layout_initialize(void);
 void pu_layout_calculate(PuNode *root, float width, float height);
 
 /* Incremental layout: the DOM mutators call pu_layout_mark_dirty() whenever a

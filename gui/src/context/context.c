@@ -1454,7 +1454,7 @@ int pu_gui_test(const PuGuiConfig *config)
         fprintf(stderr, "[gui] A test script is required\n");
         return 2;
     }
-    if (!pu_font_system_init()) return 1;
+    if (!pu_layout_initialize() || !pu_font_system_init()) return 1;
     PuScript *s = pu_script_create();
     if (!s) return 1;
     PuBridge *b = pu_bridge_install(pu_script_jsctx(s));
@@ -1527,7 +1527,7 @@ int pu_gui_service(const PuGuiConfig *config)
         fprintf(stderr, "[gui] Windowless services require a script and an event-driven host\n");
         return 2;
     }
-    if (!pu_font_system_init()) return 1;
+    if (!pu_layout_initialize() || !pu_font_system_init()) return 1;
     PuScript *script = pu_script_create();
     if (!script) return 1;
     PuBridge *bridge = pu_bridge_install(pu_script_jsctx(script));
@@ -1568,7 +1568,7 @@ int pu_gui_run(const PuGuiConfig *config)
         fprintf(stderr, "[gui] An application script is required\n");
         return 2;
     }
-    if (!pu_font_system_init()) return 1;
+    if (!pu_layout_initialize() || !pu_font_system_init()) return 1;
     PuScript *s = pu_script_create();
     if (!s) return 1;
     PuBridge *bridge = pu_bridge_install(pu_script_jsctx(s));

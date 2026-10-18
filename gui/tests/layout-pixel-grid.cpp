@@ -1,6 +1,8 @@
 #include <yoga/Yoga.h>
+#include <yoga/algorithm/PixelGridBackend.h>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 struct Box {
     float left, top, width, height;
@@ -188,8 +190,51 @@ static bool check(const float scales[4], bool textParent, float shift, Box resul
     return passed;
 }
 
-int main()
+static bool legacy()
 {
+    YGNodeRef root = YGNodeNew(), parent = YGNodeNew(), bottom = YGNodeNew();
+    YGNodeStyleSetWidth(root, 640);
+    YGNodeStyleSetHeight(root, 480);
+    YGNodeStyleSetPositionType(parent, YGPositionTypeAbsolute);
+    YGNodeStyleSetPosition(parent, YGEdgeLeft, 64);
+    YGNodeStyleSetPosition(parent, YGEdgeTop, 86.4f);
+    YGNodeStyleSetWidth(parent, 512);
+    YGNodeStyleSetHeight(parent, 374.4f);
+    YGNodeInsertChild(root, parent, 0);
+    YGNodeStyleSetPositionType(bottom, YGPositionTypeAbsolute);
+    YGNodeStyleSetPosition(bottom, YGEdgeBottom, 0);
+    YGNodeStyleSetHeight(bottom, 1);
+    YGNodeStyleSetWidth(bottom, 8);
+    YGNodeInsertChild(parent, bottom, 0);
+    YGNodeCalculateLayout(root, 640, 480, YGDirectionLTR);
+    bool unchanged = YGNodeLayoutGetTop(parent) == 86 &&
+        YGNodeLayoutGetHeight(parent) == 375 && YGNodeLayoutGetTop(bottom) == 373;
+    YGNodeSetHasNewLayout(bottom, false);
+    YGNodeCalculateLayout(root, 640, 480, YGDirectionLTR);
+    unchanged = unchanged && !YGNodeGetHasNewLayout(bottom) &&
+        YGNodeLayoutGetTop(bottom) == 373;
+    YGNodeFreeRecursive(root);
+    if (!unchanged) {
+        std::fputs("FAIL: legacy backend changed the original fractional edge result\n", stderr);
+        return false;
+    }
+    std::puts("PASS: legacy backend retains original parent86+375 and child bottom459, including known one-pixel gap");
+    return true;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc > 2 || (argc == 2 && std::strcmp(argv[1], "--coherent") &&
+        std::strcmp(argv[1], "--legacy"))) return 2;
+    bool coherent = argc == 2 && !std::strcmp(argv[1], "--coherent");
+    if (!YGPixelGridInitializeCoherentBackend(coherent) ||
+        !YGPixelGridInitializeCoherentBackend(coherent) ||
+        YGPixelGridInitializeCoherentBackend(!coherent) ||
+        YGPixelGridUsesCoherentBackend() != coherent) {
+        std::fputs("FAIL: layout backend selection is not immutable\n", stderr);
+        return 1;
+    }
+    if (!coherent) return legacy() ? 0 : 1;
     const float cases[][4] = {{0, 0, 0, 0}, {1, 1, 1, 1}, {1.25f, 1.25f, 1.25f, 1.25f},
         {1, 0, 1.25f, 1}, {1.25f, 1, 0, 1.25f}, {0, 1.25f, 1, 0}};
     Box result[4];
