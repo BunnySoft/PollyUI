@@ -5691,6 +5691,13 @@
       "e22-remaining-10",
       "e22-remaining-18"
     ],
-    "orderingNote": "Reference inputs are collected in parallel; an unresolved external gate does not forbid independently provable functional work in implementationReady. Cross-theme final fidelity remains R18; per-theme resources need not wait for all other themes."
+    "orderingNote": "Reference inputs are collected in parallel; an unresolved external gate does not forbid independently provable functional work in implementationReady. Cross-theme final fidelity remains R18; per-theme resources need not wait for all other themes.",
+    "inspectionCheckpoint": {
+      "status": "pending",
+      "label": "当前已交GUI集中手测ISO",
+      "trigger": "本轮任务文档同步与已交功能冻结后生成一次候选，不等待所有E22原图资料齐全。",
+      "scope": "使用当前正常源码和已采用的SDK C6/ABI4/pin01a，记录实际运行时与媒体生产源码、ISO SHA256和已知未完成项；保默认solid，不纳入未通过的FIR性能候选。",
+      "boundary": "只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。"
+    }
   }
 }

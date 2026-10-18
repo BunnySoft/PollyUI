@@ -193,6 +193,114 @@ def quote(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def e22_markdown(plan, history):
+    by_id = rollup(plan["nodes"])
+    current = plan["e22Reorganization"]
+    completed = [by_id[key] for key in current["completedRecords"]]
+    remaining = [by_id[key] for key in current["remaining"]]
+    names = {"done": "已完成", "pending": "可推进", "in_progress": "进行中", "blocked": "阻塞"}
+
+    def code(key):
+        return by_id[key]["label"].split(" ", 1)[0].removeprefix("E22.")
+
+    def cell(value):
+        return value.replace("|", "\\|").replace("\n", " ")
+
+    def prerequisites(node):
+        return "、".join(code(key) for key in node["requires"]) or "—"
+
+    ready = [node for node in remaining if node["status"] == "pending" and all(
+        by_id[key]["status"] == "done" for key in node["requires"])]
+    text = [
+        "# E22 当前任务、状态与完成顺序",
+        "",
+        "> 本文由 `desktop/tools/polly-plan.py --write` 从 "
+        "[POLLYOS-PLAN.json](POLLYOS-PLAN.json) 生成，不单独手工维护状态。",
+        "> 原始 35 项的完整范围、状态、证据与新旧映射保存在 "
+        "[历史记录](POLLYOS-E22-HISTORY.json)。重整不是把原部分完成项改成全部通过。",
+        "",
+        "## 当前状态",
+        "",
+        f"- 已交限定能力记录：**{len(completed)} 条**。",
+        f"- 剩余任务：**{len(remaining)} 条**；其中可独立推进 **{len(ready)} 条**，"
+        f"阻塞 **{sum(node['status'] == 'blocked' for node in remaining)} 条**。",
+        "- “可推进”不表示已经开工；“已完成”只覆盖下表限定范围，不代表整个 E22、原 OS 像素或实时性能已完成。",
+        "- 参考输入、实现缺口、消费者收尾和最终原生验收分开，不再用长期 `in_progress` 混合表达。",
+        "",
+        "## 已交能力",
+        "",
+        "| 编号 | 能力 | 状态 | 已完成边界 |",
+        "| --- | --- | --- | --- |",
+    ]
+    for node in completed:
+        identifier, title = node["label"].split(" ", 1)
+        text.append(f"| {identifier} | {title} | {names[node['status']]} | {cell(node['scope'])} |")
+    text.extend([
+        "",
+        "## 剩余任务、依赖与关闭条件",
+        "",
+        "前置列是现行台账中的实际 `requires` 边；没有满足的外部输入或决策不能靠继续写代码改成通过。"
+        "每项的范围列同时写明关闭条件；共有底座已经交付的，不再重复开发。",
+        "",
+        "| 编号 | 剩余任务 | 状态 | 前置 | 范围与关闭条件 |",
+        "| --- | --- | --- | --- | --- |",
+    ])
+    for node in remaining:
+        identifier, title = node["label"].split(" ", 1)
+        text.append(f"| {identifier} | {title} | {names[node['status']]} | "
+                    f"{prerequisites(node)} | {cell(node['scope'])} |")
+    text.extend([
+        "",
+        "## 执行与收口顺序",
+        "",
+        "**可以先独立推进：** " + " → ".join(
+            f"{code(node['id'])} {node['label'].split(' ', 1)[1]}" for node in ready) + "。",
+        "",
+        "R01 的参考资料并行收集；缺资料不禁止先修可独立证明的功能缺口。"
+        "依赖满足后的优先收口顺序为：",
+        "",
+        " → ".join(code(key) for key in current["preferredOrder"]) + "。",
+        "",
+        "- 共享控件消费者先收口，再处理对应主题；已交机制只复用，不重做。",
+        "- Tiger 透明不依赖 Win11 大区域 FIR 性能；Lion 真实反射不能用透视色带代替。",
+        "- R11 是明确的性能与采用决策门槛，未放行不默认启用 R10 的实时材质。",
+        "- R18 是最终原生／原图差异验收，不能由软件预览、旧 ISO 或历史局部通过替代。",
+        "- 显示桌面、完整 Snap、窗口 Chrome 进程拆分及新账号后端不临时塞成本清单前置；当前新增扩展保持暂停。",
+        "",
+    ])
+    checkpoint = current.get("inspectionCheckpoint")
+    if checkpoint:
+        checkpoint_status = "待生成" if checkpoint["status"] == "pending" else names[checkpoint["status"]]
+        text.extend([
+            "## 集中手测 ISO",
+            "",
+            f"**{checkpoint['label']}：{checkpoint_status}。**",
+            "",
+            checkpoint["trigger"], "",
+            checkpoint["scope"], "",
+            checkpoint["boundary"], "",
+        ])
+    text.extend([
+        "## 原 35 项去向", "",
+        "旧编号仅作历史定位，不再同时维护另一套活动状态。"
+        "一个旧编号可映射到已交能力和仍未完成的工作，不能只取其中已完成部分就宣布原要求全部通过。",
+        "",
+        "| 原编号 | 原任务 | 现行去向 |",
+        "| --- | --- | --- |",
+    ])
+    for item in history["mapping"]:
+        identifier, title = item["oldLabel"].split(" ", 1)
+        text.append(f"| {identifier} | {title} | " +
+                    "、".join(code(key) for key in item["currentIds"]) + " |")
+    text.extend([
+        "",
+        "完整原始证据、历史状态与补充记录仍在历史 JSON 和执行台账中保留。"
+        "暂停的非阻塞 fractional/vendor 修复没有因此重新授权，失败 FIRST 日志没有重标为通过。",
+        "",
+    ])
+    return "\n".join(text)
+
+
 def card_description(node, by_id):
     return ("归属：" + (by_id[node["parent"]]["label"] if node.get("parent") else "独立交付/授权") +
             "\n优先级：" + node["priority"] + "；模式：" + "/".join(node["modes"]) +
@@ -318,8 +426,15 @@ def main():
     marker = "## 16."
     offset = before.index(marker)
     after = before[:offset] + markdown(plan)
+    e22_path = args.repo / "docs/POLLYOS-E22-STATUS.md"
+    e22_after = None
+    if plan.get("e22Reorganization"):
+        history = json.loads((args.repo / plan["e22Reorganization"]["history"]).read_text(encoding="utf8"))
+        e22_after = e22_markdown(plan, history)
     if args.write:
         ledger.write_text(after, encoding="utf8", newline="\n")
+        if e22_after is not None:
+            e22_path.write_text(e22_after, encoding="utf8", newline="\n")
         computed = rollup(plan["nodes"])
         for node in plan["nodes"]:
             node["status"] = computed[node["id"]]["status"]
@@ -327,6 +442,9 @@ def main():
             json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf8", newline="\n")
     elif before != after:
         raise ValueError("Execution ledger is stale; run --write")
+    elif e22_after is not None and (not e22_path.exists() or
+            e22_path.read_text(encoding="utf8") != e22_after):
+        raise ValueError("E22 status document is stale; run --write")
     if args.sql:
         args.sql.write_text(sql(plan), encoding="utf8", newline="\n")
     if args.database:
