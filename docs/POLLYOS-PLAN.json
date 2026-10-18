@@ -1194,7 +1194,7 @@
       "label": "Bug：小数布局边线偏移（非阻塞）",
       "kind": "subtask",
       "parent": "system-optimizations",
-      "scope": "独立处理泛型布局的fractional/autoheight边界：absolute底/右边线与父声明bounds相差1px或被clip。低频、不影响当前常用UI主流程；修复耗时不阻塞其它E22交付，不靠App补像素、改reportedbbox或禁cache掩盖。",
+      "scope": "以统一内部接口交付可选的泛型fractional/autoheight边缘修正后端：absolute底/右边线与父声明bounds相差1px或被clip。默认保留legacy行为，启动时显式选择coherent方案，38b坐标修正与a0原始布局/cache边界必须成套，不支持两个独立开关或热切换。不把新后端称为已测更快，不靠App补像素、改reportedbbox或禁cache掩盖；不阻塞其它E22交付。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1203,7 +1203,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留。2026-10-18用户明确要求盘点并合并有价值探索，恢复该成套修复的当前主线审查与资格，不单收38b。当前GUI实际relayout新建/计算/释放Yoga树，idle由既有version/viewport门禁跳过；库的deep-cache修复不冒当前GUI高频缓存故障。须保paint/clip、fresh/cache、旧整数/text/scale0语义并如实说明恢复遍历及ancestor-walk成本，不升级Yoga或在App补像素；不成为其余E22任务的新前置。"
+      "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留。2026-10-18用户明确恢复有价值探索的主线集成，并要求实现可选择：正在收口default legacy/explicit coherent成套开关；关闭仍有原1px限制，开启不冒性能提升。当前GUI实际relayout新建/计算/释放Yoga树，idle由既有version/viewport门禁跳过；库的deep-cache修复不冒当前GUI高频缓存故障。须保paint/clip、fresh/cache、旧整数/text/scale0语义并如实说明恢复遍历及ancestor-walk成本，不升级Yoga或在App补像素；不成为其余E22任务的新前置。"
     },
     {
       "id": "bug-live-listener-redispatch",
