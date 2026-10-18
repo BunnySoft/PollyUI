@@ -63,13 +63,29 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 ## 集中手测 ISO
 
-**当前已交GUI集中手测ISO：待生成。**
+**当前已交GUI集中手测ISO：已完成。**
 
 本轮任务文档同步与已交功能冻结后生成一次候选，不等待所有E22原图资料齐全。
 
 使用当前正常源码和已采用的SDK C6/ABI4/pin01a，记录实际运行时与媒体生产源码、ISO SHA256和已知未完成项；保默认solid，不纳入未通过的FIR性能候选。
 
 只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。
+
+| 交付字段 | 实际值 |
+| --- | --- |
+| 稳定 ISO 路径 | `D:\temp\PollyOS\PollyOS.iso` |
+| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-ddd0a5e-ddd0a5e-c6ff921eb996\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
+| 大小 | 711297024 bytes |
+| SHA256 | `c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1` |
+| 运行时源码 | `ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1` |
+| 媒体生产源码 | `ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1` |
+| 镜像内容核验 | 328 条实际 runtime/overlay 路径 |
+
+唯一一次OVMF UEFI/KVM、4GiB/2vCPU、只读ISO、无guestdisk/NIC的原fixture FIRST通过；普通PAM/真实DRM桌面/工作区切换/原生中文提交与剪贴板通过。
+
+**未覆盖：** 完整新架构Apps/default splash/Hyper-V/物理设备未验；无安装器/持久guestdisk。标准Start仍默认solid、held FIR候选不入；不是全部E22或实时性能完成。
+
+稳定路径与版本文件为同一inode的硬链接；已打开的VM光盘句柄可能仍指向旧inode，需用户自行重新选择介质，未操作任何existingVM。
 
 ## 原 35 项去向
 

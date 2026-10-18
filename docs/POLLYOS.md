@@ -4,10 +4,15 @@
 > `b68faa6566043c791b36f8b244323b08378156aa`。本文用于技术介绍、设计约束说明和开发交接；
 > 后续文档提交不改变已经生成的镜像及其源码版本。
 
-**2026-10-15 当前状态补充：** 功能组合 `6298ff3` 已推送；最新 memory-only
-Live 为 `b7e7a700`（与主线同 tree），固定入口 `D:\temp\PollyOS\PollyOS.iso`。
-安装版 VHDX、历史实机结果和本文原批次证据不重标。最新介质与剩余任务见
-[当前交接](POLLYOS-HANDOFF.md)和[唯一计划数据](POLLYOS-PLAN.json)。
+**2026-10-18 当前状态补充：** 最新 memory-only Live 为 clean `ddd0a5e` 的
+`0.1.0-alpha.8` 集中手测 ISO，固定入口 `D:\temp\PollyOS\PollyOS.iso`，
+711,297,024 字节，SHA256
+`c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1`。
+实际镜像内容与唯一一次 OVMF/KVM 基础启动通过，不替代完整 Apps、默认 splash、
+Hyper-V 或物理资格。安装版 VHDX、历史实机结果和原批次证据不重标。
+最新介质、已知限制及重整后的 E22 任务见
+[当前交接](POLLYOS-HANDOFF.md)、[状态列表](POLLYOS-E22-STATUS.md)和
+[唯一计划数据](POLLYOS-PLAN.json)。
 
 本轮新增 **D1 持久安装虚拟盘候选**：用户确认 GPT/EFI、ext4 A/B 系统槽和独立
 `/home` 布局，已实现镜像构建及 A/A/B/A 四次冷启动的数据连续性。

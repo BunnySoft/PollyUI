@@ -1,17 +1,22 @@
 # PollyOS 首个 Alpha 路线
 
-更新时间：2026-10-15。唯一任务源为 [POLLYOS-PLAN.json](POLLYOS-PLAN.json)；
+更新时间：2026-10-18。唯一任务源为 [POLLYOS-PLAN.json](POLLYOS-PLAN.json)；
 本页解释版本范围，不另维护一套完成状态。执行清单从该 JSON 生成。
 
-**最新交付：** 主线功能组合 `6298ff3` 已推送；Live 固定入口为
-`D:\temp\PollyOS\PollyOS.iso`，actual clean `b7e7a700` 与该主线同 tree。
-711,092,224 字节，SHA256
-`54c4cde209fe98cb92aa9cb7e07872530693109b57b96267ce819364289e046c`。
-镜像包含六页独立 Settings、当前主题/指针、GUI 窗饰及菜单定位/输入修正；
-实际构建/内容/打包首帧通过不替代完整新介质启动验收。
+**最新交付：** 当前集中手测 Live ISO 已发布到
+`D:\temp\PollyOS\PollyOS.iso`，实际 runtime/overlay/media producer 均为
+clean `ddd0a5e9d72c5c5ed8bb1f148012f9ee3e62ace1`，版本 `0.1.0-alpha.8`。
+711,297,024 字节，SHA256
+`c6ff921eb9962c73936ff8742769546aeed30600413cd231d25d14bb868aafd1`。
+实际 ISO 的 328 条 runtime/overlay 路径及完整交付包校验通过；
+唯一一次 OVMF UEFI/KVM 基础启动通过，覆盖普通用户 PAM、DRM 桌面、工作区切换、
+原生中文与剪贴板。完整新架构 Apps、默认 splash、Hyper-V 和物理设备资格未完成。
+镜像包含已交原生窗口菜单、半屏/拖动恢复/拖边、基础 Max 悬停、层叠/平铺等当前源码，
+不包含暂停的显示桌面或未采用的 FIR 候选，标准 Start 仍默认实色。
 安装版 VHDX 仍是下述历史 `4e6b004`，未随 Live 更新，完整 Alpha 门槛仍未关闭。
-下文 2026-10-09 的“当前媒体”“未推送”和短测结果是原批次快照，
-不覆盖本段或 [最新交接](POLLYOS-HANDOFF.md)。
+下文 2026-10-09 的旧媒体、“未推送”和短测结果是原批次快照，不覆盖本段或
+[最新交接](POLLYOS-HANDOFF.md)。E22 当前任务及 ISO 记录见
+[当前状态列表](POLLYOS-E22-STATUS.md)，不是全部六主题已完成声明。
 
 ## Alpha 的范围
 
@@ -36,7 +41,7 @@ Alpha **不等于**空白磁盘安装器、受保护生产桌面、完整 XP 1:1
 | 原生打开保存 | 真实本地文件选择/读取、新建保存、已有文本文件强观察覆盖/变化重问、Keep/Cancel、焦点和关闭回收已具；不是完整编辑器或第三方 Portal |
 | 图形账户入口 | 新默认 UEFI guest 已真实双密码首设、PAM 错误密码拒绝/正确重试、普通登录及重启后再登录；旧 Hyper-V 首启历史日志未知，不回填归因或替代新介质现场测试 |
 | 注销与电源流程 | 正常注销回 greetd/可再登录，普通 App close-veto/Cancel/实际保存、标准 Reboot 与文档/偏好持久性已实测；Shutdown GUI 最终提交仍未资格通过 |
-| 当前媒体 | 固定 `4e6b004` 的全新未初始化 VHDX 与 Live ISO 已校验交付 `D:\Temp\PollyOS\` 并加 Library，属于有明确限制的测试预览，不完整 Alpha 冻结 |
+| 媒体历史与当前入口 | 历史 `4e6b004` 未初始化 VHDX 保留；当前 Live 为页首 `ddd0a5e` 集中手测 ISO，未因此完成完整 Alpha 冻结 |
 
 本地主分支的新功能组合基线为 `1dac93d`，保留 `ce73a3c` 的第四批功能、
 控制台 user-sessions 服务依赖与闲置窗口交互修复，包含注销/保存、Power 流程和标准电源授权配方。

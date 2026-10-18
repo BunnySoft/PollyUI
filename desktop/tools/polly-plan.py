@@ -280,6 +280,23 @@ def e22_markdown(plan, history):
             checkpoint["scope"], "",
             checkpoint["boundary"], "",
         ])
+        publication = checkpoint.get("publication")
+        if publication:
+            text.extend([
+                "| 交付字段 | 实际值 |",
+                "| --- | --- |",
+                f"| 稳定 ISO 路径 | `{publication['alias']}` |",
+                f"| 版本化 ISO | `{publication['iso']}` |",
+                f"| 大小 | {publication['bytes']} bytes |",
+                f"| SHA256 | `{publication['sha256']}` |",
+                f"| 运行时源码 | `{publication['runtimeSourceRevision']}` |",
+                f"| 媒体生产源码 | `{publication['mediaProducerRevision']}` |",
+                f"| 镜像内容核验 | {publication['payloadPathsVerified']} 条实际 runtime/overlay 路径 |",
+                "",
+                publication["baseline"], "",
+                "**未覆盖：** " + publication["limits"], "",
+                publication["aliasNote"], "",
+            ])
     text.extend([
         "## 原 35 项去向", "",
         "旧编号仅作历史定位，不再同时维护另一套活动状态。"
