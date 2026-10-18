@@ -7,8 +7,28 @@
 
 #include <yoga/Yoga.h>
 
+#include <atomic>
+#include <yoga/algorithm/PixelGridBackend.h>
 #include <yoga/algorithm/PixelGrid.h>
 #include <yoga/numeric/Comparison.h>
+
+namespace {
+std::atomic<int> pixelGridBackend{-1};
+}
+
+bool YGPixelGridInitializeCoherentBackend(bool coherent) {
+  int unset = -1;
+  const int selected = coherent ? 1 : 0;
+  return pixelGridBackend.compare_exchange_strong(unset, selected) ||
+      unset == selected;
+}
+
+bool YGPixelGridUsesCoherentBackend(void) {
+  if (pixelGridBackend.load() == -1) {
+    YGPixelGridInitializeCoherentBackend(false);
+  }
+  return pixelGridBackend.load() == 1;
+}
 
 namespace facebook::yoga {
 
@@ -66,6 +86,10 @@ void roundLayoutResultsToPixelGrid(
     yoga::Node* const node,
     const double absoluteLeft,
     const double absoluteTop) {
+  const bool coherent = YGPixelGridUsesCoherentBackend();
+  if (coherent) {
+    node->getLayout().saveUnroundedLayout();
+  }
   const auto pointScaleFactor = node->getConfig()->getPointScaleFactor();
 
   const double nodeLeft = node->getLayout().position(PhysicalEdge::Left);
@@ -85,12 +109,30 @@ void roundLayoutResultsToPixelGrid(
     // size as this could lead to unwanted text truncation.
     const bool textRounding = node->getNodeType() == NodeType::Text;
 
+    // Ancestors have already been rounded, possibly with a different scale or
+    // text policy. Match their actual origin instead of rounding local offsets.
+    double roundedParentLeft = 0.0;
+    double roundedParentTop = 0.0;
+    if (coherent) {
+      for (auto owner = node->getOwner(); owner != nullptr;
+           owner = owner->getOwner()) {
+        roundedParentLeft += owner->getLayout().position(PhysicalEdge::Left);
+        roundedParentTop += owner->getLayout().position(PhysicalEdge::Top);
+      }
+    }
+
     node->setLayoutPosition(
-        roundValueToPixelGrid(nodeLeft, pointScaleFactor, false, textRounding),
+        roundValueToPixelGrid(
+            coherent ? absoluteNodeLeft : nodeLeft,
+            pointScaleFactor, false, textRounding) -
+            roundedParentLeft,
         PhysicalEdge::Left);
 
     node->setLayoutPosition(
-        roundValueToPixelGrid(nodeTop, pointScaleFactor, false, textRounding),
+        roundValueToPixelGrid(
+            coherent ? absoluteNodeTop : nodeTop,
+            pointScaleFactor, false, textRounding) -
+            roundedParentTop,
         PhysicalEdge::Top);
 
     // We multiply dimension by scale factor and if the result is close to the

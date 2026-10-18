@@ -3,10 +3,31 @@
 #include "render/canvas_c.h"
 
 #include <yoga/Yoga.h>
+#include <yoga/algorithm/PixelGridBackend.h>
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+int pu_layout_initialize(void)
+{
+    static int initialized = -1;
+    if (initialized >= 0) return initialized;
+    const char *value = getenv("POLLY_EXPERIMENTAL_LAYOUT");
+    if (value && strcmp(value, "0") && strcmp(value, "1")) {
+        fprintf(stderr, "[layout] POLLY_EXPERIMENTAL_LAYOUT must be unset, 0 or 1\n");
+        initialized = 0;
+        return 0;
+    }
+    if (!YGPixelGridInitializeCoherentBackend(value && !strcmp(value, "1"))) {
+        fprintf(stderr, "[layout] Pixel-grid backend is already frozen to a different selection\n");
+        initialized = 0;
+        return 0;
+    }
+    initialized = 1;
+    return 1;
+}
 
 /* ---- style value parsing ---------------------------------------------------*/
 

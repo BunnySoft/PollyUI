@@ -1,5 +1,39 @@
 # GUI SDK selection controls
 
+`POLLY_EXPERIMENTAL_LAYOUT` selects one process-wide pixel-grid backend at native
+GUI startup: unset or `0` keeps the default **legacy** behavior; `1` enables
+**coherent** layout. Empty or other values fail startup explicitly. The selection
+is immutable, shared by all contexts and not a runtime/theme preference.
+The private Yoga integration accepts the same startup choice repeatedly but
+rejects the opposite choice; direct callers without a choice default to legacy.
+This is one bundled correctness experiment, not two independently enabled fixes.
+
+Legacy keeps Yoga's original relative-position rounding, including the known
+one-pixel absolute-bottom/right mismatch in some fractional containers. It does
+not run the new raw restore/snapshot or ancestor-origin walks. The additional
+snapshot fields still increase each Yoga layout result's structural memory;
+default legacy is not claimed to have zero memory cost.
+
+Coherent layout snaps absolute element edges to Yoga's configured pixel grid.
+Child positions are relative to the parent's actual snapped origin, including
+fractional-positioned, auto-height and percentage-constrained containers. This
+keeps absolute `bottom: 0`/`right: 0` children inside the same painted/clipped
+bounds reported by geometry APIs. The local Yoga correction retains its existing
+dimension rounding, text floor/ceil and point-scale-zero behavior; it does not
+change theme sizes, apply a physical-DPI policy or move pixels only in the API.
+Unrounded position/dimension snapshots remain solver/cache inputs and are
+restored before each Yoga calculation, then projected to rounded public results.
+Each API calculation adds an O(n) restore and reruns pixel-grid projection,
+including its O(n * depth) ancestor walks, even for a cached root. It does not
+invalidate solver caches or mark nodes dirty. PollyUI currently creates a fresh
+Yoga tree for each actual relayout and frees it after reading the results, so
+the raw-cache correction protects Yoga's reusable-tree contract rather than a
+cross-frame Yoga cache in the GUI adapter. The existing layout version/viewport
+gate still skips the calculation entirely while idle.
+No benchmark establishes either backend as faster. The experimental choice is
+available for correctness comparison and later optimization, not performance
+qualification or a physical-DPI claim.
+
 The Naive factories in `sdk/js/naive.mjs` default to the existing SDK light/dark
 palette. They do not import desktop presets. Selection is controlled: render the new `value` or
 `checked` supplied by a callback; the factory never mutates caller props, options
