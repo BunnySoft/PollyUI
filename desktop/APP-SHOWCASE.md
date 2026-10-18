@@ -40,7 +40,7 @@
 
 ## 图标设计规范
 
-- **风格**：macOS-inspired。超椭圆（squircle）底板、分层渐变、内缘微高光、柔和环境阴影、
+- **风格**：Monterey-inspired。超椭圆（squircle）底板、对角分色（split-tone）、分层渐变、内缘微高光、柔和环境阴影、
   克制的镜面光；有体积和材质感，但不像 XP 那样堆高光、纹理和粗描边。
 - **结构**：1024×1024 母版，导出 256/128/64；透明背景，主体四周留白一致。
 - **光照**：22–38px 高斯环境阴影、顶部大范围柔光、底部轻微环境遮蔽、1px 内缘；
@@ -63,7 +63,7 @@ desktop/resources/application-icons/showcase/
   music-*.png  calculator-*.png  calendar-*.png  monitor-*.png  browser-*.png
   wifi-*.png  bluetooth-*.png  volume-*.png  brightness-*.png
   battery-*.png  airplane-*.png  night-*.png  accessibility-*.png
-  showcase-sheet.png     # 一览图
+  showcase-sheet.png     # 合并一览图\n  showcase-apps.png      # 单独的 App 展示板（更大图标）\n  showcase-system.png    # 单独的系统能力展示板
   manifest.json          # 名称/状态/尺寸
 ```
 

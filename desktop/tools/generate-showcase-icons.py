@@ -95,13 +95,24 @@ def clip_to(base: Image.Image, overlay: Image.Image, mask: Image.Image, dest=(0,
     base.alpha_composite(overlay, dest)
 
 
-def tile(top: str, bottom: str, border: str | None = None):
+def tile(top: str, bottom: str, border: str | None = None, accent: str | None = None):
     base = canvas()
     mask = squircle_mask()
     drop_shadow(base, mask, (0, 24), 38, 90)
     fill = vgrad((S, S), top, bottom)
     fill.putalpha(mask)
     base.alpha_composite(fill)
+
+    if accent:
+        band = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        ImageDraw.Draw(band).polygon(
+            [(0, 0), (S, 0), (S, int(S * 0.60)), (0, int(S * 0.34))],
+            fill=rgba(accent, 108))
+        clip_to(base, band.filter(ImageFilter.GaussianBlur(30)), mask)
+        seam = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        ImageDraw.Draw(seam).line([(0, int(S * 0.34)), (S, int(S * 0.60))],
+                                  fill=(255, 255, 255, 44), width=3)
+        clip_to(base, seam.filter(ImageFilter.GaussianBlur(3)), mask)
 
     # Soft top light and bottom ambient occlusion.
     light = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -150,7 +161,7 @@ def save(icon: Image.Image, slug: str):
 
 
 def draw_files() -> Image.Image:
-    base, d = tile("#5AA7FF", "#1D56B0", "#133F82")
+    base, d = tile("#5AA7FF", "#1D56B0", "#133F82", "#BFE1FF")
     body = (250, 372, 774, 742)
     tab = (318, 300, 548, 430)
     object_shadow(base, (250, 360, 790, 760), 70, (0, 24), 30, 80)
@@ -173,7 +184,7 @@ def draw_files() -> Image.Image:
 
 
 def draw_settings() -> Image.Image:
-    base, d = tile("#DDE6F0", "#8FA2B6", "#66798E")
+    base, d = tile("#DDE6F0", "#8FA2B6", "#66798E", "#FFFFFF")
     tooth = Image.new("RGBA", (124, 170), (0, 0, 0, 0))
     tg = vgrad((124, 170), "#FDFEFF", "#A7B8CA")
     tooth.paste(tg, (0, 0), rounded_mask((124, 170), 32))
@@ -194,7 +205,7 @@ def draw_settings() -> Image.Image:
 
 
 def draw_terminal() -> Image.Image:
-    base, d = tile("#3A3A40", "#0A0A0C", "#050506")
+    base, d = tile("#3A3A40", "#0A0A0C", "#050506", "#70707A")
     glass = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     ImageDraw.Draw(glass).polygon([(150, 120), (650, 90), (420, 520), (110, 300)],
                                   fill=(255, 255, 255, 22))
@@ -210,7 +221,7 @@ def draw_terminal() -> Image.Image:
 
 
 def draw_text_editor() -> Image.Image:
-    base, d = tile("#74A7F7", "#2C5BC4", "#1C438F")
+    base, d = tile("#74A7F7", "#2C5BC4", "#1C438F", "#BFD6FF")
     object_shadow(base, (300, 270, 720, 760), 38, (0, 18), 24, 80)
     gradient_shape(base, (340, 300, 690, 750), 30, "#F4F7FC", "#CDDAEA", "#A8B8CC", 3)
     gradient_shape(base, (310, 260, 712, 748), 34, "#FFFFFF", "#E7EEF8", "#B6C5D8", 3)
@@ -233,7 +244,7 @@ def draw_text_editor() -> Image.Image:
 
 
 def draw_photos() -> Image.Image:
-    base, d = tile("#FFB26E", "#EA4A20", "#C33712")
+    base, d = tile("#FFB26E", "#EA4A20", "#C33712", "#FFD2B0")
     for angle, offset in ((8, (330, 280)), (-6, (300, 260))):
         card = Image.new("RGBA", (520, 520), (0, 0, 0, 0))
         ImageDraw.Draw(card).rounded_rectangle((0, 0, 510, 510), 26, fill=WHITE)
@@ -257,7 +268,7 @@ def draw_photos() -> Image.Image:
 
 
 def draw_music() -> Image.Image:
-    base, d = tile("#FF7FA2", "#C2185B", "#931044")
+    base, d = tile("#FF7FA2", "#C2185B", "#931044", "#FFC1D2")
     d.ellipse((250, 250, 774, 774), fill=(255, 255, 255, 18))
     # beam and note heads with a soft cast shadow
     shadow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -279,7 +290,7 @@ def draw_music() -> Image.Image:
 
 
 def draw_calculator() -> Image.Image:
-    base, d = tile("#56565E", "#1B1B1F", "#0E0E11")
+    base, d = tile("#56565E", "#1B1B1F", "#0E0E11", "#A0A0AA")
     object_shadow(base, (280, 232, 744, 792), 58, (0, 20), 26, 85)
     gradient_shape(base, (280, 232, 744, 792), 58, "#F9FBFD", "#BEC9D6", "#8C99A9", 4)
     gradient_shape(base, (330, 292, 694, 430), 26, "#2B3542", "#0E1721", "#081018", 3)
@@ -295,7 +306,7 @@ def draw_calculator() -> Image.Image:
 
 
 def draw_calendar() -> Image.Image:
-    base, d = tile("#FF7275", "#C62828", "#991A1A")
+    base, d = tile("#FF7275", "#C62828", "#991A1A", "#FFB8BA")
     object_shadow(base, (286, 256, 738, 780), 36, (0, 20), 26, 90)
     gradient_shape(base, (286, 256, 738, 780), 36, "#FFFFFF", "#E8EEF7", "#C3D0DF", 3)
     gradient_shape(base, (286, 256, 738, 390), 36, "#FF8B8E", "#D32F2F", "#A51E1E", 3)
@@ -312,7 +323,7 @@ def draw_calendar() -> Image.Image:
 
 
 def draw_monitor() -> Image.Image:
-    base, d = tile("#42D3C1", "#087F8C", "#055B66")
+    base, d = tile("#42D3C1", "#087F8C", "#055B66", "#A8F2E8")
     object_shadow(base, (262, 268, 762, 668), 40, (0, 20), 28, 85)
     gradient_shape(base, (262, 268, 762, 668), 40, "#46525F", "#171D25", "#0B1016", 4)
     gradient_shape(base, (306, 312, 718, 624), 24, "#123247", "#07141D", "#0A1A24", 2)
@@ -333,7 +344,7 @@ def draw_monitor() -> Image.Image:
 
 
 def draw_browser() -> Image.Image:
-    base, d = tile("#6EB7FF", "#1E5BB8", "#143F86")
+    base, d = tile("#6EB7FF", "#1E5BB8", "#143F86", "#C2E1FF")
     object_shadow(base, (232, 232, 792, 792), 280, (0, 18), 24, 80)
     globe = circle_gradient(560, "#8FD1FF", "#1C55A8")
     base.alpha_composite(globe, (232, 232))
@@ -484,45 +495,84 @@ def font(size, cjk=False, bold=False):
 
 
 def make_sheet(app_icons, feature_icons):
-    W, H = 1800, 1280
+    W, H = 1800, 1480
     sheet = Image.new("RGBA", (W, H), rgba("#F4F6F9"))
     d = ImageDraw.Draw(sheet)
-    d.text((90, 64), "PollyOS  ·  built-in app & capability showcase", font=font(46, bold=True),
+    d.text((60, 60), "PollyOS  ·  built-in app & capability showcase", font=font(48, bold=True),
            fill=rgba("#1D2834"))
-    d.text((92, 128), "精简集合 · macOS-inspired depth, original silhouettes · not a claim that every app is implemented",
+    d.text((62, 126), "精简集合 · Monterey-inspired split tiles, original silhouettes · not a claim that every app is implemented",
            font=font(22, cjk=True), fill=rgba("#5E6F80"))
-    d.line((90, 172, W - 90, 172), fill=rgba("#D5DEE7"), width=2)
+    d.line((60, 172, W - 60, 172), fill=rgba("#D5DEE7"), width=2)
     columns = 5
-    card_w, card_h = 306, 330
-    left, top = 90, 212
+    card_w, card_h = 320, 404
+    left, top = 60, 210
     for index, (slug, name, cjk, status, _) in enumerate(APPS):
         col, row = index % columns, index // columns
-        x, y = left + col * (card_w + 18), top + row * (card_h + 22)
-        d.rounded_rectangle((x, y, x + card_w, y + card_h), 26, fill=(255, 255, 255, 255),
+        x, y = left + col * (card_w + 20), top + row * (card_h + 24)
+        d.rounded_rectangle((x, y, x + card_w, y + card_h), 30, fill=(255, 255, 255, 255),
                             outline=(213, 222, 232, 255), width=2)
-        icon = app_icons[slug].resize((156, 156), Image.Resampling.LANCZOS)
-        sheet.alpha_composite(icon, (x + (card_w - 156) // 2, y + 16))
-        d.text((x + 22, y + 190), name, font=font(30, bold=True), fill=rgba("#1D2834"))
-        d.text((x + 22, y + 232), cjk, font=font(24, cjk=True), fill=rgba("#5E6F80"))
-        d.text((x + 22, y + 280), status, font=font(17, cjk=True), fill=rgba("#2A6FB5"))
-    d.text((90, 930), "System capabilities", font=font(34, bold=True), fill=rgba("#1D2834"))
-    d.text((90, 976), "Start / Search · Taskbar · Notifications · Quick settings · Snap & workspaces · Theme center · File dialogs · IME & clipboard",
-           font=font(22, cjk=True), fill=rgba("#5E6F80"))
-    fx = 90
+        icon = app_icons[slug].resize((224, 224), Image.Resampling.LANCZOS)
+        sheet.alpha_composite(icon, (x + (card_w - 224) // 2, y + 14))
+        d.text((x + 24, y + 258), name, font=font(32, bold=True), fill=rgba("#1D2834"))
+        d.text((x + 24, y + 304), cjk, font=font(25, cjk=True), fill=rgba("#5E6F80"))
+        d.text((x + 24, y + 354), status, font=font(18, cjk=True), fill=rgba("#2A6FB5"))
+    d.text((60, 1090), "System capabilities", font=font(36, bold=True), fill=rgba("#1D2834"))
+    d.text((60, 1140), "Start / Search · Taskbar · Notifications · Quick settings · Snap & workspaces · Theme center · File dialogs · IME & clipboard",
+           font=font(23, cjk=True), fill=rgba("#5E6F80"))
+    fx = 60
     for slug, name, _ in FEATURES:
-        icon = feature_icons[slug].resize((92, 92), Image.Resampling.LANCZOS)
-        sheet.alpha_composite(icon, (fx, 1030))
-        d.text((fx, 1132), name, font=font(19, bold=True), fill=rgba("#34465B"))
-        fx += 208
-    d.text((90, 1215), "Icons: original Pillow artwork, 1024px masters · 256/128/64 exports · no platform icons or fonts bundled",
-           font=font(17), fill=rgba("#7B8898"))
+        icon = feature_icons[slug].resize((112, 112), Image.Resampling.LANCZOS)
+        sheet.alpha_composite(icon, (fx, 1192))
+        d.text((fx, 1318), name, font=font(20, bold=True), fill=rgba("#34465B"))
+        fx += 210
+    d.text((60, 1400), "Icons: original Pillow artwork, 1024px masters · 256/128/64 exports · no platform icons or fonts bundled",
+           font=font(18), fill=rgba("#7B8898"))
     sheet.convert("RGB").save(OUT / "showcase-sheet.png", optimize=True)
+
+
+def make_sections(app_icons, feature_icons):
+    # Apps sheet, separated from the system-capability strip.
+    W, H = 1800, 1160
+    sheet = Image.new("RGBA", (W, H), rgba("#F4F6F9"))
+    d = ImageDraw.Draw(sheet)
+    d.text((60, 54), "PollyOS  ·  apps", font=font(48, bold=True), fill=rgba("#1D2834"))
+    d.text((62, 118), "Monterey-inspired split tiles · existing capabilities and proposed additions",
+           font=font(22, cjk=True), fill=rgba("#5E6F80"))
+    card_w, card_h = 320, 430
+    left, top = 60, 180
+    for index, (slug, name, cjk, status, _) in enumerate(APPS):
+        col, row = index % 5, index // 5
+        x, y = left + col * (card_w + 20), top + row * (card_h + 24)
+        d.rounded_rectangle((x, y, x + card_w, y + card_h), 30, fill=(255, 255, 255, 255),
+                            outline=(213, 222, 232, 255), width=2)
+        icon = app_icons[slug].resize((250, 250), Image.Resampling.LANCZOS)
+        sheet.alpha_composite(icon, (x + (card_w - 250) // 2, y + 18))
+        d.text((x + 24, y + 292), name, font=font(33, bold=True), fill=rgba("#1D2834"))
+        d.text((x + 24, y + 338), cjk, font=font(25, cjk=True), fill=rgba("#5E6F80"))
+        d.text((x + 24, y + 386), status, font=font(18, cjk=True), fill=rgba("#2A6FB5"))
+    sheet.convert("RGB").save(OUT / "showcase-apps.png", optimize=True)
+
+    # System capability sheet.
+    W, H = 1800, 540
+    sheet = Image.new("RGBA", (W, H), rgba("#F4F6F9"))
+    d = ImageDraw.Draw(sheet)
+    d.text((60, 54), "PollyOS  ·  system capabilities", font=font(44, bold=True), fill=rgba("#1D2834"))
+    d.text((62, 118), "Start / Search · Taskbar · Notifications · Quick settings · Snap & workspaces · Theme center · File dialogs · IME & clipboard",
+           font=font(21, cjk=True), fill=rgba("#5E6F80"))
+    fx = 60
+    for slug, name, _ in FEATURES:
+        icon = feature_icons[slug].resize((150, 150), Image.Resampling.LANCZOS)
+        sheet.alpha_composite(icon, (fx, 190))
+        d.text((fx, 362), name, font=font(22, bold=True), fill=rgba("#34465B"))
+        d.text((fx, 400), "system", font=font(17), fill=rgba("#7B8898"))
+        fx += 210
+    sheet.convert("RGB").save(OUT / "showcase-system.png", optimize=True)
 
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     app_icons, feature_icons = {}, {}
-    manifest = {"schemaVersion": 1, "style": "macOS-inspired depth, modern tiles",
+    manifest = {"schemaVersion": 1, "style": "Monterey-inspired split-tone, macOS depth",
                 "master": 1024, "apps": [], "features": []}
     for slug, name, cjk, status, draw in APPS:
         icon = draw()
@@ -537,6 +587,7 @@ def main():
         manifest["features"].append({"id": slug, "name": name, "sizes": [256, 128, 64],
                                      "master": f"{slug}-1024.png"})
     make_sheet(app_icons, feature_icons)
+    make_sections(app_icons, feature_icons)
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print("Wrote", OUT)
 
