@@ -2,6 +2,7 @@ import { wallpaper } from './desktop/shared/ui/wallpaper.mjs';
 export { wallpaper };
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
+import { appearanceThemes } from './desktop/shared/ui/theme-order.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents,
   lunaSymbol, lunaCaptionGlyph } from './desktop/shell/luna-primitives.mjs';
 
@@ -296,7 +297,7 @@ function appearanceView(theme, state, dispatch) {
         text('Polly Desktop / Appearance Lab', '#182636', 17, { fontWeight: 'bold' }),
         text('SIMULATED SHELL', '#596c82', 10)),
       h('view', { style: { ...row, gap: 6, flexWrap: 'wrap' } },
-        DESKTOP_THEMES.map(preset =>
+        appearanceThemes(DESKTOP_THEMES).map(preset =>
           button('appearance-theme-' + preset.id, 'Use ' + preset.name, {
             height: 28, paddingLeft: 10, paddingRight: 10, borderRadius: 5,
             borderColor: state.themeId === preset.id ? '#245edb' : '#bcc5d0',

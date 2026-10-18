@@ -9,9 +9,11 @@ const isCommandFocus = node => ['theme-focus-ring', 'luna-focus-ring'].includes(
 const labelFor = theme => (value, color, size = 12) => h('view', { style: {
   color, fontSize: themeTextSize(theme, size), ...bodyFont(theme), flexShrink: 0 } }, value);
 import { DESKTOP_THEMES } from './desktop/shared/ui/themes.mjs';
+import { appearanceThemes } from './desktop/shared/ui/theme-order.mjs';
 import { wallpaper as previewWallpaper } from './desktop/shared/ui/wallpaper.mjs';
 export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '', themes = DESKTOP_THEMES) {
   const label = labelFor(theme);
+  themes = appearanceThemes(themes);
   return h('view', { id: 'shell-settings', style: {
     width: '100%', ...(embedded ? {} : { height: '100%' }),
     padding: embedded ? theme.layout.compactPadding : theme.layout.contentPadding,

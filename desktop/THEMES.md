@@ -14,11 +14,14 @@ connection and fixed role. Native file mappings themselves have no theme policy.
 ## Data and ownership
 
 `resources/themes/builtin.json` contains **Polly / Modern** and five retained
-classic presets. Modern now targets Windows 11 24H2 light geometry, not Windows
+classic presets. Modern now targets Windows 11 25H2 light geometry, not Windows
 10. Modern is the default only for fresh or
 unavailable configuration; saved classic choices and user overrides are not
-silently rewritten. It uses a solid 48px taskbar, centered icon tasks, a 32px
-caption content band with 46x32px controls, and original Polly artwork.
+silently rewritten. The Settings appearance gallery presents Modern first while
+the catalog's declared order and default stay authoritative for persistence and
+theme-file compatibility. It uses a solid 48px taskbar, centered icon tasks, a 32px
+caption content band with 46x32px controls, and original Polly Fluent-style
+line artwork and application icons.
 No proprietary platform logos/assets are bundled. Modern explicitly selects
 `window.clientMaterial: "wallpaper"` for opt-in consumers. Packaged Settings
 uses the cached opaque base; direct app API calls and missing/`"solid"` policy

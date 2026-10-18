@@ -11,6 +11,22 @@ const row = { flexDirection: 'row', alignItems: 'center' };
 const text = (theme, value, color = theme.colors.text, extra = {}) =>
   themedText(theme, value, color, themeTextSize(theme), extra);
 
+// Original Fluent-style glyph selection for the Windows 11-like Modern start grid.
+export function applicationIcon(entry) {
+  const id = String(entry.id || '').toLowerCase();
+  const name = String(entry.name || '').toLowerCase();
+  if (id.includes('settings') || name === 'settings') return 'settings';
+  if (id.includes('files') || name === 'files' || name === 'file explorer') return 'folder';
+  if (id.includes('terminal') || name.includes('terminal')) return 'terminal';
+  if (id.includes('processes') || name.includes('task manager') || name.includes('processes')) return 'processes';
+  if (id.includes('file-text') || id.includes('notepad') || name.includes('notepad') ||
+      name.includes('text editor')) return 'text';
+  if (id.includes('photo') || name.includes('photos') || name.includes('pictures')) return 'photos';
+  if (id.includes('mail') || name.includes('mail')) return 'mail';
+  if (id.includes('calendar') || name.includes('calendar')) return 'calendar';
+  return 'apps';
+}
+
 function revealGridItem(item) {
   let innerScroll = 0;
   for (let strip = item.parentNode; strip; strip = strip.parentNode) {
@@ -79,6 +95,8 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     displayProfile.uid === null ? 'User unavailable' : 'User ' + displayProfile.uid : displayProfile.displayName : '';
   const userDetail = displayProfile ? displayProfile.error ? 'Local name unavailable' :
     displayProfile.username + ' | UID ' + displayProfile.uid : '';
+  const profileName = displayProfile && !displayProfile.error ? displayProfile.displayName : 'PollyDesktop';
+  const profileInitial = Array.from(profileName.trim())[0]?.toUpperCase() || 'P';
   const appHeight = twoColumn ? Math.max(rowHeight, (l.menuIconSize ?? 0) + 8) : rowHeight;
   const linkHeight = twoColumn ? Math.max(rowHeight, classicColumns ? 28 : l.menuIconSize ?? 0) : rowHeight;
   const filtered = entries.filter(entry =>
@@ -114,7 +132,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const search = searchInput ? searchInput({
     style: { height: grid ? 32 : 24, flexShrink: 0, minWidth: 0,
       ...(grid ? { marginTop: 24, marginLeft: 24, marginRight: 24 } : {}) },
-    placeholder: 'Search applications',
+    placeholder: modern ? 'Search for apps, settings, and documents' : 'Search applications',
     submit: () => { const first = filtered.find(entry => !entry.unavailable); if (first) launch(first.id); },
     focused: scrollGrid ? event => revealGridItem(event.currentTarget) : null,
   }) : h('view', { id: 'shell-app-search', role: 'textbox', tabIndex: 0,
@@ -122,7 +140,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       height: grid ? 32 : 24, paddingLeft: 8, paddingRight: 8, gap: 8,
       ...(grid ? { marginTop: 24, marginLeft: 24, marginRight: 24 } : {}),
       backgroundColor: c.surface, borderWidth: 1, borderColor: modern ? c.border : c.dark,
-      borderBottomWidth: modern ? 2 : 1, borderRadius: modern ? 16 : 0, position: 'relative' },
+      borderBottomWidth: 1, borderRadius: modern ? 4 : 0, position: 'relative' },
     focusStyle: { borderColor: c.accent },
     onTextinput: event => changeQuery(Array.from(query + event.data).slice(0, 128).join('')),
     onKeydown: event => {
@@ -135,11 +153,12 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     },
   }, classic ? bevel(theme, { inset: true }) : null,
   grid ? desktopIcon('search', c.muted, 16) : null,
-  text(theme, query || 'Search applications', query ? c.text : c.muted,
+  text(theme, query || (modern ? 'Search for apps, settings, and documents' : 'Search applications'),
+    query ? c.text : c.muted,
     { pointerEvents: 'none', flexShrink: 1, minWidth: 0 }));
   revealGrid(search);
   const app = entry => {
-    const icon = entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps';
+    const icon = applicationIcon(entry);
     const item = desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id), {
       icon, iconSize: grid || twoColumn ? l.menuIconSize ?? 0 : 0,
       enabled: !entry.unavailable, quiet: true, style: {
@@ -276,7 +295,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       { fontWeight: 700, fontStyle: classic ? 'italic' : 'normal' })) : null,
   grid ? search : null,
   grid ? h('view', { style: { ...row, paddingLeft: 36, paddingRight: 36, gap: 12 } },
-    text(theme, 'Applications', c.text, { fontWeight: 600 }),
+    text(theme, 'Pinned', c.text, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }),
     ...tools.map(tool => { tool.props.style.height = 28; return tool; })) : null,
   h('view', { style: { ...row, alignItems: 'stretch', flexGrow: 1, flexBasis: 0,
@@ -311,7 +330,12 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       height: 1, backgroundColor: c.dark, pointerEvents: 'none' } }) : null,
     classic ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute', top: 1, left: 0, right: 0,
       height: 1, backgroundColor: c.light, pointerEvents: 'none' } }) : null,
-    grid ? text(theme, 'PollyDesktop') : null,
+    grid ? h('view', { id: 'shell-start-profile-compact', style: { ...row, gap: 8, minWidth: 0 } },
+      h('view', { id: 'shell-start-avatar', 'aria-hidden': 'true', style: { width: 28, height: 28,
+        borderRadius: 14, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0 } }, themedText(theme, profileInitial, c.accentText, 12, { fontWeight: 600 })),
+      themedText(theme, profileName, c.text, 12, { fontWeight: 600, minWidth: 0,
+        overflow: 'hidden', flexShrink: 1 })) : null,
     menuStyle === 'legacy' ? tools : null,
     h('view', { style: { flexGrow: 1 } }),
     logout ? command('shell-app-logout', 'Log out...', logout, '', { height: 28 }) : null),

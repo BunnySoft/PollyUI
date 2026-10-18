@@ -18,39 +18,58 @@ export function desktopIcon(name, color, size = 20) {
     width: width * size / 24, height: height * size / 24, pointerEvents: 'none', ...extra,
   } });
   const ink = (node, part) => { node.props.className = 'theme-icon-ink-' + part; return node; };
-  const outline = (x, y, w, z, radius = 2) => ink(box(x, y, w, z,
-    { borderWidth: 1.5, borderColor: color, borderRadius: radius }), 'border');
+  const outline = (x, y, w, z, radius = 2.5) => ink(box(x, y, w, z,
+    { borderWidth: 1.5, borderColor: color, borderRadius: radius * size / 24 }), 'border');
   const line = (x, y, w, rotation = 0) => ink(box(x, y, w, 1.5,
-    { backgroundColor: color, rotate: rotation }), 'fill');
-  const dot = (x, y, w, z, extra = {}) => ink(box(x, y, w, z, { backgroundColor: color, ...extra }), 'fill');
+    { backgroundColor: color, rotate: rotation, borderRadius: 0.75 * size / 24 }), 'fill');
+  const dot = (x, y, w, z, extra = {}) => ink(box(x, y, w, z,
+    { backgroundColor: color, borderRadius: Math.min(w, z) * size / 48, ...extra }), 'fill');
   let art;
   if (name === 'folder' || name === 'home' || name === 'downloads' || name === 'desktop')
-    art = [outline(3, 7, 18, 13), ink(box(3, 4, 8, 4, { borderWidth: 1.5, borderColor: color, borderRadius: 2 }), 'border'),
-      name === 'downloads' ? line(9, 14, 6, 90) : null];
-  else if (name === 'file' || name === 'documents')
-    art = [outline(5, 3, 14, 18), line(8, 9, 8), line(8, 13, 8), line(8, 17, 5)];
+    art = [ink(box(3, 4, 8, 5, { borderWidth: 1.5, borderColor: color, borderRadius: 1.5 * size / 24 }), 'border'),
+      outline(3, 7, 18, 13, 3),
+      name === 'downloads' ? line(12, 10, 6, 90) : null];
+  else if (name === 'file' || name === 'documents' || name === 'text' || name === 'notepad')
+    art = [outline(5, 2, 14, 20, 2.5), line(8, 8, 8), line(8, 12, 8), line(8, 16, 5)];
+  else if (name === 'terminal')
+    art = [outline(2, 4, 20, 16, 3), line(7, 8, 5, 45), line(7, 12, 5, -45), line(12, 16, 5)];
+  else if (name === 'processes')
+    art = [outline(3, 4, 18, 16, 3), dot(7, 9, 2, 8), dot(11, 6, 2, 11), dot(15, 11, 2, 6)];
+  else if (name === 'photos')
+    art = [outline(2, 4, 20, 16, 3), dot(6, 8, 3, 3), line(3, 17, 7, -40), line(8, 17, 10, -28)];
   else if (name === 'back' || name === 'forward' || name === 'up')
     art = name === 'up' ? [line(7, 8, 7, -45), line(11, 8, 7, 45), line(7, 13, 10, 90)] :
       name === 'back' ? [line(4, 12, 16), line(4, 9, 8, -45), line(4, 15, 8, 45)] :
         [line(4, 12, 16), line(12, 9, 8, 45), line(12, 15, 8, -45)];
-  else if (name === 'search') art = [outline(4, 3, 12, 12, 7), line(14, 17, 7, 45)];
-  else if (name === 'refresh') art = [outline(4, 4, 16, 16, 8), line(14, 6, 6, 45), line(14, 3, 6)];
-  else if (name === 'appearance') art = [outline(3, 3, 18, 18, 5),
-    dot(6, 6, 6, 6, { borderRadius: 3 }), line(7, 17, 10, -35)];
-  else if (name === 'displays') art = [outline(2, 4, 20, 13), line(8, 21, 8), line(10, 19, 4, 90)];
-  else if (name === 'network') art = [outline(3, 3, 18, 18, 10), outline(7, 7, 10, 10, 5),
-    dot(10, 10, 4, 4, { borderRadius: 2 })];
-  else if (name === 'audio') art = [outline(3, 8, 5, 8), outline(8, 5, 7, 14),
+  else if (name === 'search') art = [outline(4, 3, 12, 12, 6.5), line(14, 17, 7, 45)];
+  else if (name === 'refresh') art = [outline(4, 4, 16, 16, 8), line(15, 4, 5, 55), line(15, 4, 5)];
+  else if (name === 'settings' || name === 'appearance')
+    art = [outline(4, 4, 16, 16, 8), outline(9, 9, 6, 6, 3),
+      dot(10, 1, 4, 3), dot(10, 20, 4, 3), dot(1, 10, 3, 4), dot(20, 10, 3, 4)];
+  else if (name === 'displays') art = [outline(2, 4, 20, 13, 2.5), line(8, 21, 8), line(10, 19, 4, 90)];
+  else if (name === 'network') art = [outline(3, 3, 18, 18, 9), outline(7, 7, 10, 10, 5),
+    dot(10, 10, 4, 4)];
+  else if (name === 'audio') art = [outline(3, 8, 5, 8, 2), outline(8, 5, 7, 14, 2),
     line(18, 8, 7, 65), line(18, 16, 7, -65)];
-  else if (name === 'keyboard') art = [outline(2, 5, 20, 14),
+  else if (name === 'keyboard') art = [outline(2, 5, 20, 14, 2.5),
     ...[5, 9, 13, 17].map(x => dot(x, 9, 2, 2)), line(6, 15, 12)];
-  else if (name === 'rename') art = [line(4, 12, 18, -45), line(3, 21, 8), outline(15, 3, 5, 5, 1)];
-  else if (name === 'open') art = [outline(3, 8, 13, 13), line(9, 9, 14, -45), line(15, 3, 7), line(21, 3, 7, 90)];
-  else if (name === 'apps') art = [outline(3, 3, 7, 7), outline(14, 3, 7, 7),
-    outline(3, 14, 7, 7), outline(14, 14, 7, 7)];
+  else if (name === 'rename') art = [line(4, 12, 18, -45), line(3, 21, 8), outline(15, 3, 5, 5, 1.5)];
+  else if (name === 'open') art = [outline(3, 8, 13, 13, 2.5), line(9, 9, 14, -45), line(15, 3, 7), line(21, 3, 7, 90)];
+  else if (name === 'apps') art = [outline(3, 3, 7, 7, 2), outline(14, 3, 7, 7, 2),
+    outline(3, 14, 7, 7, 2), outline(14, 14, 7, 7, 2)];
   else if (name === 'add') art = [line(4, 12, 16), line(4, 12, 16, 90)];
-  else art = [outline(3, 3, 18, 18, 10), line(9, 13, 6, 90),
-    dot(11, 6, 2, 2, { borderRadius: 1 })];
+  else if (name === 'close') art = [line(6, 6, 12, 45), line(6, 6, 12, -45)];
+  else if (name === 'minimize') art = [line(5, 12, 14)];
+  else if (name === 'maximize') art = [outline(5, 5, 14, 14, 2)];
+  else if (name === 'user') art = [outline(8, 4, 8, 8, 4), outline(4, 14, 16, 8, 4)];
+  else if (name === 'power') art = [outline(4, 4, 16, 16, 8), line(12, 3, 9, 90)];
+  else if (name === 'chevron') art = [line(8, 8, 8, 45), line(8, 16, 8, -45)];
+  else if (name === 'mail') art = [outline(2, 5, 20, 14, 2.5), line(3, 7, 9, 25), line(15, 7, 9, -25)];
+  else if (name === 'calendar') art = [outline(3, 4, 18, 17, 2.5), line(3, 8, 18),
+    dot(7, 12, 2, 2), dot(12, 12, 2, 2), dot(17, 12, 2, 2)];
+  else if (name === 'pin') art = [line(9, 9, 9, 45), line(12, 9, 8, -45), line(12, 12, 6, 90)];
+  else art = [outline(3, 3, 18, 18, 9), line(9, 13, 6, 90),
+    dot(11, 6, 2, 2)];
   return h('view', { 'aria-hidden': 'true', style: {
     width: size, height: size, flexShrink: 0, position: 'relative', pointerEvents: 'none',
   } }, art);

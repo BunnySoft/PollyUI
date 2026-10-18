@@ -2827,7 +2827,8 @@ scenario('retained callbacks from closed/replaced menus cannot close, mutate, la
   assert.equal(next.closed, false);
   assert.equal(next.document.activeElement.id, 'shell-app-search');
   assert.equal(find(next, 'shell-app-search').childNodes[1].firstChild.textContent, '');
-  assert.equal(find(next, 'shell-app-search-slot').lastChild.firstChild.textContent, 'Search applications');
+  assert.equal(find(next, 'shell-app-search-slot').lastChild.firstChild.textContent,
+    'Search for apps, settings, and documents');
   assert.equal(f.calls.some(call => call[0] === 'launch'), false);
   assert.ok(first.document.activeElement === null, 'replaced menu releases DOM focus');
   assert.equal(first.document.body.listeners.get('keydown').length, 0);

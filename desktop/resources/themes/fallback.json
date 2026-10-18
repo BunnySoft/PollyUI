@@ -2036,7 +2036,7 @@
     {
       "id": "modern",
       "name": "Polly / Modern",
-      "era": "Windows 11 light geometry with original Polly artwork; opaque surfaces",
+      "era": "Windows 11 25H2 light geometry with original Fluent-style Polly artwork; opaque surfaces",
       "desktop": {
         "from": "#162b53",
         "to": "#507dba",
@@ -2072,11 +2072,11 @@
       },
       "colors": {
         "text": "#1a1a1a",
-        "muted": "#616161",
+        "muted": "#5d5d5d",
         "surface": "#ffffff",
         "body": "#f3f3f3",
-        "border": "#d1d1d1",
-        "accent": "#0067c0",
+        "border": "#e5e5e5",
+        "accent": "#005fb8",
         "accentText": "#ffffff",
         "selection": "#e5f1fb",
         "selectionText": "#1a1a1a",
@@ -2091,7 +2091,7 @@
         "layoutPicker": true,
         "nativeEffects": "rounded",
         "radius": 8,
-        "border": "#a0a0a0",
+        "border": "#e5e5e5",
         "borderWidth": 1,
         "titleHeight": 33,
         "titleFrom": "#f3f3f3",
@@ -2104,7 +2104,7 @@
         "controlShape": "square",
         "controlRadius": 0,
         "controlFrom": "#f3f3f3",
-        "controlTo": "#d1d1d1",
+        "controlTo": "#e5e5e5",
         "closeFrom": "#c42b1c",
         "closeTo": "#a82317",
         "controlText": "#1a1a1a",
@@ -2131,9 +2131,9 @@
         "stripeOpacity": 0,
         "glyphsOnHoverOnly": false,
         "minimizeFrom": "#f3f3f3",
-        "minimizeTo": "#d1d1d1",
+        "minimizeTo": "#e5e5e5",
         "maximizeFrom": "#f3f3f3",
-        "maximizeTo": "#d1d1d1",
+        "maximizeTo": "#e5e5e5",
         "hoverColor": "#e5e5e5",
         "stripeColor": "#f3f5f8",
         "controlWidth": 46,
@@ -2247,7 +2247,9 @@
         "launcherWidth": 44,
         "menuHeaderHeight": 48,
         "menuFooterHeight": 64,
-        "menuRowHeight": 72
+        "menuRowHeight": 72,
+    "menuIconSize": 32,
+    "taskIconSize": 24
       }
     }
   ]
