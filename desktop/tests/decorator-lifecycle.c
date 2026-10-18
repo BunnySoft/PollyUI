@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "server.h"
 #include "decoration.h"
+#include "decoration-frame.h"
 #include "decorator-process.h"
 #include "workspace.h"
 #include "shortcut-control.h"
@@ -61,6 +62,42 @@ static struct PuWorkspace *picker_workspace;
 static int picker_wire_control = -1;
 static pid_t cascade_pids[2];
 static int cascade_controls[3] = {-1, -1, -1};
+static struct {
+    struct wl_protocol_logger *logger;
+    uint32_t requested, cancelled, consumed, held, enables, held_enables;
+    uint64_t generation, held_generation;
+} system_trace;
+
+static void system_protocol_log(void *data, enum wl_protocol_logger_type direction,
+    const struct wl_protocol_logger_message *message)
+{
+    (void)data;
+    const char *interface = wl_resource_get_class(message->resource);
+    const char *name = message->message->name;
+    if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_workspace_toplevel_v1")) {
+        if (!strcmp(name, "system_menu_requested")) system_trace.requested = message->arguments[0].u;
+        else if (!strcmp(name, "system_menu_cancelled")) system_trace.cancelled = message->arguments[0].u;
+    } else if (direction == WL_PROTOCOL_LOGGER_REQUEST && !strcmp(interface, "polly_workspace_toplevel_v1") &&
+        !strcmp(name, "consume_system_menu")) system_trace.consumed = message->arguments[0].u;
+    else if (direction == WL_PROTOCOL_LOGGER_REQUEST &&
+        !strcmp(interface, "polly_workspace_toplevel_manager_v1") &&
+        !strcmp(name, "enable_system_menu_requests")) system_trace.enables++;
+    else if (direction == WL_PROTOCOL_LOGGER_EVENT && !strcmp(interface, "polly_appearance_v1") &&
+        !strcmp(name, "render_request")) {
+        const struct wl_array *array = message->arguments[0].a;
+        if (array->size != PU_FRAME_META_WORDS * sizeof(uint32_t)) return;
+        uint32_t meta[PU_FRAME_META_WORDS];
+        memcpy(meta, array->data, sizeof(meta));
+        uint64_t generation = (uint64_t)meta[PU_FRAME_GENERATION_LO] | (uint64_t)meta[PU_FRAME_GENERATION_HI] << 32;
+        if (generation > system_trace.generation) system_trace.generation = generation;
+    }
+}
+
+static void system_trace_stop(void)
+{
+    if (system_trace.logger) wl_protocol_logger_destroy(system_trace.logger);
+    memset(&system_trace, 0, sizeof(system_trace));
+}
 
 static void finish_picker_grabs(void)
 {
@@ -3454,6 +3491,10 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
     struct PuDesktopView *views[3];
     CHECK(cascade_clients(wire, views));
     backdrop_guard_views(views[0], views[1], views[2]);
+    if (!old) {
+        system_trace.logger = wl_display_add_protocol_logger(desktop.display, system_protocol_log, NULL);
+        CHECK(system_trace.logger);
+    }
     app_pid = fork();
     CHECK(app_pid >= 0);
     if (!app_pid) {
@@ -3493,6 +3534,22 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                     wlr_scene_node_set_position(&views[i]->tree->node, 80 + (int)i * 200, 160);
                     CHECK(wait_presented_frame(views[i]));
                 }
+            } else if (!strcmp(operation, "retheme-before")) {
+                CHECK(system_trace.requested && system_trace.requested != system_trace.consumed &&
+                    system_trace.generation && !picker_menu());
+                system_trace.held = system_trace.requested;
+                system_trace.held_generation = system_trace.generation;
+                system_trace.held_enables = system_trace.enables;
+            } else if (!strcmp(operation, "retheme-after")) {
+                for (int i = 0; i < 1200 && system_trace.generation == system_trace.held_generation; i++) CHECK(pump());
+                CHECK(system_trace.cancelled == system_trace.held && system_trace.held &&
+                    system_trace.consumed != system_trace.held &&
+                    system_trace.enables == system_trace.held_enables &&
+                    system_trace.generation > system_trace.held_generation && !picker_menu());
+                printf("SYSTEM_MENU_RETHEME serial=%u cancelled=%u generationBefore=%llu generationAfter=%llu optinRequestsBefore=%u optinRequestsAfter=%u\n",
+                    system_trace.held, system_trace.cancelled,
+                    (unsigned long long)system_trace.held_generation, (unsigned long long)system_trace.generation,
+                    system_trace.held_enables, system_trace.enables);
             } else if (!strcmp(operation, "focus") || !strcmp(operation, "title-down") ||
                 !strcmp(operation, "title-up") || !strcmp(operation, "alt-space")) {
                 CHECK(sscanf(name, "system-%*s %d", &slot) == 1 && slot >= 0 && slot < 3);
@@ -3548,7 +3605,13 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 CHECK(client && system_focus_view(client, false));
                 uint64_t id = client->workspace_window;
                 struct wlr_surface *surface = client->toplevel->base->surface;
-                motion(client->tree->node.x + 20, client->tree->node.y + 20);
+                struct wlr_box box, inset = {0};
+                struct PuDesktopOwner *owner = NULL;
+                pu_decoration_inset(client, &inset, false);
+                CHECK(inset.x == 0 && inset.y == 0 && !pu_decoration_mode_pending(client) &&
+                    pu_desktop_surface_box(&desktop, surface, &box, &owner) && owner && owner->view == client &&
+                    box.width > 20 && box.height > 20);
+                motion(box.x + 20, box.y + 20);
                 bool ready = false;
                 for (int i = 0; i < 1200; i++) {
                     struct PuDesktopView *current = system_live_view(client, id, surface);
@@ -3556,7 +3619,14 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                     if (body_pixel(current, 0x456789)) { ready = true; break; }
                     CHECK(pump());
                 }
-                CHECK(ready && desktop.seat->pointer_state.focused_surface == surface);
+                CHECK(ready && desktop.seat->pointer_state.focused_surface == surface &&
+                    fabs(desktop.seat->pointer_state.sx - 20) < 0.01 &&
+                    fabs(desktop.seat->pointer_state.sy - 20) < 0.01);
+                printf("SYSTEM_MENU_CSD window=%llu surface=%p surfaceBox=%d,%d,%d,%d geometry=%d,%d,%d,%d pointer=%.1f,%.1f inset=%d,%d rightDown=1 rightUp=1\n",
+                    (unsigned long long)id, (void *)surface, box.x, box.y, box.width, box.height,
+                    client->toplevel->base->geometry.x, client->toplevel->base->geometry.y,
+                    client->toplevel->base->geometry.width, client->toplevel->base->geometry.height,
+                    desktop.seat->pointer_state.sx, desktop.seat->pointer_state.sy, inset.x, inset.y);
                 system_button(true); system_button(false);
                 CHECK(!desktop.suppressed_button && !picker_menu());
             } else if (!strcmp(operation, "client-check")) {
@@ -3567,6 +3637,19 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 struct PuDesktopView *client = find("SystemMenu.client.body");
                 CHECK(client && system_focus_view(client, false));
                 system_alt_space(false);
+            } else if (!strcmp(operation, "client-finish")) {
+                struct PuDesktopView *client = find("SystemMenu.client.body");
+                CHECK(client && app_pid > 0);
+                wlr_xdg_toplevel_send_close(client->toplevel);
+                bool done = false;
+                int status = 0;
+                for (int i = 0; i < 1200; i++) {
+                    pid_t result = waitpid(app_pid, &status, WNOHANG);
+                    if (result == app_pid) { app_pid = 0; done = true; break; }
+                    CHECK(result == 0 && pump());
+                }
+                CHECK(done && WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
+                    !find("SystemMenu.client.body") && !find("SystemMenu.client.ok"));
             } else if (!strcmp(operation, "placed")) {
                 CHECK(wait_presented_frame(views[0]) && views[0]->mode == PU_DESKTOP_TILED_LEFT);
             } else if (!strcmp(operation, "cascade-check")) {
@@ -3801,6 +3884,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         passed = suite(argv[1], argv[2], argv[3]);
+        system_trace_stop();
         cascade_marker_stop();
         shell_fixture_cleanup();
         if (!resume_renderer()) passed = false;

@@ -32,28 +32,46 @@ async function run() {
     const target = client.document.createElement('view');
     Object.assign(target.style, { width: '100%', height: '100%', backgroundColor: '#234567' });
     client.document.body.appendChild(target);
-    target.addEventListener('mouseenter', () => {
+    let downs = 0, ups = 0, contexts = 0;
+    const entered = () => {
       if (ups === 0) target.style.backgroundColor = '#456789';
-      console.log('SYSTEM_MENU_CLIENT_READY ' + JSON.stringify(target.getBoundingClientRect()));
-    });
-    let downs = 0, ups = 0;
-    client.document.body.addEventListener('mousedown', event => {
+      const rect = target.getBoundingClientRect();
+      check(rect.x <= 20 && rect.y <= 20 && rect.right > 20 && rect.bottom > 20,
+        'plain SDK target actual layout contains the requested local point');
+      console.log('SYSTEM_MENU_CLIENT_READY ' + JSON.stringify(rect));
+    };
+    const down = event => {
       console.log('SYSTEM_MENU_CLIENT_DOWN ' + JSON.stringify({ button: event.button,
         x: event.clientX, y: event.clientY, target: event.target === target }));
+      check(event.target === target, 'actual right down targets the plain SDK client node');
       if (event.button === 2) downs++;
-    });
-    client.document.body.addEventListener('mouseup', event => {
+    };
+    const up = event => {
       console.log('SYSTEM_MENU_CLIENT_UP ' + JSON.stringify({ button: event.button,
         x: event.clientX, y: event.clientY, target: event.target === target }));
+      check(event.target === target, 'actual right up targets the same SDK client node');
       if (event.button !== 2) return;
       ups++;
-      target.style.backgroundColor = downs === 1 && ups === 1 ? '#33cc66' : '#ff0000';
-      const witness = window.create({ title: downs === 1 && ups === 1 ? 'SystemMenu.client.ok' :
+    };
+    const context = event => {
+      if (event.button !== 2) return;
+      contexts++;
+      const once = downs === 1 && ups === 1 && contexts === 1;
+      target.style.backgroundColor = once ? '#33cc66' : '#ff0000';
+      console.log('SYSTEM_MENU_CLIENT_INPUT ' + JSON.stringify({ downs, ups, contexts,
+        target: event.target === target }));
+      const witness = window.create({ title: once ? 'SystemMenu.client.ok' :
         'SystemMenu.client.duplicate', width: 32, height: 32 });
       witness.setFrameless(true);
-      console.log('SYSTEM_MENU_CLIENT_INPUT ' + JSON.stringify({ downs, ups }));
-    });
-    client.onclose = () => window.quit();
+    };
+    target.addEventListener('mouseenter', entered);
+    const handlers = { mousedown: down, mouseup: up, contextmenu: context };
+    for (const [type, handler] of Object.entries(handlers)) client.document.body.addEventListener(type, handler);
+    client.onclose = () => {
+      target.removeEventListener('mouseenter', entered);
+      for (const [type, handler] of Object.entries(handlers)) client.document.body.removeEventListener(type, handler);
+      window.quit();
+    };
     window.close();
     return;
   }
@@ -107,11 +125,14 @@ async function run() {
     const observer = desktop.onSystemMenuRequested;
     const before = registrations;
     desktop.onSystemMenuRequested = () => {};
-    await signal('focus 0');
-    await signal('alt-space 0');
-    const theme = getDesktopTheme('server2003');
-    desktop.configureAppearance(theme, encodeDecorationLayout(theme));
-    desktop.onSystemMenuRequested = observer;
+    try {
+      await signal('focus 0');
+      await signal('alt-space 0');
+      await signal('retheme-before');
+      const theme = getDesktopTheme('server2003');
+      desktop.configureAppearance(theme, encodeDecorationLayout(theme));
+      await signal('retheme-after');
+    } finally { desktop.onSystemMenuRequested = observer; }
     observer();
     check(!current() && registrations === before, 'real production theme commit retires an unconsumed native request without a fake renderer document');
     check(shell.selectTheme('server2003'), 'Shell adopts the same real committed theme');
@@ -158,6 +179,7 @@ async function run() {
     await key(1);
     await until(() => clientMenu.window.closed, 'focused real SDK CSD window also supports Alt+Space without a native title');
   }
+  await signal('client-finish');
   await signal('focus 0');
   let before = registrations;
   if (mode === 'old') {
