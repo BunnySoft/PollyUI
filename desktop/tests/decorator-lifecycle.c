@@ -3104,8 +3104,16 @@ static void system_button(bool down)
 static bool system_focus(struct PuDesktopView *view)
 {
     CHECK(view && view->mapped && view->workspace_window);
+    uint64_t id = view->workspace_window;
+    struct wlr_surface *surface = view->toplevel->base->surface;
     for (int i = 0; i < 1200 && (picker_menu() || desktop.focused_layer); i++) CHECK(pump());
     CHECK(!picker_menu() && !desktop.focused_layer);
+    struct PuDesktopView *candidate, *current = NULL;
+    wl_list_for_each(candidate, &desktop.views, link)
+        if (candidate == view && candidate->workspace_window == id &&
+            candidate->toplevel->base->surface == surface) { current = candidate; break; }
+    CHECK(current);
+    view = current;
     pu_desktop_focus_mapped(&desktop, view->workspace_window);
     motion(view->tree->node.x + 20, view->tree->node.y + 20);
     CHECK(wait_presented_frame(view) && desktop.focused == view && !desktop.focused_layer &&
@@ -3317,6 +3325,22 @@ static bool system_menu_protocol(const char *wire)
     inset = (struct wlr_box){0};
     pu_decoration_inset(view, &inset, false);
     motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
+    struct wlr_box close_box = {0}, max_box = {0}, min_box = {0};
+    bool close_shown = pu_decoration_button_box(view, PU_DECORATION_CLOSE, &close_box);
+    bool max_shown = pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, &max_box);
+    bool min_shown = pu_decoration_button_box(view, PU_DECORATION_MINIMIZE, &min_box);
+    printf("SYSTEM_MENU_INACTIVE window=%llu surface=%p client=%dx%d presented=%d,%d,%d,%d mode=%d "
+        "shownGeometry=%d latest=%d pending=%d,%d inset=%d,%d point=40,%.1f hit=%d "
+        "close=%d:%d,%d,%d,%d max=%d:%d,%d,%d,%d min=%d:%d,%d,%d,%d\n",
+        (unsigned long long)view->workspace_window, (void *)view->toplevel->base->surface,
+        view->toplevel->base->geometry.width, view->toplevel->base->geometry.height,
+        view->tree->node.x, view->tree->node.y, view->presented_box.width, view->presented_box.height,
+        view->mode, pu_decoration_shown_geometry(view), pu_decoration_presented_current(view),
+        view->geometry_pending, view->resize_pending, inset.x, inset.y, -inset.y / 2.0,
+        pu_decoration_hit(view, 40, -inset.y / 2.0),
+        close_shown, close_box.x, close_box.y, close_box.width, close_box.height,
+        max_shown, max_box.x, max_box.y, max_box.width, max_box.height,
+        min_shown, min_box.x, min_box.y, min_box.width, min_box.height);
     CHECK(pu_decoration_hit(view, 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
     system_button(true);
     CHECK(desktop.focused == view && desktop.suppressed_button == BTN_RIGHT &&
@@ -3358,7 +3382,7 @@ static bool system_menu_protocol(const char *wire)
     uint64_t armed_window = view->workspace_window;
     CHECK(system_title(view, true) && desktop.suppressed_button == BTN_RIGHT);
     view = NULL;
-    CHECK(system_body(TEST_UNMAP) && !wire_view() && system_body(TEST_REMAP));
+    CHECK(system_body(TEST_QUERY) && system_body(TEST_UNMAP) && !wire_view() && system_body(TEST_REMAP));
     view = wire_view();
     CHECK(view && view->workspace_window > armed_window && system_body(TEST_UNCONSTRAINED));
     system_button(false);
@@ -3380,7 +3404,7 @@ static bool system_menu_protocol(const char *wire)
         else if (retirement == 1) { pu_workspace_step(&desktop, 1); }
         else if (retirement == 2) {
             view = NULL;
-            CHECK(system_body(TEST_UNMAP));
+            CHECK(system_body(TEST_QUERY) && system_body(TEST_UNMAP));
         }
         else if (retirement == 3) CHECK(command(TEST_APPEARANCE, 0, 0));
         else if (retirement == 4) {
@@ -3466,14 +3490,18 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                         desktop.suppressed_button == (old ? 0u : BTN_RIGHT));
                 } else if (!strcmp(operation, "focus")) CHECK(system_focus(view));
                 else {
-                    CHECK(system_focus(view) && cascade_body((unsigned)slot, TEST_QUERY));
+                    CHECK(system_focus(view));
+                    int saved = control;
+                    control = cascade_controls[slot];
+                    CHECK(command(TEST_QUERY, 0, 0));
                     int before = reply.keys;
                     system_alt_space(false);
-                    CHECK(cascade_body((unsigned)slot, TEST_QUERY));
+                    CHECK(command(TEST_QUERY, 0, 0));
                     if (reply.keys != before + (old ? 4 : 2))
                         fprintf(stderr, "SYSTEM_MENU_KEYS slot=%d before=%d after=%d expectedDelta=%d focusedTarget=%d layer=%p\n",
                             slot, before, reply.keys, old ? 4 : 2, desktop.focused == view, (void *)desktop.focused_layer);
                     CHECK(reply.keys == before + (old ? 4 : 2));
+                    control = saved;
                     keyboard_requests++;
                 }
             } else if (!strcmp(operation, "menu-ready")) {
