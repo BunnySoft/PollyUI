@@ -1372,22 +1372,6 @@ remain separate work. Memory-only Live sessions still lose settings at shutdown.
 
 ### Linux manual workspaces
 
-The XP, Server 2003 and Modern presets opt into native window-menu input through
-the strict optional `window.systemMenu` boolean. With a paired workspace v7
-provider, a complete right-button gesture on the compositor-rendered title
-(not its buttons or resize edges), or an otherwise unhandled exact Alt+Space
-press on the focused ordinary window, opens the existing window-actions menu.
-An explicitly configured shortcut takes precedence. Mac presets and themes
-without the flag retain the previous input behavior, as do older providers.
-
-The trusted Shell consumes one read-only target/anchor/output request and still
-registers its actual menu surface through `openWindowMenu`; this is not a new
-window-management grant. Pointer menus use the actual release-point output;
-keyboard menus use the presented window's main output. Only the Shell's own
-popup is clamped to that output. Taskbar menu placement, ordinary menu epochs,
-caption-picker restrictions, window command guards and client-content right
-clicks are unchanged.
-
 PollyWM defaults to four workspaces and one active workspace shared by all
 outputs. Creation and removal are manual: empty workspaces remain, new ones
 append without activating, and existing names/order do not change automatically.

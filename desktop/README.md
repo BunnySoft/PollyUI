@@ -711,6 +711,24 @@ Physical GPU/DRM and HDR/VRR support still require dedicated hardware qualificat
 
 ## Server-side window decorations
 
+The XP, Server 2003 and Modern presets opt into native window-menu input through
+the strict optional `window.systemMenu` boolean. With a paired workspace v7
+provider, a complete right-button gesture on the compositor-rendered title
+(not its buttons or resize edges), or an otherwise unhandled exact Alt+Space
+press on the focused application or dialog, opens the existing window-actions
+menu. An explicitly configured shortcut takes precedence. Mac presets and themes
+without the flag retain the previous input behavior, as do older providers.
+
+The trusted Shell consumes one read-only target/anchor/output request and still
+registers its actual menu surface through `openWindowMenu`; this is not a new
+window-management grant. Pointer menus use the actual release-point output;
+keyboard menus use the presented window's main output. Only the Shell's own
+popup is clamped to that output; ambiguous output projections are rejected.
+Stable shown caption geometry can trigger a notification while a focus/hover
+repaint is pending, but every existing menu/placement presentation fence remains
+unchanged. Taskbar menu positioning, ordinary menu epochs, caption-picker batch
+restrictions, modal redirection and client-content right clicks are preserved.
+
 PollyWM supports `zxdg_decoration_manager_v1` and prefers server-side decoration
 when a negotiating client has no explicit preference. Explicit client-side
 requests are honored. A client which does not implement this protocol retains

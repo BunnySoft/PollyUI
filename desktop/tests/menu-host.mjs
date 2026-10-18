@@ -822,6 +822,15 @@ scenario('system-menu consumption rechecks target workspace, state and live outp
   assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
 }, options => { systemMenuFixture(options); options.state.requestSerial = 0; });
 
+scenario('system-menu output projection rejects ambiguous mirrored geometry with a visible diagnostic', f => {
+  f.state.outputs[1] = { ...f.state.outputs[0], id: 2 };
+  f.shell.refresh(true);
+  assert.equal(requestSystemMenu(f), undefined);
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+  assert.match(f.shell.getState().error, /output projection is ambiguous/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, systemMenuFixture);
+
 test('system-menu schema is strict optional, Windows-only in byte-equivalent builtin/fallback catalogs and clamps its own popup', () => {
   const builtin = JSON.parse(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url)));
   const fallback = JSON.parse(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url)));

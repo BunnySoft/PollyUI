@@ -424,6 +424,23 @@ bool pu_decoration_layout_settled(const struct PuDesktopView *view)
     return view->mapped && !view->geometry_pending && !view->resize_pending &&
         view->toplevel->base->surface->buffer && d && !server_side(view->decoration, true);
 }
+bool pu_decoration_shown_geometry(struct PuDesktopView *view)
+{
+    const struct PuDecoration *d = view->decoration;
+    struct wlr_box geometry = view->toplevel->base->geometry;
+    if (!view->mapped || view->geometry_pending || view->resize_pending || view->drag_restore_pending ||
+        pu_decoration_mode_pending(view) || !view->toplevel->base->surface->buffer || !d ||
+        geometry.width < 1 || geometry.height < 1 ||
+        geometry.width != view->presented_box.width || geometry.height != view->presented_box.height) return false;
+    if (!d->decorated) return !server_side(view->decoration, true);
+    if (d->failed || !d->shown || !d->current || d->shown->snapshot != d->current ||
+        !d->tree->node.enabled || !d->shown->tree->node.enabled) return false;
+    const uint32_t *meta = d->shown->meta;
+    return meta[PU_FRAME_CLIENT_WIDTH] == (uint32_t)geometry.width &&
+        meta[PU_FRAME_CLIENT_HEIGHT] == (uint32_t)geometry.height &&
+        meta[PU_FRAME_SCALE] == pu_frame_scale_word((float)pu_desktop_view_scale(view)) &&
+        !!(meta[PU_FRAME_STATE] & 2) == (view->mode == PU_DESKTOP_MAXIMIZED);
+}
 void pu_decoration_update(struct PuDesktopView *view)
 {
     if (!request_frame(view)) return;

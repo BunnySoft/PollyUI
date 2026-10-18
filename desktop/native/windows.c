@@ -634,6 +634,8 @@ static void disconnect_control(void)
     control.picker_capability = false;
     control.arrangement_capability = false;
     control.system_menu_capability = control.system_menu_enabled = false;
+    control.system_menu_last_serial = control.system_menu_reply = 0;
+    control.system_menu_accepted = false;
     clear_system_menu(0);
     clear_picker(0);
     if (control.manager) {

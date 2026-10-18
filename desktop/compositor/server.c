@@ -1070,13 +1070,19 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
     return error ? error : place_view(view, tile, NULL);
 }
 
+static bool ordinary_application(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
+    return client != desktop->shell_client && !pu_decorator_allowed(desktop, client) &&
+        !pu_input_method_allowed(desktop, client) && !pu_session_lock_allowed(desktop, client);
+}
+
 static bool arrangement_application(struct PuDesktopView *view)
 {
     struct PuDesktop *desktop = view->desktop;
     struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
-    if (client == desktop->shell_client || pu_decorator_allowed(desktop, client) ||
-        pu_input_method_allowed(desktop, client) || pu_session_lock_allowed(desktop, client) ||
-        view->toplevel->parent || (view->dialog && view->dialog->modal)) return false;
+    if (!ordinary_application(view) || view->toplevel->parent || (view->dialog && view->dialog->modal)) return false;
     struct PuDesktopView *child;
     wl_list_for_each(child, &desktop->all_views, all_link)
         if (child->toplevel->parent == view->toplevel &&
@@ -1238,10 +1244,10 @@ struct wlr_output *pu_desktop_system_menu_anchor(struct PuDesktopView *view, boo
 {
     struct PuDesktop *desktop = view->desktop;
     if (placement_admit(view) || desktop->stopping || !desktop->shell_client ||
-        !arrangement_application(view) || desktop->focused != view || desktop->focused_layer ||
+        !ordinary_application(view) || desktop->focused != view || desktop->focused_layer ||
         view->fullscreen || view->mode == PU_DESKTOP_FULLSCREEN ||
         view->drag_restore_pending || pu_data_device_drag_active(desktop) ||
-        !view->tree->node.enabled || !pu_decoration_layout_settled(view) ||
+        !view->tree->node.enabled || !pu_decoration_shown_geometry(view) ||
         desktop->seat->pointer_state.button_count ||
         (desktop->suppressed_button && (!pointer || desktop->suppressed_button != BTN_RIGHT)))
         return NULL;
@@ -1936,7 +1942,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
         process_motion(desktop, event->time_msec);
         return;
     }
-    if (pressed && desktop->grab == PU_DESKTOP_PASSTHROUGH &&
+    if (pressed && desktop->suppressed_button != BTN_RIGHT && desktop->grab == PU_DESKTOP_PASSTHROUGH &&
         !wlr_seat_pointer_has_grab(desktop->seat) &&
         desktop->seat->pointer_state.button_count == 0) {
         double sx = 0, sy = 0;

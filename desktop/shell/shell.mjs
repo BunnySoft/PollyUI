@@ -70,8 +70,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
       systemMenuSerial = request.serial;
       if (!systemMenuEnabled || getDesktopTheme(themeId).window.systemMenu !== true ||
           native.systemMenuCapability() !== true) return;
-      const output = host.displays().find(output => output.x === request.outputX && output.y === request.outputY &&
+      const outputs = host.displays().filter(output => output.x === request.outputX && output.y === request.outputY &&
         output.width === request.outputWidth && output.height === request.outputHeight);
+      const named = outputs.filter(output => (output.name ?? bundles.get(output.id)?.identity?.name) === request.outputName);
+      const matches = named.length ? named : outputs;
+      if (matches.length > 1) throw new Error('Native system-menu output projection is ambiguous');
+      const output = matches[0];
       const workspace = native.workspaces().find(workspace => workspace.active);
       const target = native.windows().find(window => window.id === request.windowId &&
         window.workspaceId === workspace?.id);
@@ -1970,7 +1974,17 @@ export function createDesktopShell({ host = window, configuration, report = cons
       try { reconcile(themeId, false); }
       catch (failure) {
         compositorAppearance = null;
-        running = false; throw failure;
+        running = false;
+        if (systemMenuEnabled) {
+          try { configureSystemMenu(false); }
+          catch (cleanup) { report('[shell] Cannot retire failed system-menu startup: ' + String(cleanup)); }
+        }
+        systemMenuScope = null;
+        if (systemMenuChanged && native?.onSystemMenuRequested === systemMenuChanged)
+          native.onSystemMenuRequested = previousSystemMenuChanged;
+        systemMenuChanged = null;
+        systemMenuTheme = null; systemMenuOutputs = '';
+        throw failure;
       }
       timer = setInterval(refresh, 1000);
       if (typeof native?.backdropError === 'function') {

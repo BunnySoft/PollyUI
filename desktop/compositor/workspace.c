@@ -1079,6 +1079,10 @@ static void arrange_request(struct wl_client *client, struct wl_resource *resour
 static void consume_system_menu(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
 {
     struct Tracked *tracked = wl_resource_get_user_data(resource);
+    if (!tracked->window) {
+        wlr_log(WLR_DEBUG, "Ignoring system-menu consumption on a closed toplevel");
+        return;
+    }
     struct PuWorkspaces *state = tracked->state;
     bool current = client == state->desktop->shell_client && serial &&
         state->system_menu_target == tracked && serial == state->system_menu_serial &&
@@ -1114,7 +1118,8 @@ static void get_toplevel(struct wl_client *client, struct wl_resource *resource,
     struct Tracked *tracked = calloc(1, sizeof(*tracked));
     if (!tracked) { wl_resource_post_no_memory(resource); return; }
     tracked->resource = wl_resource_create(client, &polly_workspace_toplevel_v1_interface,
-        wl_resource_get_version(resource) >= 6 ? 6 : wl_resource_get_version(resource) >= 5 ? 5 : wl_resource_get_version(resource) >= 4 ? 4 :
+        wl_resource_get_version(resource) >= 7 ? 7 : wl_resource_get_version(resource) >= 6 ? 6 :
+        wl_resource_get_version(resource) >= 5 ? 5 : wl_resource_get_version(resource) >= 4 ? 4 :
         wl_resource_get_version(resource) >= 3 ? 3 : 1, id);
     if (!tracked->resource) { free(tracked); wl_resource_post_no_memory(resource); return; }
     tracked->state = state; tracked->binding = binding;

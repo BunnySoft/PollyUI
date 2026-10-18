@@ -27,7 +27,9 @@ enum TestCommand {
     TEST_CLIENT_SIZE, TEST_MENU_OPEN, TEST_MENU_PLACE, TEST_MENU_CLOSE, TEST_MENU_RETIRED_PLACE,
     TEST_PICKER_ENABLE, TEST_PICKER_OPEN, TEST_PICKER_DISMISS,
     TEST_MENU_CASCADE, TEST_MENU_RETIRED_CASCADE,
-    TEST_MENU_ARRANGE, TEST_MENU_RETIRED_ARRANGE
+    TEST_MENU_ARRANGE, TEST_MENU_RETIRED_ARRANGE,
+    TEST_SYSTEM_MENU_ENABLE, TEST_SYSTEM_MENU_CONSUME, TEST_SYSTEM_MENU_OWNER,
+    TEST_SYSTEM_MENU_RETIRED_CONSUME
 };
 
 struct TestLayer {
@@ -71,6 +73,9 @@ struct TestReply {
     uint32_t picker_capability, picker_token, picker_target, picker_offers, picker_dismissals;
     uint32_t arrangement_capability;
     uint32_t output_ids[8];
+    uint32_t system_menu_capability, system_menu_serial, system_menu_target, system_menu_origin;
+    uint32_t system_menu_requests, system_menu_cancellations, system_menu_reply, system_menu_accepted;
+    uint32_t system_menu_results;
 };
 
 #endif
