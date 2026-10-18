@@ -3104,9 +3104,12 @@ static void system_button(bool down)
 static bool system_focus(struct PuDesktopView *view)
 {
     CHECK(view && view->mapped && view->workspace_window);
+    for (int i = 0; i < 1200 && (picker_menu() || desktop.focused_layer); i++) CHECK(pump());
+    CHECK(!picker_menu() && !desktop.focused_layer);
     pu_desktop_focus_mapped(&desktop, view->workspace_window);
     motion(view->tree->node.x + 20, view->tree->node.y + 20);
-    CHECK(wait_presented_frame(view));
+    CHECK(wait_presented_frame(view) && desktop.focused == view && !desktop.focused_layer &&
+        desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
     return true;
 }
 
@@ -3311,6 +3314,7 @@ static bool system_menu_protocol(const char *wire)
     wlr_scene_node_set_position(&other->tree->node, 500, 160);
     CHECK(system_focus(other) && wait_presented_frame(view) && desktop.focused != view && pause_renderer());
     unsigned inactive_requests = reply.system_menu_requests;
+    inset = (struct wlr_box){0};
     pu_decoration_inset(view, &inset, false);
     motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
     CHECK(pu_decoration_hit(view, 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
@@ -3465,7 +3469,11 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                     CHECK(system_focus(view) && cascade_body((unsigned)slot, TEST_QUERY));
                     int before = reply.keys;
                     system_alt_space(false);
-                    CHECK(cascade_body((unsigned)slot, TEST_QUERY) && reply.keys == before + (old ? 4 : 2));
+                    CHECK(cascade_body((unsigned)slot, TEST_QUERY));
+                    if (reply.keys != before + (old ? 4 : 2))
+                        fprintf(stderr, "SYSTEM_MENU_KEYS slot=%d before=%d after=%d expectedDelta=%d focusedTarget=%d layer=%p\n",
+                            slot, before, reply.keys, old ? 4 : 2, desktop.focused == view, (void *)desktop.focused_layer);
+                    CHECK(reply.keys == before + (old ? 4 : 2));
                     keyboard_requests++;
                 }
             } else if (!strcmp(operation, "menu-ready")) {
