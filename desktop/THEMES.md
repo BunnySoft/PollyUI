@@ -1463,6 +1463,16 @@ On the qualified GCC14/O3 x86-64 path, baseline SSE2 accumulates four channels
 in the original tap order, then uses the original scalar rounding with explicit
 constant lane packing. Other builds retain the original scalar source; there
 are no approximations, new ISA flags, workload thresholds or larger workspace.
+The startup-only system switch `POLLY_EXPERIMENTAL_FIR=1` opts into the final
+four-phase FIR backend; unset or exactly `0` preserves that production path.
+Only exact `0`/`1` values are valid, and an unsupported explicit enablement fails
+scene startup instead of falling back. Restart the desktop session to apply a
+change; this is not a theme field, hot toggle or Settings control. Both backends
+share the native input/output, exact rounding, resource and privacy contract.
+The experiment's old performance target remains unmet, with small-case
+regressions retained; see [backend selection and limits](README.md#default-off-experimental-fir-backend).
+Enabling it neither enables Start materials nor changes the packaged solid
+defaults, generic extent or existing v7/v8/v9 permissions.
 Both paths passed 40 exact-byte cases each, including the packed intermediate,
 alpha, tint and coverage; a guard-page check verifies the four-byte pixel read.
 Nine real scenes also retained identical complete frames and filter counts.

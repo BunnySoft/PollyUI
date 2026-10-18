@@ -115,6 +115,57 @@ does not grant that protocol taller targets or Start/menu authority. This
 primitive/SDK extension does not deliver a production Start consumer, change
 theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
 
+### Default-off experimental FIR backend
+
+The published single-output SSE2 filter remains the default. To select the final
+four-phase backend for an entire desktop session, set the startup environment:
+
+```sh
+POLLY_EXPERIMENTAL_FIR=1 polly-desktop
+```
+
+Unset or `POLLY_EXPERIMENTAL_FIR=0` selects the production backend. Only the exact
+strings `0` and `1` are accepted: an empty value, `true`, whitespace or another
+value fails scene/session startup explicitly. Enabling the experiment without
+x86-64 SSE2 also fails explicitly, rather than silently falling back. The
+production backend retains the original scalar fallback on other architectures.
+Set the variable in the environment that launches the compositor, then restart
+the **desktop session**; changing a running application's environment has no
+effect. There is no hot toggle or Settings UI.
+
+Native startup logs identify `production-single-output` or
+`experimental-four-phase`; a once-per-scene `Backdrop FIR executing:` diagnostic
+confirms the actual selected filter implementation when a backdrop is prepared.
+The private typed horizontal/vertical stage interface shares the existing
+capture, normalized kernel, packed intermediate, output, cache/privacy and
+failure-cleanup transaction. Selection is fixed at scene creation, with no
+per-pixel or per-tap environment lookup and no new filter buffer or allocation.
+The internal scene bookkeeping uses the original single scene allocation;
+public scene layouts and effects ABI 4 do not change. Rebuild the strictly
+source-pinned paired SDK and compositor; an old same-ABI library is not accepted.
+
+This switch only selects the FIR implementation. It does not enable Start
+material, alter packaged solid defaults, admit larger recipients or expand
+v7/v8/v9 authority, geometry, sigma, pixel/node/128MiB budgets or public schemas.
+The already-published generic 4096x768 extent is not a new effect of this switch.
+Earlier eight-output and single-tap sliding experiments remain historical
+evidence, not selectable or supported backends.
+
+**Performance target still unmet; further optimization is required.** The one
+frozen four-phase comparison against published SSE2 observed 640x640
+prepare/moving-build medians of 59.222/58.647ms versus 112.512/114.685ms
+(1.900x/1.956x), and 640x660 medians of 59.619/59.467ms versus
+116.202/128.551ms (1.949x/2.162x). Four small-case stages regressed, including
+4096x1 moving-build by 0.0071ms; none was waived. The old goal of at least 2x in
+all four large stages with no positive regression in the other seven cases is
+an experiment-specific engineering target, not an industry standard, functional
+correctness rule or prerequisite for retaining a default-off experiment.
+The observation remains **HOLD**, not a passing performance gate. It is one
+shared-host measurement, not a statistical guarantee, pure-FIR measurement,
+16.7ms/60Hz qualification or default-adoption recommendation. The new dual-path
+SDK has its own correctness qualification and identity; the old library's
+bytes, performance measurements and unsuccessful FIRST records are not relabeled.
+
 The exact separable filter is CPU-bounded, not a real-time performance guarantee.
 When `__x86_64__` and `__SSE2__` are defined, an internal baseline-SSE2 helper
 unpacks exactly one four-byte pixel into four float channels. Each tap uses
@@ -143,10 +194,10 @@ original `lroundf` calls and constant byte shifts rather than a runtime channel
 index/packing loop; vertical lanes retain the original component mapping and
 per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
 overhead without a workload threshold or a different short-kernel algorithm.
-The four-phase change has a separate source pin and needs a rebuilt matched
-SDK/core. This candidate is limited to production-object/static qualification;
-runtime exactness, bounds and performance require new evidence, not the earlier
-implementation's results.
+The four-phase backend keeps a separate implementation behind the same private
+stage interface. Its original standalone experiment passed exact-byte math,
+guard pages, isolated scene and paired-build checks, but those results do not
+replace qualification of this new selectable SDK.
 There is no SIMD-width neighboring pixel read, approximate rounding, new
 allocated workspace, runtime CPU/policy
 channel, ISA flag, fast-math/FMA policy change or ABI change.
