@@ -3101,25 +3101,41 @@ static void system_button(bool down)
     wl_signal_emit_mutable(&pointer.events.frame, NULL);
 }
 
-static bool system_focus(struct PuDesktopView *view)
+static struct PuDesktopView *system_live_view(struct PuDesktopView *view, uint64_t id, struct wlr_surface *surface)
+{
+    struct PuDesktopView *candidate;
+    wl_list_for_each(candidate, &desktop.views, link)
+        if (candidate == view && candidate->workspace_window == id &&
+            candidate->toplevel->base->surface == surface) return candidate;
+    return NULL;
+}
+
+static bool system_focus_view(struct PuDesktopView *view, bool caption)
 {
     CHECK(view && view->mapped && view->workspace_window);
     uint64_t id = view->workspace_window;
     struct wlr_surface *surface = view->toplevel->base->surface;
     for (int i = 0; i < 1200 && (picker_menu() || desktop.focused_layer); i++) CHECK(pump());
     CHECK(!picker_menu() && !desktop.focused_layer);
-    struct PuDesktopView *candidate, *current = NULL;
-    wl_list_for_each(candidate, &desktop.views, link)
-        if (candidate == view && candidate->workspace_window == id &&
-            candidate->toplevel->base->surface == surface) { current = candidate; break; }
+    struct PuDesktopView *current = system_live_view(view, id, surface);
     CHECK(current);
     view = current;
     pu_desktop_focus_mapped(&desktop, view->workspace_window);
     motion(view->tree->node.x + 20, view->tree->node.y + 20);
-    CHECK(wait_presented_frame(view) && desktop.focused == view && !desktop.focused_layer &&
-        desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
+    if (caption) CHECK(wait_presented_frame(view));
+    else for (int i = 0; i < 1200; i++) {
+        current = system_live_view(view, id, surface);
+        CHECK(current);
+        if (pu_decoration_layout_settled(current)) break;
+        CHECK(pump());
+    }
+    current = system_live_view(view, id, surface);
+    CHECK(current && pu_decoration_layout_settled(current) && desktop.focused == current && !desktop.focused_layer &&
+        desktop.seat->keyboard_state.focused_surface == surface);
     return true;
 }
+
+static bool system_focus(struct PuDesktopView *view) { return system_focus_view(view, true); }
 
 static bool system_title(struct PuDesktopView *view, bool down)
 {
@@ -3391,7 +3407,7 @@ static bool system_menu_protocol(const char *wire)
         system_body_reply.buttons == before_buttons);
     puts("PASS: native title press crossing an actual unmap/remap generation is cancelled and its paired release remains suppressed instead of leaking to the remapped application");
 
-    for (unsigned retirement = 0; retirement < 6; retirement++) {
+    for (unsigned retirement = 0; retirement < 5; retirement++) {
         CHECK(system_focus(view));
         unsigned requests = reply.system_menu_requests;
         system_alt_space(false);
@@ -3406,8 +3422,7 @@ static bool system_menu_protocol(const char *wire)
             view = NULL;
             CHECK(system_body(TEST_QUERY) && system_body(TEST_UNMAP));
         }
-        else if (retirement == 3) CHECK(command(TEST_APPEARANCE, 0, 0));
-        else if (retirement == 4) {
+        else if (retirement == 3) {
             struct wlr_output_state state;
             wlr_output_state_init(&state); wlr_output_state_set_custom_mode(&state, 1000, 650, 60000);
             CHECK(wlr_output_commit_state(view->output, &state)); wlr_output_state_finish(&state);
@@ -3429,7 +3444,7 @@ static bool system_menu_protocol(const char *wire)
     close(control); control = picker_wire_control; picker_wire_control = -1;
     for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
     CHECK(!desktop.shell_pid);
-    puts("PASS: disabling, workspace changes, mapped-generation retirement, retheme and output geometry retire one-shot requests without granting a menu epoch");
+    puts("PASS: disabling, workspace changes, mapped-generation retirement, output geometry and output loss retire one-shot requests without granting a menu epoch");
     return true;
 }
 #endif
@@ -3530,12 +3545,18 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                 button(true); button(false);
             } else if (!strcmp(operation, "client")) {
                 struct PuDesktopView *client = find("SystemMenu.client.body");
-                CHECK(client);
-                pu_desktop_focus_mapped(&desktop, client->workspace_window);
-                for (int i = 0; i < 1200 && !pu_decoration_layout_settled(client); i++) CHECK(pump());
-                CHECK(pu_decoration_layout_settled(client));
+                CHECK(client && system_focus_view(client, false));
+                uint64_t id = client->workspace_window;
+                struct wlr_surface *surface = client->toplevel->base->surface;
                 motion(client->tree->node.x + 20, client->tree->node.y + 20);
-                CHECK(desktop.seat->pointer_state.focused_surface == client->toplevel->base->surface);
+                bool ready = false;
+                for (int i = 0; i < 1200; i++) {
+                    struct PuDesktopView *current = system_live_view(client, id, surface);
+                    CHECK(current);
+                    if (body_pixel(current, 0x456789)) { ready = true; break; }
+                    CHECK(pump());
+                }
+                CHECK(ready && desktop.seat->pointer_state.focused_surface == surface);
                 system_button(true); system_button(false);
                 CHECK(!desktop.suppressed_button && !picker_menu());
             } else if (!strcmp(operation, "client-check")) {
@@ -3544,10 +3565,7 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
                     body_pixel(client, 0x33cc66) && !picker_menu());
             } else if (!strcmp(operation, "client-alt-space")) {
                 struct PuDesktopView *client = find("SystemMenu.client.body");
-                CHECK(client);
-                pu_desktop_focus_mapped(&desktop, client->workspace_window);
-                for (int i = 0; i < 1200 && !pu_decoration_layout_settled(client); i++) CHECK(pump());
-                CHECK(pu_decoration_layout_settled(client));
+                CHECK(client && system_focus_view(client, false));
                 system_alt_space(false);
             } else if (!strcmp(operation, "placed")) {
                 CHECK(wait_presented_frame(views[0]) && views[0]->mode == PU_DESKTOP_TILED_LEFT);
@@ -3600,7 +3618,7 @@ static bool system_menu_consumer(const char *ui, const char *wire, bool old)
     }
     CHECK(!desktop.shell_pid && desktop.shell_exited && WIFEXITED(desktop.shell_status) &&
         WEXITSTATUS(desktop.shell_status) == 0 && success && title_releases == (old ? 3u : 5u) &&
-        keyboard_requests == 3 && !picker_menu());
+        keyboard_requests == (old ? 3u : 4u) && !picker_menu());
     puts(old ? "PASS: actual frozen workspace v6 provider forwards both native gestures; new GUI retains ordinary Half, Restore and Cascade" :
         "PASS: three independent clients and Windows presets open one production ordinary menu per native gesture; real SDK CSD right-click, key pairs, coupled placement and negative-origin short-head input remain correct");
     return true;

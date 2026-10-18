@@ -2,7 +2,8 @@ import { createDesktopShell } from './desktop/shell/shell.mjs';
 import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { memoryConfiguration } from './desktop/tests/configuration-memory.mjs';
 import { runtimeBuild } from './desktop/client/settings-contract.mjs';
-import { BUILTIN_THEME_CATALOG, installThemeCatalog } from './desktop/shared/ui/themes.mjs';
+import { BUILTIN_THEME_CATALOG, installThemeCatalog, getDesktopTheme } from './desktop/shared/ui/themes.mjs';
+import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 
 const [mode] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,15 +29,25 @@ async function run() {
     }
     const client = window.create({ title: 'SystemMenu.client.body', width: 220, height: 120 });
     client.setFrameless(true);
-    client.document.body.style.backgroundColor = '#234567';
+    const target = client.document.createElement('view');
+    Object.assign(target.style, { width: '100%', height: '100%', backgroundColor: '#234567' });
+    client.document.body.appendChild(target);
+    target.addEventListener('mouseenter', () => {
+      if (ups === 0) target.style.backgroundColor = '#456789';
+      console.log('SYSTEM_MENU_CLIENT_READY ' + JSON.stringify(target.getBoundingClientRect()));
+    });
     let downs = 0, ups = 0;
     client.document.body.addEventListener('mousedown', event => {
+      console.log('SYSTEM_MENU_CLIENT_DOWN ' + JSON.stringify({ button: event.button,
+        x: event.clientX, y: event.clientY, target: event.target === target }));
       if (event.button === 2) downs++;
     });
     client.document.body.addEventListener('mouseup', event => {
+      console.log('SYSTEM_MENU_CLIENT_UP ' + JSON.stringify({ button: event.button,
+        x: event.clientX, y: event.clientY, target: event.target === target }));
       if (event.button !== 2) return;
       ups++;
-      client.document.body.style.backgroundColor = downs === 1 && ups === 1 ? '#33cc66' : '#ff0000';
+      target.style.backgroundColor = downs === 1 && ups === 1 ? '#33cc66' : '#ff0000';
       const witness = window.create({ title: downs === 1 && ups === 1 ? 'SystemMenu.client.ok' :
         'SystemMenu.client.duplicate', width: 32, height: 32 });
       witness.setFrameless(true);
@@ -92,6 +103,19 @@ async function run() {
   }
   await signal('ready');
   check(desktop.systemMenuCapability() === (mode !== 'old'), 'actual paired v7 capability, not API presence');
+  if (mode !== 'old') {
+    const observer = desktop.onSystemMenuRequested;
+    const before = registrations;
+    desktop.onSystemMenuRequested = () => {};
+    await signal('focus 0');
+    await signal('alt-space 0');
+    const theme = getDesktopTheme('server2003');
+    desktop.configureAppearance(theme, encodeDecorationLayout(theme));
+    desktop.onSystemMenuRequested = observer;
+    observer();
+    check(!current() && registrations === before, 'real production theme commit retires an unconsumed native request without a fake renderer document');
+    check(shell.selectTheme('server2003'), 'Shell adopts the same real committed theme');
+  }
   for (const [slot, theme] of ['xp', 'server2003', 'modern'].entries()) {
     check(shell.selectTheme(theme), theme + ' selects normally');
     await signal('focus ' + slot);
