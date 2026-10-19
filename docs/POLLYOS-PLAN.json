@@ -1206,6 +1206,24 @@
       "evidence": "已限定交付源码结构与正式候选：85105eeb+e18e24ae正常合179f20e，smallbootstrap gzip4332358B/regular展开13120270B、116nodes/39exactkernelmodules，无完整系统或SquashFS文件在cpio内；独立RAMroot654405632B/sha0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549，设计为UUID+unique marker识别只读介质、hash后复制RAM、roloop+tmpfsupper/work、挂载迁移和switch_root，保不写内部盘。早期console/null合成节点和未有proc时错误输出、GRUB加载失败guard已修且source6/startup9/account6/legacy/实际privatePID1handoff通过；main包/发布器9、release1、startup9过。正式新编179runtime与actualISO/USB各404runtime-overlay路径/17overlays、bootstrap设备/身份/所有者、根完整字节/模式/来源和EFI/config/kernel/microcode一致性及145摘要已核，非dirtyfixture重标。新候选709148672B/sha88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89交D:\\temp\\PollyOS\\PollyOS-179f20e.iso；旧PollyOS.iso原子rename被Windows EPERM拒绝仍97，未关VM或覆旧inode。实际SquashFS loop挂载/目标boot/脱介质/HyperV画面和提速均NOTRUN或NOTMEASURED，不把约1.41GiB前置载荷缩至13.1MB的结构事实冒已测十秒消失；仅关闭可复验源码/候选范围，不冒完整启动/物理性能资格。"
     },
     {
+      "id": "live-early-graphical-boot",
+      "label": "Live 早期动画与细节切换",
+      "kind": "subtask",
+      "parent": "system-build",
+      "scope": "默认图形入口将自定义logo/循环动画提前到小bootstrap，覆盖RAM复制/校验及systemd启动，Esc在Plymouth持有同一VT/键盘期间切换真实细节并可返回、跨root保持；handoff释放DRM后Esc归WM/App，原生P图仅承接到READY，本轮不新造WM终端或字体层。详细日志始终保存，失败/超时露出诊断，不遮错或伪造百分比。保持压缩RAM根和<=64MiB bootstrap；精确提取Plymouth/插件/字体依赖、跨root不重起冲突daemon，修正Live getty有效dropin避免登录文字闪出。Verbose/console/serial原义、PAM/UID1000和实际present-ready门不变。闭合时分别记录组件/键/错误路径与真实图形观察；GRUB未运行内核时仅静态图，不冒持续动画或实际提速。",
+      "priority": "P2",
+      "modes": [
+        "live",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [
+        "live-compressed-root-boot"
+      ],
+      "evidence": "2026-10-19用户明确“增加这个”。源75d调查固定Plymouth24.004.60-5：原生update-root-fs/attach-to-session及Esc default/details可用，缺标准splash/rhgb会走details；原polly.splash=1不是该原生参数。root缺Image.Text需要的label-pango.so，应加精确plymouth-label24.004.60-5包（SHA9698da6e8893293b863afc21ef2bd9526cef0ed6ee5bcf25b008315327b1d349）及限定字体/fontconfig/ELF闭包，SIGRTMIN20/21要在privatePIDns按targetlibc验证。getty live-boot.conf早于polly.conf导致ExecStart被覆盖已源核；最终仅Live改正，不改WM/Cairo/native依赖。当前实施中，所有图形帧/Esc实测与source/IPC/mocks分开，不凭ping冒PASS。Podman可直接执行；本轮隔离QEMU画面授权未得具体答复，不操作用户HyperV或宿主显示设备，不挪用旧录像认证新动画。"
+    },
+    {
       "id": "bug-native-fractional-layout",
       "label": "已交可选小数布局后端",
       "kind": "subtask",
