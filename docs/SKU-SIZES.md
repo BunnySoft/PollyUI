@@ -5,7 +5,7 @@
 | SKU | 底座/初始化 | 图形 | 中文/应用 | 目标 ISO | 状态 |
 |---|---|---|---|---|---:|---|
 | **micro** | Alpine 3.24 + musl + BusyBox | Pixman + `drm_dumb` + `tinywl` | 无 Rime；一个 Wayland 演示应用 | 25–50 MB | **26 MB 原型已构建/已启动** |
-| **thin** | Debian 13 + BusyBox/seatd | Pixman + `drm_dumb` | WQY 字体；一个应用；无 systemd/PAM/Rime | 150–220 MB | 计划 |
+| **thin** | Debian 13 + BusyBox | Pixman + `drm_dumb` | WQY 字体；一个应用；无 systemd/PAM/Rime | 150–220 MB | **169 MB 原型已构建/已启动** |
 | **minimal-zh** | Debian 13 + systemd/PAM | Pixman + `drm_dumb` | WQY + Rime Luna + PollyUI/PollyWM | 300–400 MB | 阻塞于 native variant 与 APT lock |
 | **standard** | Debian 13 + systemd/PAM | GLES2 + Mesa | 完整应用、Noto、Rime、PollyUI | 约 577 MB | 已构建/已启动 |
 | **full** | Debian 13 + systemd/PAM | GLES2 + Mesa + 厂商固件 | 完整硬件覆盖 | 约 726 MB | 已构建/已启动 |
@@ -44,7 +44,7 @@
 
 - Debian 13 用户空间
 - 自定义精简内核（virtio/DRM/输入/存储）
-- BusyBox init + seatd
+- BusyBox init
 - Pixman-only wlroots + `drm_dumb`
 - WQY 字体、一个应用
 - 无 systemd/PAM/Rime/多应用
@@ -52,6 +52,15 @@
 **非目标**
 
 - 不能替代 `minimal-zh` 的中文输入/会话合同
+
+**实测（2026-10-20）**
+
+- ISO：**169 MB**
+- SHA-256：`6c1ff04041314f8265ef7f33177167cf152b933a613b71a7ff8e743565be84d1`
+- QEMU/KVM + `virtio-gpu-pci`：1280x800 modeset、`drm_dumb` + Pixman、可见 SHM 客户端
+- 构建入口：`desktop/release/thin/build.sh`
+- 测试入口：`desktop/release/thin/test-qemu.sh`
+- 说明：原型尚未装入 WQY 字体；不是最终中文 thin
 
 ## minimal-zh
 

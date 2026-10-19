@@ -131,3 +131,16 @@ Running Wayland compositor on WAYLAND_DISPLAY=wayland-0
 - 说明：`desktop/release/micro/README.md`
 
 该原型不含 Rime/PAM/systemd/多应用，仍使用实验性的 DMABUF guard 移除和 `LIBSEAT_BACKEND=noop`，不是生产交付件。
+
+## 8. Thin 169 MB 原型结果
+
+Debian 13 minbase + glibc + BusyBox PID 1，复用同一 Pixman wlroots：
+
+- ISO：**169 MB**
+- SHA-256：`6c1ff04041314f8265ef7f33177167cf152b933a613b71a7ff8e743565be84d1`
+- 1280x800 KMS modeset、`drm_dumb` + Pixman、可见 SHM 客户端
+- 构建入口：`desktop/release/thin/build.sh`
+- 测试入口：`desktop/release/thin/test-qemu.sh`
+- 说明：`desktop/release/thin/README.md`
+
+该原型不含 systemd/PAM/Rime/WQY，仍是 kiosk，不是最终 `thin` 或 `minimal-zh`。
