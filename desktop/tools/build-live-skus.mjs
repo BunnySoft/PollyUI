@@ -256,7 +256,8 @@ export async function buildSkus(options, backend = {}) {
         live: `localhost/polly-sku-${sku}-live:${token}` };
       const build = target => {
         const tag = target === 'platform-base' ? tags.platform : tags.live;
-        podman(['build', '--quiet', '--pull=never', '--target', target,
+        podman(['build', '--quiet', '--pull=never',
+          ...(options.resolvedPlan ? ['--network=none'] : []), '--target', target,
           '--build-context', 'basic-kernel-pack=' + (sku === 'basic' ? kernelDirectory : kernelNone),
           '--build-context', 'live-configuration=' + configDirectory,
           '--build-arg', 'RUNTIME_IMAGE=' + runtimeID, '--build-arg', 'HARDWARE_SKU=' + sku,

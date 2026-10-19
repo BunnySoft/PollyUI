@@ -25,6 +25,7 @@ try {
     phase = ref === 'fixture-runtime' ? 'inspect-runtime' : ref === 'fixture-tools' ? 'inspect-tools' :
       ref.includes('-platform:') ? 'inspect-platform' : 'inspect-live';
   } else if (args[0] === 'build') {
+    if (args.includes('--network=none')) throw new Error('Legacy assembly unexpectedly disabled signed online APT');
     sku = args.find(arg => arg.startsWith('HARDWARE_SKU='))?.slice('HARDWARE_SKU='.length);
     phase = value('--target') === 'platform-base' ? 'build-platform' : 'build-live';
   } else if (args[0] === 'export') {

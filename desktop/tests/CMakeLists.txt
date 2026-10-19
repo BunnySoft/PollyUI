@@ -42,6 +42,9 @@ add_test(NAME desktop-live-config COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
     "${CMAKE_CURRENT_SOURCE_DIR}/live-config.mjs")
 set_tests_properties(desktop-live-config PROPERTIES TIMEOUT 90)
 find_program(CURSOR_PYTHON_EXECUTABLE python3 REQUIRED)
+add_test(NAME desktop-live-config-adapter COMMAND "${CURSOR_PYTHON_EXECUTABLE}" -I -B
+    "${CMAKE_CURRENT_SOURCE_DIR}/live-config.py")
+set_tests_properties(desktop-live-config-adapter PROPERTIES TIMEOUT 30)
 add_executable(pollywm-fir-backend-test fir-backend.c)
 target_link_libraries(pollywm-fir-backend-test PRIVATE pollywm-core)
 target_compile_options(pollywm-fir-backend-test PRIVATE -Wall -Wextra -Wpedantic -Werror)

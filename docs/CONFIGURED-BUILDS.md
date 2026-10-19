@@ -190,6 +190,8 @@ stock 证据并与导出 keyring 字节相符；容器 keyring 更新后也会�
 
 之后各阶段只安装已认证的本地 archive，`--no-download --no-install-recommends
 --no-remove`；最终检查实际 dpkg 全量集合严格等于锁。
+配置路径的 platform/live `podman build` 也显式使用 `--network=none`，
+覆盖 basic 安装器及包维护脚本的网络边界；旧联网 APT 构建入口不改变网络策略。
 旧 CLI 的原有签名 APT 联网流程不改成“信任这个 JSON”；新配置路径是明确的
 离线输入接口。签名过期/源版本消失时重新准备真实解析输入，不能关校验追绿。
 
@@ -290,6 +292,15 @@ node desktop\tests\release-report.mjs
 模拟的外部构建后端和真实文件系统发布验证，**不执行 Podman/APT/native 构建**。
 缺少 Git Bash 会明确跳过 shell 用例，不冒称其覆盖。
 Linux adapter 的签名/APT/镜像路径仍需单独真实验证。
+另有纯 Python `unittest`，仅在已有 Python 的主机上运行：
+
+```sh
+python3 -I -B desktop/tests/live-config.py
+```
+
+该测试 mock 所有 gpgv/APT/dpkg 外部调用，未识别的 subprocess 调用直接失败；
+覆盖身份/hash、信任根、来源/时间、包架构/清单、阶段解算及失败路径。
+模拟 gpgv 的输出不是验证真实签名，也不执行真实 APT、容器或编译。
 
 | 错误/状态 | 排查 |
 | --- | --- |

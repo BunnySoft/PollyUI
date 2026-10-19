@@ -141,6 +141,7 @@ function fixture(t, config = legacyConfig('vm'), failure = '') {
             args.some(arg => arg.endsWith('/verify-live-runtime.py')) ? 'verify' : '';
       if (failure && failure === phase) return { status: 42, stderr: 'FIRST: injected ' + failure + ' failure' };
       if (phase === 'build') {
+        assert.ok(args.includes('--network=none'), 'Configured platform/live builds must stay offline');
         const context = args.find(arg => arg.startsWith('live-configuration=')).slice('live-configuration='.length);
         const frozenPlan = read(path.join(context, 'resolved-plan.json'));
         assert.deepEqual(frozenPlan.stages, resolvePlan(config, lock).stages);
@@ -347,6 +348,24 @@ test('preflight or build failure stops execution, preserves FIRST, and never pub
     assert.ok(!fs.existsSync(path.join(f.output, 'vm/media')));
     if (failure === 'preflight') assert.ok(!f.calls.some(args => args[0] === 'build'));
   }
+});
+test('legacy assembly keeps its existing online APT build policy', async t => {
+  const f = fixture(t);
+  const external = f.backend.spawnSync;
+  let builds = 0;
+  f.backend.spawnSync = (program, args, options) => {
+    if (args[0] === 'build') {
+      builds++;
+      assert.ok(!args.includes('--network=none'), 'Do not change legacy online APT assembly');
+      assert.ok(!args.includes('CONFIGURED_BUILD=1'));
+      return { status: 42, stderr: 'FIRST: stop legacy mock before actual media' };
+    }
+    return external(program, args, options);
+  };
+  await assert.rejects(runCLI([f.output, '--runtime-bundle', path.join(f.root, 'runtime'),
+    '--runtime-image', f.lock.runtimeImageID, '--tools-image', '2'.repeat(64), '--sku', 'vm'], f.backend), /failed/);
+  assert.equal(builds, 1);
+  assert.equal(read(path.join(f.output, 'build-run.json')).status, 'failed');
 });
 test('input tampering fails before heavy actions; configured root/lock/SBOM tampering fails publication', async t => {
   const f = fixture(t);
