@@ -68,13 +68,13 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 根据用户修正早期启动等待/反馈问题请求，以已推送179f20e源码新编独立SquashFS+小bootstrap正式候选；旧97/843/DDD与证据保留。
 
-最新候选为clean179f20e/schema2压缩RAMroot，bootstrap约4.3MB压缩/13.1MB普通文件展开，独立SquashFS654405632B，后续复制RAM再按需解压；早期真实阶段可见设计不伪造百分比。保持SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题。真实启动/脱介质/实际提速未测，不挪用旧资格；旧固定入口因Windows拒绝替换未切换，请用本次版本专用入口。
+最新候选为clean179f20e/schema2压缩RAMroot，bootstrap约4.3MB压缩/13.1MB普通文件展开，独立SquashFS654405632B，后续复制RAM再按需解压；早期真实阶段可见设计不伪造百分比。保持SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题。真实启动/脱介质/实际提速未测，不挪用旧资格；用户修复占用后固定入口已通过新一次标准发布切换，原失败及旧版本保留。
 
 只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。
 
 | 交付字段 | 实际值 |
 | --- | --- |
-| 本次 ISO 入口 | `D:\temp\PollyOS\PollyOS-179f20e.iso` |
+| 本次 ISO 入口 | `D:\temp\PollyOS\PollyOS.iso` |
 | 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
 | 大小 | 709148672 bytes |
 | SHA256 | `88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89` |
@@ -84,13 +84,12 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 | 根布局 | `squashfs-ram-overlay`；压缩根复制到 RAM：True；可写层：`tmpfs-overlay` |
 | 压缩根 | `boot/root.squashfs`；654405632 bytes；SHA256 `0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549` |
 | 小型 bootstrap | 4332358 bytes 压缩；13120270 bytes 普通文件展开量 |
-| 原固定入口（未更新） | `D:\temp\PollyOS\PollyOS.iso` 仍为 `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681`；Windows EPERM拒绝原子替换，旧97原inode与SHA保持；没有关闭用户VM或光盘句柄。 |
 
 正式双媒体结构/全部payload/来源链与容器PID1交接分别通过；UEFI/QEMU/Hyper-V/physical/真实SquashFSloop挂载/介质移除均NOT RUN，启动秒数NOT MEASURED，不冒十秒已消失。
 
 **未覆盖：** 代码已消除整根提前展开并增加真实阶段提示，但仍读取整份压缩根到RAM；实际启动/图形反馈/速度和完整Apps/splash/E22/物理资格未完成。SDK40a2/pin7b58，两实验OFF、Startsolid；旧性能HOLD不改。
 
-请选PollyOS-179f20e.iso版本专用新入口（与新版本文件同inode硬链）；PollyOS.iso仍旧97，标准publisher更新失败已披露，不关闭/卸载用户VM来强推。
+PollyOS.iso、PollyOS-179f20e.iso和新版本文件同inode硬链（links3）；用户修复占用后新一次标准发布成功，首次EPERM及旧97原文件保留，没有关闭/卸载用户VM。
 
 ## 原 35 项去向
 

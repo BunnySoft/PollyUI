@@ -5,10 +5,10 @@
 > 后续文档提交不改变已经生成的镜像及其源码版本。
 
 **2026-10-19 当前状态补充：** 最新 memory-only Live 候选为 clean `179f20e` 的
-`0.1.0-alpha.8`，请用 `D:\temp\PollyOS\PollyOS-179f20e.iso`，
+`0.1.0-alpha.8`，固定 `D:\temp\PollyOS\PollyOS.iso` 与版本入口 `PollyOS-179f20e.iso` 同内容，
 709,148,672 字节，SHA256
 `88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89`。
-旧固定 `PollyOS.iso` 因 Windows 拒绝替换仍指 97，未关闭用户 VM 来强行更新。
+最初固定入口替换被 Windows 拒绝；用户修复占用后新一次标准发布已成功，原失败和旧 97 文件保留，未由 Agent 关闭用户 VM。
 新结构为约 4.3 MB bootstrap + 独立 SquashFS 压缩根，后者复制到 RAM 再按需解压，
 可写层仍为 tmpfs；不再在最早阶段展开整个系统。
 实际镜像内容及配对原生库核验通过，包含启动时间线诊断增强、当前七主题，

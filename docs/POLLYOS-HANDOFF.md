@@ -2,10 +2,11 @@
 
 ## 2026-10-19 压缩内存根启动候选 179f20e
 
-**请挂载新文件 `D:\temp\PollyOS\PollyOS-179f20e.iso`。**
-标准发布器更新 `D:\temp\PollyOS\PollyOS.iso` 时 Windows 返回 `EPERM`；
-没有覆盖旧 inode、关闭光盘句柄或操作用户 VM，**该固定入口仍是旧 97 版**。
-新文件名是以下完整版本目录内 ISO 的已核验硬链接，不是覆盖失败后的静默成功：
+**固定入口 `D:\temp\PollyOS\PollyOS.iso` 已切换到本候选。**
+`D:\temp\PollyOS\PollyOS-179f20e.iso` 也保留，两个入口与以下版本文件同 inode。
+最初标准发布器被 Windows `EPERM` 拒绝时保留了旧入口及失败回执；
+用户明确告知已修复占用后，新的标准发布尝试成功，校验同 inode/links3/SHA。
+没有覆盖旧版本 inode、关闭光盘句柄或操作用户 VM，原失败记录不改写：
 
 ```text
 D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso
@@ -51,12 +52,13 @@ Windows 独立复验 **145 条**交付摘要。两实验仍 default OFF、Start 
 旧 97/843/DDD ISO 和全部 FIRST/结构样件不覆盖。之前 dirty/fixtureOnly 的结构
 样件没有作为本候选复用或重标。自有构建进程已退出，共享 Podman 未停止；
 本次不操作用户 Hyper-V、宿主服务、权限或物理设备。需要用户测试时选择页首
-新文件，而不是本次替换被拒绝、仍指旧版的 `PollyOS.iso`。
+新文件；固定入口本次已在用户修复占用后成功切换，旧版本目录仍保留。
 
-## 2026-10-19 旧 97eb6d6 诊断 ISO（固定入口仍指此版）
+## 2026-10-19 旧 97eb6d6 诊断 ISO（历史保留）
 
 该诊断版发布时固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 切换到以下文件，
-且因本次替换被 Windows 拒绝，目前仍指此版；新候选见页首版本专用入口。
+最初受占用影响的替换尝试未改它；用户修复后固定入口已更新为页首候选，
+以下 97 版本文件和原始回执不变。
 runtime、overlay、media producer 均为 clean
 `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681`，tree
 `2a9c2b8f011de25b6c7a3e319ce83389299b6398`，版本 `0.1.0-alpha.8`：

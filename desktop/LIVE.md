@@ -14,13 +14,14 @@ root. The independent 654405632-byte SquashFS is copied to RAM before a read-onl
 loop/tmpfs-overlay handoff. Actual ISO+USB content and all 145 delivery checksums
 passed, including 404 runtime/overlay paths per medium and generated GRUB identity.
 **Real boot, startup timing and actual media-eject operation are NOT RUN.**
-Windows refused the standard publisher's replacement of `PollyOS.iso` (`EPERM`);
-that old fixed entry still refers to 97. No VM/handle was closed. The new
-version-specific entry is a verified hard link to the immutable release bundle,
-not a silently successful stable-alias replacement. See the current handoff.
+Windows initially refused replacement of `PollyOS.iso` (`EPERM`), preserving the
+old entry and the failed-attempt receipt. After the user reported the handle issue
+resolved, a new standard publication succeeded: `PollyOS.iso` and the version-specific
+entry now share the verified release inode. No VM/handle was closed by the Agent;
+the old 97 release file remains intact. See the current handoff.
 
-**2026-10-19 previous diagnostic candidate (retained):** the unchanged
-`D:\temp\PollyOS\PollyOS.iso` still points to this
+**2026-10-19 previous diagnostic candidate (retained):** the stable
+`D:\temp\PollyOS\PollyOS.iso` previously pointed to this
 clean `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` Alpha.8 ISO:
 715036672 bytes, SHA-256
 `0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906`.
