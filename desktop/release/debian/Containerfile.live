@@ -2,15 +2,18 @@ ARG RUNTIME_IMAGE=localhost/polly-debian-runtime
 FROM ${RUNTIME_IMAGE} AS platform-base
 USER root
 WORKDIR /
+ARG HARDWARE_SKU=full
+COPY release/debian/live-profile.py release/debian/live-profiles.json /tmp/polly-hardware/
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
-RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
+RUN python3 -I -B /tmp/polly-hardware/live-profile.py clean-runtime && \
+    packages=$(python3 -I -B /tmp/polly-hardware/live-profile.py packages --sku "$HARDWARE_SKU") && \
+    chmod 644 /etc/apt/sources.list.d/backports.sources && \
     apt-get update -qq && apt-get install -y --no-install-recommends \
-    systemd-sysv udev dbus libpam-systemd polkitd=126-2 python3 kmod linux-image-amd64 \
-    firmware-intel-graphics firmware-nvidia-graphics firmware-iwlwifi firmware-sof-signed intel-microcode iucode-tool \
-    iwd dhcpcd openresolv wireless-regdb iproute2 iw rfkill ethtool \
-    pciutils usbutils alsa-utils util-linux && \
+    $packages && \
     test "$(dpkg-query -W -f='${Version}' polkitd)" = 126-2 && \
-    iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode
+    iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode && \
+    python3 -I -B /tmp/polly-hardware/live-profile.py mark --sku "$HARDWARE_SKU" && \
+    rm -rf /tmp/polly-hardware
 COPY release/live/init /init
 COPY release/live/session /usr/bin/polly-live-session
 COPY release/live/diagnostics /usr/bin/polly-live-diagnostics

@@ -117,14 +117,19 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     inputs_parser = commands.add_parser("inputs")
     inputs_parser.add_argument("directory", type=Path)
-    overlay_parser = commands.add_parser("overlay")
-    overlay_parser.add_argument("bundle", type=Path)
-    overlay_parser.add_argument("source", type=Path)
-    overlay_parser.add_argument("--runtime-revision", required=True)
-    overlay_parser.add_argument("--producer-revision", required=True)
-    overlay_parser.add_argument("--base-image", required=True)
-    overlay_parser.add_argument("--recipe", type=Path, required=True)
-    overlay_parser.add_argument("--offline-inputs", type=Path, required=True)
+    for command in ("overlay", "assembled"):
+        overlay_parser = commands.add_parser(command)
+        overlay_parser.add_argument("bundle", type=Path)
+        overlay_parser.add_argument("source", type=Path)
+        overlay_parser.add_argument("--runtime-revision", required=True)
+        overlay_parser.add_argument("--producer-revision", required=True)
+        overlay_parser.add_argument("--base-image", required=True)
+        overlay_parser.add_argument("--recipe", type=Path, required=True)
+        if command == "overlay":
+            overlay_parser.add_argument("--offline-inputs", type=Path, required=True)
+        else:
+            overlay_parser.add_argument("--sku", required=True)
+            overlay_parser.add_argument("--tools-image", required=True)
     args = parser.parse_args()
     if args.command == "inputs":
         verify_offline_inputs(args.directory.resolve())
@@ -161,16 +166,30 @@ def main():
             raise ValueError("Live boot overlay differs from frozen source: " + target)
         boot_targets.add(target)
         overlays.append({"path": target, "source": original, "sha256": digest(file), "mode": f"{mode:04o}"})
+    selected = None
+    if args.command == "assembled":
+        profiles = runpy.run_path(str(source / "desktop/release/debian/live-profile.py"))
+        selected = profiles["verify"](root, args.sku)
+        if not re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", args.tools_image):
+            raise ValueError("Expected immutable image tools ID")
+        for name in (profiles["MARKER"], profiles["PROFILE_COPY"]):
+            overlays.append({"path": name, "source": "generated:hardware-profile",
+                             "sha256": digest(root / name), "mode": "0644"})
     origin_path = "usr/share/pollyui/runtime-origin.json"
     allowed = set(expected) | set(OVERLAYS) | boot_targets | {origin_path}
     verify_namespaces(root, allowed)
     pins = verify_pins((bundle / "runtime-packages.txt").read_text())
-    offline = verify_offline_inputs(args.offline_inputs)
+    offline = verify_offline_inputs(args.offline_inputs) if args.command == "overlay" else None
     packages = subprocess.check_output(
         ["dpkg-query", "-W", "-f=${binary:Package}\t${Version}\t${Homepage}\n"], text=True, timeout=30)
     inventory = root / "usr/share/polly-live-packages.tsv"
     inventory.write_text(packages)
     inventory.chmod(0o644)
+    if selected:
+        for name in ("var/lib/dpkg/status", "usr/share/polly-live-packages.tsv"):
+            regular(root / name)
+            overlays.append({"path": name, "source": "generated:installed-packages",
+                             "sha256": digest(root / name), "mode": "0644"})
     receipt = {"schemaVersion": 1, "runtimeSourceRevision": args.runtime_revision,
                "runtimeSourceDirty": False, "runtimeRevisionSource": "git",
                "runtimeManifestSha256": digest(bundle / "manifest.json"),
@@ -178,9 +197,15 @@ def main():
                "mediaProducerRevision": args.producer_revision, "baseImageID": args.base_image,
                "overlayRecipeSha256": digest(args.recipe), "overlayVerifierSha256": digest(Path(__file__)),
                "runtimePayloadFiles": len(expected), "runtimePackagePins": pins,
-               "overlays": overlays, "offlineInputs": offline,
+               "overlays": overlays,
                "limits": ["Local byte/input receipt, not a signature or source-compliance approval.",
                           "Not UEFI or hardware acceptance; guest changes remain memory-only."]}
+    if selected:
+        receipt.update({"sku": args.sku, "hardwareProfile": selected, "imageToolsID": args.tools_image,
+                        "nativeRuntime": {"imageID": args.base_image, "sourceRevision": args.runtime_revision,
+                                          "manifestSha256": digest(bundle / "manifest.json")}})
+    else:
+        receipt["offlineInputs"] = offline
     target = root / origin_path
     target.write_text(json.dumps(receipt, indent=2) + "\n")
     target.chmod(0o644)

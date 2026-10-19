@@ -11,6 +11,9 @@ if [ "${1:-}" = --debian ]; then
     tools_image=localhost/polly-debian-live-tools
     shift
 fi
+if [ "$distribution" = debian13 ] && [ "$#" -gt 1 ]; then
+    exec node "$(dirname -- "$0")/build-live-skus.mjs" "$@"
+fi
 if [ "$#" -ne 1 ]; then echo "Usage: build-live.sh [--debian] OUTPUT_DIRECTORY" >&2; exit 2; fi
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo"
@@ -42,7 +45,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime" \
+podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime_id" \
     -t "$base_image" -f "$recipe" desktop
 if [ "$distribution" = debian13 ]; then
     podman build --quiet --target platform-base --build-arg "RUNTIME_IMAGE=$runtime_id" \

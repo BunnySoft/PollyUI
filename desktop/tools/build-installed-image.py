@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import runpy
 import shutil
 import stat
 import subprocess
@@ -358,6 +359,8 @@ def build(args):
         with tarfile.open(args.export, "r:") as archive:
             # All paths, link ancestors and node types are checked before preserving guest owners.
             archive.extractall(root, members=export_members(archive), filter="fully_trusted")
+        hardware = runpy.run_path(str(repo / "desktop/release/debian/live-profile.py"))
+        hardware["installed_input"](root)
         for name in ["etc", "usr", "usr/lib", "home", "var", "var/lib", "boot", "etc/skel"]:
             path = root / name
             if not path.is_dir() or path.is_symlink():

@@ -5,6 +5,62 @@ source checkout, native SDK bootstrapping, runtime packaging and ISO generation.
 The delivery records below describe historical artifacts, not reusable build
 inputs or a requirement to obtain the maintainer's cached containers.
 
+## Hardware SKU Live builds
+
+`live-profiles.json` in `release/debian/` is the single package/support manifest.
+The [build guide](../docs/BUILDING.md#hardware-sku-live-builds) gives the one-entry,
+sequential multi-SKU command. The default is `full`; unknown, duplicate or empty
+selections fail before building. Each run freezes one source byte inventory and
+native bundle, resolves common runtime/tools image IDs once, and keeps independent
+SKU platform/Live tags, input exports, receipts and media directories. It never
+builds the SDK/native runtime/tools or publishes a stable alias.
+
+| SKU | Firmware packages selected in addition to common CPU microcode |
+| --- | --- |
+| `full` | Intel graphics, NVIDIA graphics, Intel Wi-Fi and SOF; the current declared hardware set, not all AMD/all hardware |
+| `vm` | None of those four physical firmware packages; virtual display/storage/input/network modules and software rendering remain |
+| `intel` | Intel graphics, Intel Wi-Fi and SOF; excludes NVIDIA-specific graphics firmware |
+| `nvidia` | NVIDIA graphics, Intel Wi-Fi and SOF; excludes Intel graphics firmware; open-source Nouveau/Mesa only |
+
+CPU microcode is independent of GPU selection. Physical network/audio firmware is
+not removed from Intel/NVIDIA images. The **complete common kernel/modules,
+corrected Mesa/Gallium/Vulkan and LLVM** remain in every profile, including other
+vendors' code. Chinese IME/font/App functionality, early Plymouth, the 64 MiB
+bootstrap limit, RAM-root integrity, accounts/PAM, actual READY and diagnostics
+are unchanged. Splitting monolithic kernel/Mesa packages needs separate paired
+SDK/package work; deleting individual `.so` files is not this design.
+
+New explicit-SKU media keep schema 2 and add `sku`, the source manifest digest,
+support/shared scope, immutable common `nativeRuntime`/`imageToolsID`, and
+`sizeReport`. The report includes each installed package's dpkg declared bytes
+and measured package-listed regular-file bytes in the actual payload root,
+plus actual final ISO/USB, compressed/uncompressed root and bootstrap sizes.
+Package ownership can overlap; `/boot` is outside the payload root and reported
+as media boot files. Neither declared nor measured raw bytes predict compressed
+ISO savings. Only compare measured media after assembly. Source-owned qualifiers
+reject missing/forbidden packages, wrong pins and a linked/writable/non-root/
+source-mismatched hardware marker. The actual root and small bootstrap both
+carry the selected profile, and actual ISO/USB verification binds it to receipts.
+
+File names contain `-debian13-<sku>-x86_64-`; publication directories also contain
+the SKU, including `full`, so they cannot collide with old unlabelled full output.
+The publisher still reads old no-SKU schema 1/2 bundles unchanged. Explicit-SKU
+publication defaults to versioned-only: only `full` with `--update-alias` may
+replace `PollyOS.iso`; reduced SKUs cannot update that alias, even explicitly.
+Old one-output `build-live.sh --debian OUTPUT` calls remain the historical
+single-full compatibility route and still use shared convenience build tags.
+
+LiveCD and Install are separate products. These builds retain a locked `template`
+platform per SKU before Live presets/Plymouth are applied. The existing Install
+builder accepts the full platform explicitly via `POLLY_PLATFORM_IMAGE=<imageID>`.
+It refuses reduced hardware markers with an Install-SKU-not-wired diagnostic:
+Install filenames/manifests are not yet SKU-aware, and this change produces no
+new Install media or physical installer.
+An orphan marker or manifest copy cannot downgrade an export to legacy Install.
+The explicit historical `--legacy-initramfs` route accepts only unlabelled old
+roots: any new hardware marker/copy or SKU-bearing runtime origin is refused,
+including a new `full` marker, rather than dropping its SKU label.
+
 **2026-10-19 compressed RAM-root candidate:** use
 `D:\temp\PollyOS\PollyOS-179f20e.iso`, clean runtime/overlay/media source
 `179f20e0d28a49071edfae6d0eb57f0cc9b625ac`, 709148672 bytes, SHA-256

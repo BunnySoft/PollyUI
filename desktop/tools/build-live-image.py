@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--source-dirty", choices=["0", "1"], required=True)
     parser.add_argument("--runtime-image", required=True)
     parser.add_argument("--distribution", choices=["alpine3.24", "debian13"], default="alpine3.24")
+    parser.add_argument("--sku", help="Explicit source-owned Debian hardware SKU (legacy omission remains supported)")
     parser.add_argument("--legacy-initramfs", action="store_true",
                         help="Explicit historical full-root initramfs; never an automatic fallback")
     args = parser.parse_args()
@@ -42,8 +43,14 @@ def main():
     version = (repo / "desktop/VERSION").read_text().strip()
     debian = args.distribution == "debian13"
     compressed_root = debian and not args.legacy_initramfs
+    profiles = runpy.run_path(str(repo / "desktop/release/debian/live-profile.py"))
+    selected = profiles["profile"](args.sku) if args.sku is not None else None
+    if selected and not compressed_root:
+        raise ValueError("Hardware SKU media requires the Debian compressed RAM-root layout")
     root_tools = runpy.run_path(str(repo / "desktop/tools/live-root.py"))
     image_name = f"pollydesktop-{version}" + ("-debian13" if debian else "")
+    if selected:
+        image_name += "-" + args.sku
     if not re.fullmatch(r"\d+\.\d+\.\d+-alpha\.\d+", version):
         raise ValueError("Invalid Live development version")
     if len(args.source_revision) != 40 or any(c not in "0123456789abcdef" for c in args.source_revision):
@@ -63,8 +70,12 @@ def main():
         media_id = uuid.uuid4().hex
         files = 0
         total = 0
+        hardware_sizes = None
+        origin = None
 
         with tarfile.open(args.export, "r:") as archive:
+            if debian and args.legacy_initramfs:
+                profiles["verify_legacy_export"](archive, root_tools["export_members"](archive))
             kernel_name = "boot/vmlinuz-lts"
             if debian:
                 with archive.extractfile("usr/lib/os-release") as release:
@@ -127,6 +138,16 @@ def main():
                         raise ValueError("Compressed RAM root needs this source's mount-preserving /init")
                 root = staging / "root"
                 files, total = root_tools["extract_root"](archive, root)
+                profiles["verify"](root, args.sku)
+                if selected:
+                    hardware_sizes = profiles["size_report"](root, args.sku, repo)
+                    origin = json.loads((root / "usr/share/pollyui/runtime-origin.json").read_bytes())
+                    if (origin.get("sku") != args.sku or origin.get("hardwareProfile") != selected or
+                            origin.get("nativeRuntime", {}).get("imageID") != args.runtime_image or
+                            origin["nativeRuntime"].get("sourceRevision") != origin.get("runtimeSourceRevision") or
+                            origin["nativeRuntime"].get("manifestSha256") != origin.get("runtimeManifestSha256") or
+                            origin.get("mediaProducerRevision") != args.source_revision):
+                        raise ValueError("Assembled runtime origin does not match requested hardware SKU/source")
                 squashfs = boot / "root.squashfs"
                 subprocess.run(["mksquashfs", str(root), str(squashfs), "-noappend",
                                 "-comp", "gzip", "-processors", "1", "-no-progress", "-quiet"],
@@ -135,7 +156,7 @@ def main():
                 with archive.extractfile("boot/config-" + release) as source:
                     config = source.read().decode()
                 root_layout = root_tools["build_bootstrap"](
-                    root, staging, boot, repo, release, config, media_id, squashfs)
+                    root, staging, boot, repo, release, config, media_id, squashfs, args.sku)
                 (image / "polly").mkdir()
                 (image / "polly" / (media_id + ".marker")).write_text(root_layout["sha256"] + "\n")
                 shutil.rmtree(root)
@@ -245,6 +266,9 @@ def main():
                     *(repo / "desktop/release/live").iterdir(),
                     repo / "desktop/tools/build-live-image.py", repo / "desktop/tools/build-live.sh",
                     repo / "desktop/tools/live-root.py",
+                    *([repo / ("desktop/tools/" + name) for name in (
+                        "build-live-skus.mjs", "live-profiles.mjs", "retain-live-inputs.py",
+                        "verify-live-runtime.py", "offline-live-overlay.py")] if debian else []),
                     repo / "desktop/release/Containerfile.live",
                     repo / "desktop/system/login.pam", repo / "desktop/system/polly-lock.pam",
                     repo / "desktop/system/elogind-polly.conf", repo / "desktop/system/iwd-main.conf",
@@ -255,6 +279,17 @@ def main():
                             "Wired DHCP; Wi-Fi configured interactively in the memory-only guest", "Unsigned development boot chain",
                             "Physical hardware and third-party distribution compliance not qualified"],
         }
+        if selected:
+            hardware_sizes["media"] = {
+                "isoBytes": iso.stat().st_size, "usbBytes": usb.stat().st_size,
+                "rootBytes": root_layout["size"], "rootUncompressedBytes": total,
+                "bootstrapBytes": root_layout["bootstrap"]["size"],
+                "bootstrapUncompressedBytes": root_layout["bootstrap"]["uncompressedBytes"],
+            }
+            manifest.update({"sku": args.sku, "hardwareProfile": selected,
+                             "nativeRuntime": origin["nativeRuntime"], "imageToolsID": origin["imageToolsID"],
+                             "sizeReport": hardware_sizes, "hardwareTarget": selected["support"]})
+            profiles["validate_media"](manifest)
         (staging / "live-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         with (staging / "boot-layout.txt").open("w") as report:
             subprocess.run(["xorriso", "-indev", str(iso), "-report_el_torito", "plain"],

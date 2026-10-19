@@ -1,8 +1,13 @@
 const hash = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const positive = value => Number.isSafeInteger(value) && value > 0 && value < 2 ** 32;
+import { validateHardwareMedia } from './live-profiles.mjs';
 
 export function validateLiveLayout(manifest) {
+  const hardware = validateHardwareMedia(manifest);
   const root = manifest.root;
+  if (hardware && !isDeepStrictEqual(root?.hardwareProfile,
+    { sku: hardware.sku, manifestSha256: hardware.manifestSha256 }))
+    throw new Error('Root/boot hardware profile does not match media SKU');
   if (root === 'initramfs, memory only' && (manifest.schemaVersion ?? 1) === 1)
     return 'legacy-initramfs';
   const boot = root?.bootstrap;
@@ -20,6 +25,12 @@ export function validateLiveLayout(manifest) {
 
 export function validateLiveRootReceipt(manifest, origin) {
   const layout = validateLiveLayout(manifest);
+  if (Object.hasOwn(manifest, 'sku')) {
+    for (const field of ['sku', 'hardwareProfile', 'nativeRuntime', 'imageToolsID', 'sizeReport'])
+      if (!isDeepStrictEqual(origin[field], manifest[field]))
+        throw new Error('Hardware profile does not match actual root verification receipt: ' + field);
+  } else if (Object.hasOwn(origin, 'sku') || origin.hardwareProfile !== undefined)
+    throw new Error('Unlabelled hardware profile verification receipt');
   if (layout === 'legacy-initramfs') {
     if ((origin.schemaVersion ?? 1) !== 1 || origin.rootLayout !== undefined)
       throw new Error('Legacy root does not match verification receipt');

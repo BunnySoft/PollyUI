@@ -15,6 +15,7 @@ import tempfile
 NAMESPACES = ("usr/share/pollyui", "usr/lib/pollyui", "usr/share/licenses/pollyui",
               "usr/share/doc/pollyui", "usr/share/icons/PollyRabbit", "usr/share/icons/PollyClassic")
 ROOT = runpy.run_path(str(Path(__file__).with_name("live-root.py")))
+PROFILES = runpy.run_path(str(Path(__file__).resolve().parents[1] / "release/debian/live-profile.py"))
 
 
 def digest(path):
@@ -83,6 +84,7 @@ def check_initramfs(path, expected, origin):
 
 
 def check_layout(manifest):
+    PROFILES["validate_media"](manifest)
     root = manifest.get("root")
     if root == "initramfs, memory only" and manifest.get("schemaVersion", 1) == 1:
         return False
@@ -156,6 +158,13 @@ def check_bootstrap(path, layout):
     if (found.get("etc/polly-live-root", (0, b""))[1] != expected or total != bootstrap["uncompressedBytes"] or
             not found.get("init") or not found.get("bin/busybox")):
         raise ValueError("Bootstrap lacks exact root identity/init/tools")
+    if "hardwareProfile" in layout:
+        hardware = layout["hardwareProfile"]
+        if (hardware != {key: PROFILES["profile"](hardware.get("sku"))[key]
+                         for key in ("sku", "manifestSha256")} or
+                found.get("etc/polly-live-hardware", (0, b""))[:2] !=
+                (stat.S_IFREG | 0o644, PROFILES["marker"](hardware["sku"]))):
+            raise ValueError("Bootstrap hardware profile does not match root/media SKU")
     records = {record["path"]: record for record in bootstrap["files"]}
     if len(records) != len(bootstrap["files"]) or set(records) != set(found) - {"."}:
         raise ValueError("Bootstrap file inventory differs")
@@ -251,6 +260,30 @@ def main():
     if media_manifest["sourceRevision"] != args.producer_revision:
         raise ValueError("Media source does not match verification producer")
     compressed = check_layout(media_manifest)
+    if "sku" in media_manifest:
+        selected = PROFILES["profile"](media_manifest["sku"])
+        if (origin.get("sku") != selected["sku"] or origin.get("hardwareProfile") != selected or
+                origin.get("nativeRuntime") != media_manifest["nativeRuntime"] or
+                origin["nativeRuntime"].get("sourceRevision") != manifest["revision"] or
+                origin["nativeRuntime"].get("manifestSha256") != digest(args.runtime / "manifest.json") or
+                origin.get("imageToolsID") != media_manifest["imageToolsID"]):
+            raise ValueError("Actual root origin hardware/native runtime does not match media")
+        frozen = args.inputs / "frozen-overlays"
+        PROFILES["verify"](frozen, selected["sku"])
+        actual_packages = PROFILES["packages"](frozen)
+        inventory = {}
+        for row in (frozen / "usr/share/polly-live-packages.tsv").read_text().splitlines():
+            package, version, _ = row.split("\t", 2)
+            name = package.removesuffix(":amd64")
+            if name in inventory:
+                raise ValueError("Duplicate actual root package inventory")
+            inventory[name] = version
+        if inventory != {name: item["version"] for name, item in actual_packages.items()}:
+            raise ValueError("Hardware inventory differs from actual root dpkg status")
+        measured = media_manifest["sizeReport"]["packages"]
+        if ({name: (item["version"], item["installedSizeBytes"]) for name, item in actual_packages.items()} !=
+                {item["name"]: (item["version"], item["installedSizeBytes"]) for item in measured}):
+            raise ValueError("Hardware package sizes/versions differ from actual root dpkg status")
     name = media_manifest["iso"]["name"]
     if Path(name).name != name or not name.endswith(".iso"):
         raise ValueError("Invalid candidate ISO path")
@@ -269,6 +302,10 @@ def main():
         expected[item["path"]] = {"size": file.stat().st_size, "sha256": item["sha256"],
                                  "mode": item.get("mode", "0755" if item["path"] == "init" or
                                  item["path"].startswith("usr/bin/") or item["path"].endswith(".sh") else "0644")}
+    if "sku" in media_manifest and not {
+            PROFILES["MARKER"], PROFILES["PROFILE_COPY"], "var/lib/dpkg/status",
+            "usr/share/polly-live-packages.tsv"}.issubset(expected):
+        raise ValueError("Actual root verification omits hardware/package identity paths")
     with tempfile.TemporaryDirectory(prefix="polly-iso-runtime-") as temporary:
         initramfs = Path(temporary) / "initramfs.gz"
         subprocess.run(["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract",
@@ -359,6 +396,9 @@ def main():
         receipt.update({"rootLayout": media_manifest["root"],
                         "usbSha256": media_manifest["usb"]["sha256"],
                         "usbPayloadFilesVerified": len(expected), "bootstrapVerified": True})
+    if "sku" in media_manifest:
+        receipt.update({key: media_manifest[key] for key in
+                        ("sku", "hardwareProfile", "nativeRuntime", "imageToolsID", "sizeReport")})
     if origin.get("fixtureOnly") is True:
         receipt.update({"fixtureOnly": True, "stage": "verified-structure-fixture-not-publishable"})
     target = args.media / "candidate-origin.json"
