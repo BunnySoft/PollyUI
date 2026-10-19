@@ -5,31 +5,10 @@ case " $(cat /proc/cmdline) " in
     *" polly.splash=1 "*) ;;
     *) exit 0 ;;
 esac
-stop_display() {
-    if timeout 2 plymouth --ping; then
-        if timeout 3 plymouth quit; then return 0; fi
-        echo "Polly Live ERROR: boot display did not quit; checking its recorded daemon." >&2
-    elif [ ! -r /run/plymouth/pid ]; then
-        return 0
-    else
-        echo "Polly Live ERROR: boot display did not respond; checking its recorded daemon." >&2
-    fi
-    if [ -r /run/plymouth/pid ]; then
-        read -r pid </run/plymouth/pid
-        case "$pid" in
-            ''|*[!0-9]*) echo "Polly Live ERROR: invalid boot-display PID." >&2 ;;
-            *)
-                if [ -r "/proc/$pid/cmdline" ]; then
-                    case "$(tr '\000' ' ' <"/proc/$pid/cmdline")" in
-                        *plymouthd*) kill -TERM "$pid" ;;
-                        *) echo "Polly Live ERROR: boot-display PID changed; not signalling it." >&2 ;;
-                    esac
-                fi
-                ;;
-        esac
-    fi
-    return 1
-}
+splash_runtime=/run/plymouth
+proc_directory=/proc
+log_directory=/run/polly-live
+. /usr/lib/polly-live-splash-control
 case "${1:-}" in
     start)
         mkdir -p /run/plymouth
@@ -37,30 +16,43 @@ case "${1:-}" in
             echo "Polly Live: early graphical display failed; retaining console diagnostics." >&2
             exit 0
         fi
-        if timeout 2 plymouth --ping; then
-            timeout 2 plymouth update-root-fs --read-write
-            timeout 2 plymouth display-message --text="Starting Live system"
+        if timeout 1 plymouth --ping; then
+            if control_load && timeout 2 plymouth update-root-fs --read-write &&
+                    timeout 2 plymouth display-message --text="Starting Live system"; then
+                exit 0
+            fi
+            echo "Polly Live ERROR: cannot reuse the owned early boot display." >&2
+            control_release
+            exit 1
         elif [ -f /run/polly-live/splash-started ]; then
             echo "Polly Live: early boot display exited unexpectedly; retaining console diagnostics." >&2
+            control_release
             exit 1
         elif timeout 3 plymouthd --mode=boot --attach-to-session --tty=/dev/tty1 --pid-file=/run/plymouth/pid &&
-            timeout 2 plymouth show-splash; then
-            timeout 2 plymouth display-message --text="Starting Live system"
+            control_record && timeout 2 plymouth show-splash &&
+            timeout 2 plymouth display-message --text="Starting Live system"; then
+            exit 0
         else
             echo "Polly Live: graphical boot display unavailable; continuing with console diagnostics." >&2
-            stop_display
+            control_release
         fi
         ;;
     handoff)
-        if timeout 2 plymouth --ping; then
-            timeout 2 plymouth display-message --text="Opening your Live desktop"
-            timeout 3 plymouth quit --retain-splash
+        if timeout 1 plymouth --ping; then
+            if timeout 2 plymouth display-message --text="Opening your Live desktop"; then
+                control_release --retain-splash
+            else
+                echo "Polly Live ERROR: boot-display handoff update failed." >&2
+                control_release
+                exit 1
+            fi
         else
+            control_release
             echo "Polly Live: no boot display to hand off; starting the ordinary-user session." >&2
         fi
         ;;
     stop)
-        stop_display
+        control_release
         ;;
     *) echo "Expected start, handoff or stop" >&2; exit 2 ;;
 esac

@@ -148,6 +148,9 @@ class CompressedRoot(unittest.TestCase):
                 directory = Path(temp)
                 for name in ("bin", "dev", "proc", "sys", "run", "tmp"):
                     (directory / name).mkdir()
+                (directory / "usr/lib").mkdir(parents=True)
+                shutil.copyfile(REPO / "desktop/release/debian/live-splash-control",
+                                directory / "usr/lib/polly-live-splash-control")
                 (directory / "dev/console").write_bytes(b"")
                 (directory / "bin/busybox").write_bytes(Path(shutil.which("busybox")).read_bytes())
                 (directory / "bin/busybox").chmod(0o755)

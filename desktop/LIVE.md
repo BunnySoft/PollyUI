@@ -389,6 +389,17 @@ stays visible instead of silently restarting. IPC has finite bounds, and
 failed/expired display work is stopped before exposing diagnostics. The 15-second
 system service and 90-second desktop gates are not enlarged.
 
+The common Live-only control helper records the root-owned daemon PID and
+kernel start time, validates `/proc/exe` (including the old bootstrap's deleted
+mapping), and refuses PID0/1 or a mismatched identity. Normal retain-splash quit
+remains untouched. Unresponsive IPC gets a one-second client bound, followed by
+short exit checks, TERM and, only if still confirmed, KILL. Cleanup confirms
+absence or a zombie that has released its file descriptors; otherwise it
+reports unconfirmed DRM/input release rather than claiming a console fallback.
+The bounded cleanup leaves margin within the existing five-second stop limit.
+Hyper-V and virtio GPU modules are alternatives: an unavailable candidate is
+logged while other candidates and an existing EFI framebuffer are still tried.
+
 Plymouth's console attachment sends two realtime signals to PID1. The builder
 obtains the target libc's real `SIGRTMIN`; bootstrap catches the two signals
 with no-op handlers, **not `SIG_IGN`**. Caught handlers reset to default on exec,

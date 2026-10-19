@@ -1,6 +1,7 @@
 {
   "usr/lib/polly-live-startup.py": "desktop/release/live/startup.py",
   "usr/lib/polly-live-splash": "desktop/release/debian/live-splash",
+  "usr/lib/polly-live-splash-control": "desktop/release/debian/live-splash-control",
   "usr/share/plymouth/themes/polly/polly.plymouth": "desktop/release/live/polly.plymouth",
   "usr/share/plymouth/themes/polly/polly.script": "desktop/release/live/polly.script",
   "usr/share/plymouth/themes/polly/polly.png": "@generated-logo",

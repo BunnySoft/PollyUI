@@ -28,6 +28,7 @@ PLYMOUTH_PLUGINS = (
     "renderers/drm.so", "renderers/frame-buffer.so",
 )
 PLYMOUTH_DATA = (
+    "usr/lib/polly-live-splash-control",
     "etc/plymouth/plymouthd.conf", "usr/share/plymouth/plymouthd.defaults",
     "usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     *(f"usr/share/plymouth/themes/{name}" for name in
@@ -36,7 +37,7 @@ PLYMOUTH_DATA = (
 )
 APPLETS = (
     "sh", "cat", "chmod", "cp", "mkdir", "mount", "umount", "modprobe", "mdev",
-    "sleep", "stat", "sha256sum", "losetup", "switch_root", "sync", "readlink", "tr", "timeout",
+    "sleep", "stat", "sha256sum", "losetup", "switch_root", "sync", "readlink", "tr", "timeout", "id", "rm",
 )
 
 

@@ -23,8 +23,11 @@ stage() {
     fi
     if [ "$splash_active" = 1 ]; then
         if ! timeout 2 plymouth display-message --text="$*"; then
-            stop_splash
-            printf 'Polly Live: graphical status update failed; using console.\n' >&3
+            if stop_splash; then
+                printf 'Polly Live: graphical status update failed; using console.\n' >&3
+            else
+                fail "Cannot confirm boot-display DRM/input release"
+            fi
         fi
     fi
 }
@@ -32,23 +35,7 @@ stage() {
 stop_splash() {
     splash_active=0
     splash_pending=0
-    if [ -f "$splash_runtime/pid" ]; then
-        if ! timeout 3 plymouth quit; then
-            printf 'Polly Live: boot display did not exit; terminating its recorded daemon.\n' >&3
-            read -r splash_pid <"$splash_runtime/pid"
-            case "$splash_pid" in
-                ''|*[!0-9]*) printf 'Polly Live ERROR: invalid boot-display PID.\n' >&3 ;;
-                *)
-                    if [ -r "$proc_directory/$splash_pid/cmdline" ]; then
-                        case "$(tr '\000' ' ' <"$proc_directory/$splash_pid/cmdline")" in
-                            *plymouthd*) kill -TERM "$splash_pid" ;;
-                            *) printf 'Polly Live ERROR: boot-display PID changed; not signalling it.\n' >&3 ;;
-                        esac
-                    fi
-                    ;;
-            esac
-        fi
-    fi
+    control_release || return 1
     if [ -d "$log_directory" ]; then
         printf 'Graphical boot display unavailable\n' >"$log_directory/splash-unavailable"
     fi
@@ -58,15 +45,13 @@ start_splash() {
     case " $(cat /proc/cmdline) " in *" polly.splash=1 "*) ;; *) return ;; esac
     # Kernel VT input and the renderer's direct DRM/fb path avoid a second udev daemon.
     while read -r module; do
-        if ! modprobe "$module"; then
-            stop_splash
-            stage "Graphical boot driver $module unavailable; using console"
-            return
+        if ! modprobe "$module" 2>>"$log_directory/early-boot.log"; then
+            stage "Graphical boot driver $module unavailable; trying other graphics paths"
         fi
     done </etc/polly-live-graphics-modules
     mdev -s
     if [ ! -c /dev/fb0 ] && [ ! -c /dev/dri/card0 ]; then
-        stop_splash
+        if ! stop_splash; then fail "Cannot confirm boot-display cleanup"; fi
         stage "No early framebuffer/DRM device; using console"
         return
     fi
@@ -78,20 +63,23 @@ start_splash() {
     if timeout 3 plymouthd --mode=boot --attach-to-session --tty=/dev/tty1 \
             --pid-file=/run/plymouth/pid \
             --kernel-command-line="$(cat /proc/cmdline) plymouth.ignore-udev plymouth.use-legacy-input" &&
+            control_record &&
             timeout 2 plymouth show-splash; then
         splash_active=1
         splash_pending=0
         printf 'early Plymouth daemon started\n' >/run/polly-live/splash-started
         stage "Preparing compressed RAM root"
     else
-        stop_splash
+        if ! stop_splash; then fail "Cannot confirm boot-display cleanup"; fi
         stage "Graphical boot display failed; using console diagnostics"
     fi
 }
 
 fail() {
     trap - EXIT
-    stop_splash
+    if ! stop_splash; then
+        printf 'Polly Live ERROR: boot-display release remains unconfirmed; boot will not continue.\n' >&3
+    fi
     stage "ERROR: $*. No disk writes or alternate root attempted."
     printf 'Boot stopped. Diagnostic shell only; exit does not continue boot.\n' >&3
     while :; do /bin/sh <"$console" >&3 2>&1; done
@@ -107,6 +95,7 @@ proc_directory=/proc
 splash_runtime=/run/plymouth
 exec 3>/dev/console
 trap 'fail "Bootstrap command failed (status $?)"' EXIT
+. /usr/lib/polly-live-splash-control
 chmod 0755 /
 mount -t devtmpfs devtmpfs /dev
 mount -t proc proc /proc

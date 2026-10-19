@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define LOAD(handle, name) do { \
     void *symbol = dlsym(handle, #name); \
@@ -15,6 +16,12 @@
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && !strcmp(argv[1], "--ignore-term")) {
+        if (signal(SIGTERM, SIG_IGN) == SIG_ERR) return 1;
+        puts("IGNORE_TERM_READY");
+        fflush(stdout);
+        for (;;) pause();
+    }
     if (argc == 4 && !strcmp(argv[1], "--signals")) {
         for (int i = 2; i < 4; i++) {
             int number = atoi(argv[i]);

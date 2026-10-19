@@ -19,7 +19,7 @@ class EarlySplash(unittest.TestCase):
     def test_system_stage_reuses_the_daemon_and_never_restarts_a_failed_early_display(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for name in ("bin", "usr/bin", "usr/sbin", "proc", "run/polly-live", "run/plymouth"):
+            for name in ("bin", "usr/bin", "usr/sbin", "usr/lib", "proc", "run/polly-live", "run/plymouth"):
                 (root / name).mkdir(parents=True, exist_ok=True)
             shutil.copyfile(shutil.which("busybox"), root / "bin/busybox")
             (root / "bin/busybox").chmod(0o755)
@@ -27,6 +27,9 @@ class EarlySplash(unittest.TestCase):
                 (root / "bin" / name).symlink_to("busybox")
             (root / "proc/cmdline").write_text("quiet splash polly.splash=1")
             (root / "helper").write_bytes((REPO / "desktop/release/debian/live-splash").read_bytes())
+            (root / "usr/lib/polly-live-splash-control").write_text(
+                'control_load() { return 0; }\ncontrol_record() { return 0; }\n'
+                'control_release() { timeout 1 plymouth quit "$@"; }\n')
             (root / "usr/bin/plymouth").write_text(
                 '#!/bin/sh\nprintf "client %s\\n" "$*" >>/calls\n'
                 'case "$1" in --ping) [ -f /alive ];; quit) /bin/busybox rm /alive;; *) :;; esac\n')
@@ -87,7 +90,7 @@ class EarlySplash(unittest.TestCase):
             functions = (REPO / "desktop/release/debian/live-bootstrap").read_text().split("set -eu\n", 1)[0]
             (root / "check").write_text(
                 functions + 'set -eu\nserial=0\nsplash_active=0\n'
-                'modprobe() { :; }\nmdev() { :; }\n'
+                'modprobe() { :; }\nmdev() { :; }\ncontrol_release() { :; }\n'
                 'splash_runtime=/run/plymouth\nlog_directory=/run/polly-live\n'
                 'uptime_file=/proc/uptime\nexec 3>/console\nstart_splash\n'
                 '[ "$splash_active" = 0 ]\n')
@@ -96,6 +99,7 @@ class EarlySplash(unittest.TestCase):
             self.assertTrue((root / "run/polly-live/splash-unavailable").is_file())
             (root / "check").write_text(
                 functions + 'set -eu\nserial=0\nsplash_active=1\n'
+                'control_release() { :; }\n'
                 'splash_runtime=/run/plymouth\nlog_directory=/run/polly-live\n'
                 'uptime_file=/proc/uptime\nexec 3>/console\n'
                 'timeout() { return 124; }\nstage "Verifying RAM copy"\n'
@@ -103,6 +107,78 @@ class EarlySplash(unittest.TestCase):
             subprocess.run(["chroot", str(root), "/bin/sh", "/check"], check=True, timeout=5)
             self.assertIn("graphical status update failed; using console", (root / "console").read_text())
             self.assertIn("Verifying RAM copy", (root / "run/polly-live/early-boot.log").read_text())
+            (root / "etc/polly-live-graphics-modules").write_text("hyperv_drm\nvirtio_gpu\n")
+            (root / "etc/polly-live-signals").write_text(
+                "POLLY_PLYMOUTH_PRINT_SIGNAL=54\nPOLLY_PLYMOUTH_STOP_SIGNAL=55\n")
+            # Only the hardware/device predicate is simulated; no fake node is called graphics proof.
+            simulated = functions.replace(
+                '[ ! -c /dev/fb0 ] && [ ! -c /dev/dri/card0 ]', '[ "$FIXTURE_GRAPHICS" != 1 ]')
+            (root / "check").write_text(
+                simulated + 'set -eu\nserial=0\nsplash_active=0\nFIXTURE_GRAPHICS=1\n'
+                'modprobe() { printf "%s\\n" "$1" >>/attempts; [ "$1" != hyperv_drm ]; }\n'
+                'mdev() { :; }\nmount() { :; }\ntimeout() { :; }\ncontrol_record() { :; }\n'
+                'splash_runtime=/run/plymouth\nlog_directory=/run/polly-live\n'
+                'uptime_file=/proc/uptime\nexec 3>/console\nstart_splash\n'
+                '[ "$splash_active" = 1 ]\n')
+            subprocess.run(["chroot", str(root), "/bin/sh", "/check"], check=True, timeout=5)
+            self.assertEqual((root / "attempts").read_text().splitlines(), ["hyperv_drm", "virtio_gpu"])
+            self.assertIn("trying other graphics paths", (root / "run/polly-live/early-boot.log").read_text())
+            self.assertTrue((root / "run/polly-live/splash-started").is_file())
+
+
+def cleanup_child(bootstrap):
+    """A deliberately hung test executable, not Plymouth and not a graphical test."""
+    subprocess.run(["mount", "--make-rprivate", "/"], check=True)
+    subprocess.run(["mount", "-t", "proc", "proc", "/proc"], check=True)
+    with tempfile.TemporaryDirectory(prefix="polly-cleanup-") as temporary:
+        root = Path(temporary) / "root"
+        shutil.copytree(bootstrap, root, symlinks=True)
+        (root / "run/plymouth").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root / "probe", root / "bin/plymouthd")
+        shutil.copyfile(REPO / "desktop/release/debian/live-splash-control",
+                        root / "usr/lib/polly-live-splash-control")
+        for applet in ("id", "rm", "sleep", "stat", "readlink", "timeout"):
+            path = root / "bin" / applet
+            if not path.exists():
+                path.symlink_to("busybox")
+        (root / "bin/plymouth").write_text("#!/bin/sh\nexec /bin/sleep 30\n")
+        (root / "bin/plymouth").chmod(0o755)
+        subprocess.run(["mount", "-t", "proc", "proc", str(root / "proc")], check=True)
+        children = []
+        try:
+            for _ in range(2):
+                child = subprocess.Popen(["chroot", str(root), "/bin/plymouthd", "--ignore-term"],
+                                         stdout=subprocess.PIPE, text=True)
+                children.append(child)
+                if child.stdout.readline().strip() != "IGNORE_TERM_READY":
+                    raise RuntimeError("Cleanup fault process did not initialize")
+            daemon, neighbour = children
+            (root / "run/plymouth/pid").write_text(str(daemon.pid) + "\n")
+            command = '. /usr/lib/polly-live-splash-control; splash_runtime=/run/plymouth; proc_directory=/proc; '
+            started = time.monotonic()
+            result = subprocess.run(["chroot", str(root), "/bin/sh", "-c",
+                                     command + "control_record && control_release"],
+                                    capture_output=True, text=True, timeout=4)
+            elapsed = time.monotonic() - started
+            if result.returncode or daemon.wait(timeout=1) != -signal.SIGKILL or neighbour.poll() is not None:
+                raise RuntimeError("Owned daemon cleanup or neighbour isolation failed: " + result.stderr)
+            if elapsed >= 3 or "ignored TERM" not in result.stderr:
+                raise RuntimeError("Cleanup exceeded its service-budget margin or did not escalate: " + result.stderr)
+            for pid, expected in ((1, 1), (neighbour.pid, 1)):
+                (root / "run/plymouth/polly-owned").write_text(f"{pid} {expected}\n")
+                refused = subprocess.run(["chroot", str(root), "/bin/sh", "-c", command + "control_release"],
+                                         capture_output=True, text=True, timeout=1)
+                if refused.returncode == 0 or neighbour.poll() is not None:
+                    raise RuntimeError("Protected/mismatched PID was not refused")
+            print(f"PASS: private PID namespace IPC timeout + ignored TERM -> confirmed KILL/zombie exit "
+                  f"in {elapsed:.3f}s; neighbour and PID1 untouched; not a Plymouth/graphics test")
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=1)
+                child.stdout.close()
+            subprocess.run(["umount", str(root / "proc")], check=True)
 
 
 def ipc_child(bootstrap):
@@ -168,7 +244,13 @@ def ipc_child(bootstrap):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "--ipc-bootstrap":
+    if len(sys.argv) == 3 and sys.argv[1] == "--cleanup-bootstrap":
+        subprocess.run(["unshare", "--mount", "--pid", "--fork", "--kill-child",
+                        sys.executable, "-I", "-B", str(Path(__file__).resolve()),
+                        "--cleanup-child", sys.argv[2]], check=True, timeout=10)
+    elif len(sys.argv) == 3 and sys.argv[1] == "--cleanup-child":
+        cleanup_child(Path(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == "--ipc-bootstrap":
         subprocess.run(["unshare", "--mount", "--pid", "--fork", "--kill-child",
                         sys.executable, "-I", "-B", str(Path(__file__).resolve()),
                         "--ipc-child", sys.argv[2]], check=True, timeout=20)
