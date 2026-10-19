@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build memory-only UEFI media from an exported Alpine or Debian runtime."""
 import argparse
+from datetime import datetime, timezone
 import gzip
 import hashlib
 import json
@@ -72,6 +73,7 @@ def main():
         total = 0
         hardware_sizes = None
         origin = None
+        configuration = None
 
         with tarfile.open(args.export, "r:") as archive:
             if debian and args.legacy_initramfs:
@@ -148,6 +150,33 @@ def main():
                             origin["nativeRuntime"].get("manifestSha256") != origin.get("runtimeManifestSha256") or
                             origin.get("mediaProducerRevision") != args.source_revision):
                         raise ValueError("Assembled runtime origin does not match requested hardware SKU/source")
+                    config_tools = runpy.run_path(str(repo / "desktop/release/debian/live-config.py"))
+                    if origin.get("configuration") is not None:
+                        configuration, plan, lock = config_tools["verify_retained"](root)
+                        if configuration != origin["configuration"]:
+                            raise ValueError("Configured actual root differs from origin")
+                        image_name += "-" + config_tools["label"](configuration)
+                        hardware_sizes["configuration"] = configuration
+                        for name, target in ((config_tools["PLAN"], "resolved-plan.json"),
+                                             (config_tools["LOCK"], "packages.lock.json")):
+                            shutil.copyfile(root / name, staging / target)
+                        sbom = {"spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0",
+                                "SPDXID": "SPDXRef-DOCUMENT",
+                                "name": "Configured PollyDesktop package inventory",
+                                "documentNamespace": "https://pollyui.invalid/spdx/configuration/" + plan["planSha256"],
+                                "creationInfo": {"created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                                 "creators": ["Tool: PollyDesktop-configured-build"]},
+                                "configuration": configuration,
+                                "nativeRuntimeManifestSha256": origin["runtimeManifestSha256"],
+                                "packages": [{"SPDXID": "SPDXRef-Package-" + str(index),
+                                              "name": item["name"], "versionInfo": item["version"],
+                                              "architecture": item["architecture"], "downloadLocation": "NOASSERTION",
+                                              "filesAnalyzed": False, "licenseConcluded": "NOASSERTION",
+                                              "copyrightText": "NOASSERTION"}
+                                             for index, item in enumerate(lock["packages"])]}
+                        (staging / "configuration-sbom.spdx.json").write_text(json.dumps(sbom, indent=2) + "\n")
+                    elif (root / config_tools["PLAN"]).exists() or (root / config_tools["LOCK"]).exists():
+                        raise ValueError("Unlabelled configured root")
                 squashfs = boot / "root.squashfs"
                 subprocess.run(["mksquashfs", str(root), str(squashfs), "-noappend",
                                 "-comp", "gzip", "-processors", "1", "-no-progress", "-quiet"],
@@ -157,6 +186,8 @@ def main():
                     config = source.read().decode()
                 root_layout = root_tools["build_bootstrap"](
                     root, staging, boot, repo, release, config, media_id, squashfs, args.sku)
+                if configuration is not None:
+                    root_layout["configuration"] = configuration
                 (image / "polly").mkdir()
                 (image / "polly" / (media_id + ".marker")).write_text(root_layout["sha256"] + "\n")
                 shutil.rmtree(root)
@@ -270,7 +301,8 @@ def main():
                     repo / "desktop/tools/live-root.py",
                     repo / "tools/build.sh",
                     *([repo / ("desktop/tools/" + name) for name in (
-                        "build-live-skus.mjs", "live-profiles.mjs", "retain-live-inputs.py",
+                        "build-live-skus.mjs", "live-profiles.mjs", "live-config.mjs", "configuration-receipt.mjs",
+                        "package.json", "package-lock.json", "retain-live-inputs.py",
                         "verify-live-runtime.py", "offline-live-overlay.py")] if debian else []),
                     repo / "desktop/release/Containerfile.live",
                     repo / "desktop/system/login.pam", repo / "desktop/system/polly-lock.pam",
@@ -292,6 +324,8 @@ def main():
             manifest.update({"sku": args.sku, "hardwareProfile": selected,
                              "nativeRuntime": origin["nativeRuntime"], "imageToolsID": origin["imageToolsID"],
                              "sizeReport": hardware_sizes, "hardwareTarget": selected["support"]})
+            if configuration is not None:
+                manifest["configuration"] = configuration
             if args.sku == "basic":
                 if origin.get("kernelInput") != root_layout.get("kernelInput"):
                     raise ValueError("basic root/boot kernel input differs from actual origin")
@@ -304,6 +338,9 @@ def main():
             subprocess.run(["xorriso", "-indev", str(iso), "-report_el_torito", "plain"],
                            check=True, timeout=30, stdout=report, stderr=subprocess.STDOUT)
         sums = [f"{digest(file)}  {file.name}" for file in (iso, usb, staging / "live-manifest.json", cfg)]
+        if configuration is not None:
+            sums.extend(f"{digest(staging / name)}  {name}" for name in
+                        ("resolved-plan.json", "packages.lock.json", "configuration-sbom.spdx.json"))
         (staging / "SHA256SUMS").write_text("\n".join(sums) + "\n")
         shutil.rmtree(image)
         efi.unlink()

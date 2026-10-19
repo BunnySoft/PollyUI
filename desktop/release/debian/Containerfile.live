@@ -3,15 +3,20 @@ FROM ${RUNTIME_IMAGE} AS platform-base
 USER root
 WORKDIR /
 ARG HARDWARE_SKU=full
+ARG CONFIGURED_BUILD=0
 COPY release/debian/live-profile.py release/debian/live-profiles.json release/debian/basic-kernel.py release/debian/live-display.py /usr/lib/polly-hardware/
+COPY release/debian/live-config.py /usr/lib/polly-hardware/live-config.py
+COPY release/debian/archive-trust.json /usr/lib/polly-hardware/archive-trust.json
 COPY tools/live-root.py /usr/lib/polly-hardware/live-root.py
 COPY --from=basic-kernel-pack / /tmp/polly-basic-kernel/
+COPY --from=live-configuration / /tmp/polly-configuration/
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
 RUN python3 -I -B /usr/lib/polly-hardware/live-profile.py clean-runtime && \
     packages=$(python3 -I -B /usr/lib/polly-hardware/live-profile.py packages --sku "$HARDWARE_SKU") && \
     chmod 644 /etc/apt/sources.list.d/backports.sources && \
-    apt-get update -qq && apt-get install -y --no-install-recommends \
-    $packages && \
+    if [ "$CONFIGURED_BUILD" = 1 ]; then \
+        python3 -I -B /usr/lib/polly-hardware/live-config.py platform /tmp/polly-configuration; \
+    else apt-get update -qq && apt-get install -y --no-install-recommends $packages; fi && \
     if [ "$HARDWARE_SKU" = basic ]; then \
         python3 -I -B /usr/lib/polly-hardware/basic-kernel.py install /tmp/polly-basic-kernel; \
     else test ! -e /tmp/polly-basic-kernel/kernel-pack.json; fi && \
@@ -102,13 +107,18 @@ RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
     sh /tmp/polly-account-profile live && rm /tmp/polly-account-profile
 COPY release/live /tmp/polly-boot/desktop/release/live
 COPY release/debian /tmp/polly-boot/desktop/release/debian
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-        plymouth=24.004.60-5 libplymouth5=24.004.60-5 plymouth-label=24.004.60-5 && \
+RUN if [ "$CONFIGURED_BUILD" = 1 ]; then \
+        python3 -I -B /usr/lib/polly-hardware/live-config.py boot /tmp/polly-configuration; \
+    else apt-get update -qq && apt-get install -y --no-install-recommends \
+        plymouth=24.004.60-5 libplymouth5=24.004.60-5 plymouth-label=24.004.60-5; fi && \
     python3 -I -B /tmp/polly-boot/desktop/release/debian/boot-install.py install /tmp/polly-boot && \
     dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-live-packages.tsv && \
     rm -rf /tmp/polly-boot && apt-get clean && \
     rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
-    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
+    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial && \
+    if [ "$CONFIGURED_BUILD" = 1 ]; then \
+        python3 -I -B /usr/lib/polly-hardware/live-config.py mark /tmp/polly-configuration; fi && \
+    rm -rf /tmp/polly-configuration
 
 FROM docker.io/library/debian:trixie-slim AS image-tools
 ENV DEBIAN_FRONTEND=noninteractive

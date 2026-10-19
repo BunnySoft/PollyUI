@@ -273,6 +273,17 @@ def main():
     if media_manifest["sourceRevision"] != args.producer_revision:
         raise ValueError("Media source does not match verification producer")
     compressed = check_layout(media_manifest)
+    configuration = media_manifest.get("configuration")
+    if configuration is not None:
+        config_tools = runpy.run_path(str(Path(__file__).resolve().parents[1] / "release/debian/live-config.py"))
+        actual, plan, lock = config_tools["verify_retained"](args.inputs / "frozen-overlays")
+        if actual != configuration or origin.get("configuration") != actual:
+            raise ValueError("Actual root configuration differs from media/origin")
+        if (json.loads((args.media / "resolved-plan.json").read_bytes()) != plan or
+                json.loads((args.media / "packages.lock.json").read_bytes()) != lock):
+            raise ValueError("Configured media input sidecars differ from actual root")
+    elif origin.get("configuration") is not None:
+        raise ValueError("Unlabelled configured root origin")
     if "sku" in media_manifest:
         selected = PROFILES["profile"](media_manifest["sku"])
         if (origin.get("sku") != selected["sku"] or origin.get("hardwareProfile") != selected or
@@ -428,6 +439,8 @@ def main():
                         ("sku", "hardwareProfile", "nativeRuntime", "imageToolsID", "sizeReport")})
         if media_manifest["sku"] == "basic":
             receipt["kernelInput"] = media_manifest["kernelInput"]
+        if configuration is not None:
+            receipt["configuration"] = configuration
     if origin.get("fixtureOnly") is True:
         receipt.update({"fixtureOnly": True, "stage": "verified-structure-fixture-not-publishable"})
     target = args.media / "candidate-origin.json"

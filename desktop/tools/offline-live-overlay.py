@@ -191,6 +191,28 @@ def main():
         for name in (profiles["MARKER"], profiles["PROFILE_COPY"]):
             overlays.append({"path": name, "source": "generated:hardware-profile",
                              "sha256": digest(root / name), "mode": "0644"})
+    configuration = None
+    config_tools = runpy.run_path(str(source / "desktop/release/debian/live-config.py"))
+    if (root / config_tools["PLAN"]).exists():
+        if selected is None:
+            raise ValueError("Configured roots require an explicit hardware SKU")
+        configuration, plan, lock = config_tools["verify_retained"](root)
+        if (plan["configuration"]["hardware"] != args.sku or
+                lock["runtimeManifestSha256"] != digest(bundle / "manifest.json") or
+                lock["runtimeImageID"] != args.base_image):
+            raise ValueError("Configured root differs from actual frozen native input")
+        for name, original in ((config_tools["PLAN"], "generated:resolved-plan"),
+                               (config_tools["LOCK"], "generated:packages-lock"),
+                               ("usr/lib/polly-hardware/live-config.py", "desktop/release/debian/live-config.py"),
+                               ("usr/lib/polly-hardware/archive-trust.json", "desktop/release/debian/archive-trust.json")):
+            info = regular(root / name)
+            if info.st_uid or info.st_gid or stat.S_IMODE(info.st_mode) != 0o644:
+                raise ValueError("Invalid configured root input ownership/mode")
+            if original.startswith("desktop/") and digest(root / name) != digest(source / original):
+                raise ValueError("Configured helper differs from frozen source")
+            overlays.append({"path": name, "source": original, "sha256": digest(root / name), "mode": "0644"})
+    elif (root / config_tools["LOCK"]).exists():
+        raise ValueError("Unlabelled configured lock")
     origin_path = "usr/share/pollyui/runtime-origin.json"
     allowed = set(expected) | set(OVERLAYS) | boot_targets | {origin_path}
     verify_namespaces(root, allowed)
@@ -222,6 +244,8 @@ def main():
                                           "manifestSha256": digest(bundle / "manifest.json")}})
         if kernel_input is not None:
             receipt["kernelInput"] = kernel_input
+        if configuration:
+            receipt["configuration"] = configuration
     else:
         receipt["offlineInputs"] = offline
     target = root / origin_path

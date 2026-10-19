@@ -1,0 +1,22 @@
+schemaVersion: 1
+name: minimal-zh-full
+description: Planned Chinese CPU desktop retaining the full firmware set; native variant is not yet available.
+target: {distribution: debian13, architecture: x86_64}
+hardware: full
+media: live-iso-usb
+nativeVariant: minimal-zh-cpu
+capabilities: {renderer: raster, webgl2: false, vulkan: false, fonts: zh-common, ime: luna-pinyin, audio: standard}
+packageGroups:
+  - description: Chinese user text, legal Debian Luna closure, standard audio and software desktop
+    stage: runtime
+    install: [dbus-daemon, dbus-bin, pipewire-bin, libspa-0.2-modules, file, libmagic1t64, libmagic-mgc, python3, libwayland-client0, libwayland-cursor0, libxkbcommon0, xkb-data, adwaita-icon-theme, fonts-dejavu-core, fonts-wqy-microhei=0.2.0-beta-4, fontconfig, librime-data, rime-data-luna-pinyin, libinput-bin, foot, ca-certificates]
+  - description: System services and full hardware firmware, independent of application rendering
+    stage: platform
+    install: [systemd-sysv, udev, dbus, libpam-systemd, polkitd=126-2, python3, kmod, intel-microcode, iucode-tool, iwd, dhcpcd, openresolv, wireless-regdb, iproute2, iw, rfkill, ethtool, pciutils, usbutils, alsa-utils, util-linux, linux-image-amd64, firmware-intel-graphics, firmware-nvidia-graphics, firmware-amd-graphics, firmware-iwlwifi, firmware-sof-signed]
+  - description: Pinned early graphical splash
+    stage: boot
+    install: [plymouth=24.004.60-5, libplymouth5=24.004.60-5, plymouth-label=24.004.60-5]
+policy:
+  noRecommends: true
+  forbidden: [fonts-noto-core, fonts-noto-cjk, fonts-noto-color-emoji, mesa-vulkan-drivers, mesa-libgallium, libllvm19]
+  pins: []

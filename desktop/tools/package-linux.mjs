@@ -115,14 +115,9 @@ function dependency(spec) {
   needed.add(name);
   for (const child of (packages.get(name).D || '').split(debian ? ',' : ' ')) dependency(child.trim());
 }
-const runtimePackages = debian ? [
-  'dbus-daemon', 'dbus-bin', 'pipewire-bin', 'libspa-0.2-modules',
-  'file', 'libmagic1t64', 'libmagic-mgc', 'python3',
-  'libegl1', 'libegl-mesa0', 'libgl1', 'libgl1-mesa-dri', 'mesa-vulkan-drivers', 'libgles2', 'libwayland-client0',
-  'libwayland-cursor0', 'libwayland-egl1', 'libxkbcommon0', 'xkb-data', 'adwaita-icon-theme',
-  'fonts-dejavu-core', 'fonts-noto-core', 'fonts-noto-cjk', 'fonts-noto-color-emoji',
-  'librime-data', 'rime-data-luna-pinyin', 'libinput-bin', 'foot', 'ca-certificates',
-] : ['dbus', 'pipewire', 'pipewire-tools', 'file', 'python3', 'libcrypto3', 'mesa-egl', 'mesa-gl', 'mesa-gles', 'mesa-dri-gallium',
+const runtimePackages = debian ? JSON.parse(readFileSync(path.join(repo,
+  'desktop/release/debian/runtime-packages.json'), 'utf8')).install :
+  ['dbus', 'pipewire', 'pipewire-tools', 'file', 'python3', 'libcrypto3', 'mesa-egl', 'mesa-gl', 'mesa-gles', 'mesa-dri-gallium',
   'wayland-libs-client', 'wayland-libs-cursor', 'wayland-libs-egl', 'libxkbcommon',
   'xkeyboard-config', 'capitaine-cursors', 'font-dejavu', 'font-noto-cjk', 'font-noto-emoji',
   'font-noto-arabic', 'font-noto-devanagari', 'rime-plum-data', 'foot', 'ca-certificates'];
@@ -357,6 +352,7 @@ try {
       'desktop/release/debian/mesa.json', 'desktop/release/debian/build-mesa.py',
       'desktop/patches/mesa-lifetime.patch', 'desktop/tools/local-debian-packages.py',
       'desktop/release/debian/build-wlroots.py', 'desktop/release/debian/rime-default.custom.yaml',
+      'desktop/release/debian/runtime-packages.json',
       'desktop/release/debian/apply-wlroots-effects.py', 'desktop/release/debian/wlroots-effects.json',
       'desktop/patches/wlroots-scene-effects.patch',
       'desktop/release/debian/debian.sources', 'desktop/release/debian/backports.sources'] : ['desktop/Containerfile', 'desktop/release/Containerfile'])];

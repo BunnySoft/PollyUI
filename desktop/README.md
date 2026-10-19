@@ -3,6 +3,9 @@
 For the current system-level introduction, principles, capability matrix and
 handoff, start with **[PollyOS 技术简介与交接指南](../docs/POLLYOS.md)**.
 PollyOS is the system name; existing subproject/tool/artifact names remain unchanged.
+For YAML-driven SKU configuration, read-only planning and explicit assembly inputs,
+see [Configured builds](../docs/CONFIGURED-BUILDS.md). Standard defaults remain unchanged;
+the Chinese minimal native variant is explicitly unavailable, not a relabelled stock runtime.
 The **[historical deferred-work ledger](../docs/POLLYOS-BACKLOG.md)** tracks
 unfinished subfeatures across the original 45 milestones, theme/release decisions
 and the second-stage plan; a completed milestone does not close all future extensions.

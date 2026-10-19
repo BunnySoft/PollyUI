@@ -38,6 +38,9 @@ set_tests_properties(desktop-live-hardware-profiles PROPERTIES TIMEOUT 30)
 add_test(NAME desktop-live-sku-build-entry COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
     "${CMAKE_CURRENT_SOURCE_DIR}/live-sku-build.mjs")
 set_tests_properties(desktop-live-sku-build-entry PROPERTIES TIMEOUT 90)
+add_test(NAME desktop-live-config COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/live-config.mjs")
+set_tests_properties(desktop-live-config PROPERTIES TIMEOUT 90)
 find_program(CURSOR_PYTHON_EXECUTABLE python3 REQUIRED)
 add_executable(pollywm-fir-backend-test fir-backend.c)
 target_link_libraries(pollywm-fir-backend-test PRIVATE pollywm-core)

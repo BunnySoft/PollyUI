@@ -21,6 +21,7 @@
 /third_party/angle-metal/
 .cache/
 /gui/tests/gpu/node_modules/
+/desktop/tools/node_modules/
 
 # CMake
 CMakeCache.txt

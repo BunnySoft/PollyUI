@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
+import { configurationLabel } from './configuration-receipt.mjs';
 
 const manifestBytes = readFileSync(new URL('../release/debian/live-profiles.json', import.meta.url));
 export const profileManifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
@@ -86,7 +87,8 @@ export const hardwareMarker = sku => JSON.stringify({
 
 export function validateHardwareMedia(value) {
   if (!Object.hasOwn(value, 'sku')) {
-    if (value.hardwareProfile !== undefined || value.nativeRuntime !== undefined || value.sizeReport !== undefined)
+    if (value.hardwareProfile !== undefined || value.nativeRuntime !== undefined || value.sizeReport !== undefined ||
+        value.configuration !== undefined)
       fail('Unlabelled hardware profile receipt');
     return null;
   }
@@ -120,8 +122,12 @@ export function validateHardwareMedia(value) {
       !/^[0-9a-f]{40}$/.test(native.sourceRevision) || !/^[0-9a-f]{64}$/.test(native.manifestSha256) ||
       value.runtimeImage !== native.imageID || !/^(?:sha256:)?[0-9a-f]{64}$/.test(value.imageToolsID))
     fail('Missing immutable common native runtime/tools identity');
+  const configured = value.configuration === undefined ? '' : '-' + configurationLabel(value.configuration);
+  if (!isDeepStrictEqual(value.root?.configuration, value.configuration) ||
+      !isDeepStrictEqual(value.sizeReport?.configuration, value.configuration))
+    fail('Root/size configuration identity mismatch');
   for (const [key, suffix] of [['iso', 'uefi-live.iso'], ['usb', 'uefi-usb.img']])
-    if (value[key]?.name !== `pollydesktop-${value.version}-debian13-${value.sku}-x86_64-${suffix}`)
+    if (value[key]?.name !== `pollydesktop-${value.version}-debian13-${value.sku}${configured}-x86_64-${suffix}`)
       fail('Media filename does not match hardware SKU');
   const report = value.sizeReport;
   if (!report || report.sku !== value.sku || report.manifestSha256 !== expected.manifestSha256 ||

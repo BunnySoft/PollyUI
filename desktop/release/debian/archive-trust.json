@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "keyring": "/usr/share/keyrings/debian-archive-keyring.gpg",
+  "sha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017",
+  "origin": "Debian",
+  "codenames": ["trixie", "trixie-updates", "trixie-security", "trixie-backports"],
+  "provenance": "Digest matched the existing authenticated stock media evidence and its exported Debian archive keyring; changing this trust root requires source review."
+}
