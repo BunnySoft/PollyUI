@@ -164,6 +164,7 @@ def cleanup_child(bootstrap):
                 raise RuntimeError("Owned daemon cleanup or neighbour isolation failed: " + result.stderr)
             if elapsed >= 3 or "ignored TERM" not in result.stderr:
                 raise RuntimeError("Cleanup exceeded its service-budget margin or did not escalate: " + result.stderr)
+            print(result.stderr, end="")
             for pid, expected in ((1, 1), (neighbour.pid, 1)):
                 (root / "run/plymouth/polly-owned").write_text(f"{pid} {expected}\n")
                 refused = subprocess.run(["chroot", str(root), "/bin/sh", "-c", command + "control_release"],

@@ -397,6 +397,13 @@ short exit checks, TERM and, only if still confirmed, KILL. Cleanup confirms
 absence or a zombie that has released its file descriptors; otherwise it
 reports unconfirmed DRM/input release rather than claiming a console fallback.
 The bounded cleanup leaves margin within the existing five-second stop limit.
+Forced process exit/file-descriptor release does **not** establish that Linux
+VT `KD_GRAPHICS` or termios has recovered. Normal Plymouth quit/TERM has its
+upstream hide/terminal cleanup; the forced-KILL path is logged separately.
+The unresponsive-process fixture proves exit and PID isolation only, not visible
+text recovery. Actual fault-display/VT restoration remains a boot qualification
+boundary; ANSI escape sequences or a successful process-exit check are not used
+as substitutes.
 Hyper-V and virtio GPU modules are alternatives: an unavailable candidate is
 logged while other candidates and an existing EFI framebuffer are still tried.
 

@@ -125,6 +125,7 @@ control_release() {
     control_error "boot display ignored TERM; forcing only its confirmed PID"
     control_signal KILL || return 1
     if control_wait; then
+        control_error "forced daemon exit confirmed; VT text-mode restoration is not established"
         rm -f "$splash_runtime/polly-owned"
         return 0
     fi
