@@ -3,13 +3,20 @@ export PATH=/bin
 umask 022
 
 stage() {
-    read -r uptime rest < "$uptime_file"
-    printf '[%s] Polly Live: %s\n' "$uptime" "$*" >&3
+    stamp="untimed: /proc/uptime unavailable"
+    if [ -r "$uptime_file" ]; then
+        if read -r uptime rest < "$uptime_file"; then
+            stamp=$uptime
+        else
+            stamp="untimed: /proc/uptime read failed"
+        fi
+    fi
+    printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&3
     if [ "$serial" = 1 ]; then
-        printf '[%s] Polly Live: %s\n' "$uptime" "$*" >&4
+        printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&4
     fi
     if [ -d "$log_directory" ]; then
-        printf '[%s] Polly Live: %s\n' "$uptime" "$*" >>"$log_directory/early-boot.log"
+        printf '[%s] Polly Live: %s\n' "$stamp" "$*" >>"$log_directory/early-boot.log"
     fi
 }
 
@@ -25,12 +32,12 @@ serial=0
 console=/dev/console
 uptime_file=/proc/uptime
 log_directory=/tmp
+exec 3>/dev/console
 trap 'fail "Bootstrap command failed (status $?)"' EXIT
 chmod 0755 /
 mount -t devtmpfs devtmpfs /dev
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
-exec 3>/dev/console
 for arg in $(cat /proc/cmdline); do
     case "$arg" in polly.serial=1) serial=1 ;; esac
 done

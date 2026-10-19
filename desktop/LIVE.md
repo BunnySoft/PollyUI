@@ -184,10 +184,15 @@ matching media, and checks the root hash and size baked into its own archive.
 The fixed `POLLYLIVE` label is not an identity or a discovery fallback.
 This is local integrity/binding, **not** a signed or authenticated boot chain.
 
-Every entry prints `Loading kernel`, `Loading bootstrap` and `Starting kernel`.
+Every entry prints `Loading kernel`, `Loading bootstrap` and `Starting kernel`
+only as the preceding command succeeds; kernel/bootstrap load failure prints
+an explicit GRUB error and halts rather than booting a partial payload.
 Early init prints real copy/hash/mount stages with `/proc/uptime` timestamps
 before the large copy, also to serial in the serial entry. The retained log is
 `/run/polly-live/early-boot.log` and is included by `polly-live-diagnostics`.
+The newc writer synthesizes root-owned console/null character entries without
+host `mknod`; init opens its console before the first mount. Failures before proc
+is available explicitly say `untimed`, never invent a monotonic timestamp.
 The bootstrap uses static BusyBox plus `blkid` with its exact ELF loader/library
 closure, and only the selected kernel's storage/filesystem module dependency
 closure and declared firmware. The builder requires built-in EFI framebuffer,

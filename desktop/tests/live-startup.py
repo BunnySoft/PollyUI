@@ -86,8 +86,7 @@ class Startup(unittest.TestCase):
         for entry in entries:
             self.assertIn("polly.media_uuid=$polly_media_uuid", entry)
             self.assertIn("polly.media_id=@POLLY_MEDIA_ID@", entry)
-            self.assertIn('echo "Polly: Loading bootstrap..."', entry)
-            self.assertIn('echo "Polly: Starting kernel..."', entry)
+            self.assertIn("polly_start console=", entry)
         self.assertNotIn("auto", main.split("set gfxmode=", 1)[1].splitlines()[0])
         theme = (REPO / "desktop/release/live/grub-theme.txt").read_text()
         self.assertIn('id = "__timeout__"', theme)
@@ -122,6 +121,22 @@ class Startup(unittest.TestCase):
         getty = (REPO / "desktop/release/debian/live-boot-getty.conf").read_text()
         self.assertIn("--autologin polly", getty)
         self.assertIn("--noissue --skip-login", getty)
+
+    def test_grub_load_stages_do_not_claim_a_failed_kernel_is_starting(self):
+        cfg = (REPO / "desktop/release/debian/live-grub.cfg").read_text()
+        function = cfg.split("function polly_start {", 1)[1].split("function polly_prepare_media", 1)[0]
+        # Shell command stubs exercise the shared branches, not a GRUB boot.
+        script = ('linux() { return "$KERNEL_RESULT"; }\n'
+                  'initrd() { return "$BOOTSTRAP_RESULT"; }\n'
+                  'halt() { exit 27; }\npolly_start() {' + function + "\npolly_start test=1\n")
+        for kernel, bootstrap in ((0, 0), (1, 0), (0, 1)):
+            with self.subTest(kernel=kernel, bootstrap=bootstrap):
+                result = subprocess.run(["sh", "-c", script], text=True, capture_output=True, timeout=5,
+                                        env={**os.environ, "KERNEL_RESULT": str(kernel),
+                                             "BOOTSTRAP_RESULT": str(bootstrap)})
+                self.assertEqual(result.returncode, 27 if kernel or bootstrap else 0, result.stderr)
+                self.assertEqual("Starting kernel..." in result.stdout, not (kernel or bootstrap))
+                self.assertEqual("Polly ERROR:" in result.stdout, bool(kernel or bootstrap))
 
     def test_original_logo_size_colors_and_repeatability(self):
         data = assets["logo"]()

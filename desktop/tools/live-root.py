@@ -15,6 +15,7 @@ import subprocess
 ROOT_KIND = "squashfs-ram-overlay"
 ROOT_PATH = "boot/root.squashfs"
 MAX_BOOTSTRAP_BYTES = 64 * 1024 * 1024
+DEVICES = {"dev/console": (5, 1, 0o600), "dev/null": (1, 3, 0o666)}
 MODULES = (
     "loop", "squashfs", "overlay", "isofs", "vfat", "nls_cp437", "nls_ascii", "nls_utf8",
     "sr_mod", "sd_mod", "ahci", "ata_piix", "virtio_pci", "virtio_blk", "virtio_scsi",
@@ -168,17 +169,26 @@ def module_closure(root, kernel):
 
 def write_cpio(root, target):
     files = sorted(root.rglob("*"))
+    if any((root / name).exists() or (root / name).is_symlink() for name in DEVICES):
+        raise ValueError("Bootstrap device nodes must be synthesized only in newc")
     total = sum(path.lstat().st_size for path in files if path.is_file() and not path.is_symlink())
     if total > MAX_BOOTSTRAP_BYTES or any(path.name.endswith(".squashfs") for path in files):
         raise ValueError("Bootstrap must be <=64 MiB unpacked and contain no SquashFS root")
     with target.open("wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as out:
-        for inode, path in enumerate([root, *files, None], 1):
-            name = "TRAILER!!!" if path is None else "." if path == root else path.relative_to(root).as_posix()
-            mode = 0 if path is None else path.lstat().st_mode
-            data = (os.readlink(path).encode() if stat.S_ISLNK(mode) else
-                    path.read_bytes() if stat.S_ISREG(mode) else b"")
+        for inode, path in enumerate([root, *files, *DEVICES, None], 1):
+            major = minor = 0
+            if isinstance(path, str):
+                name = path
+                major, minor, permissions = DEVICES[name]
+                mode = stat.S_IFCHR | permissions
+                data = b""
+            else:
+                name = "TRAILER!!!" if path is None else "." if path == root else path.relative_to(root).as_posix()
+                mode = 0 if path is None else path.lstat().st_mode
+                data = (os.readlink(path).encode() if stat.S_ISLNK(mode) else
+                        path.read_bytes() if stat.S_ISREG(mode) else b"")
             encoded = name.encode() + b"\0"
-            fields = (inode, mode, 0, 0, 1, 0, len(data), 0, 0, 0, 0, len(encoded), 0)
+            fields = (inode, mode, 0, 0, 1, 0, len(data), 0, 0, major, minor, len(encoded), 0)
             header = ("070701" + "".join(f"{value:08x}" for value in fields)).encode()
             out.write(header + encoded + b"\0" * (-(110 + len(encoded)) % 4))
             out.write(data + b"\0" * (-len(data) % 4))
@@ -281,6 +291,8 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
         elif path.is_file():
             record.update({"size": info.st_size, "sha256": digest(path)})
         inventory.append(record)
+    for name, (major, minor, permissions) in DEVICES.items():
+        inventory.append({"path": name, "mode": stat.S_IFCHR | permissions, "device": [major, minor]})
     total = write_cpio(bootstrap, boot / "initramfs.gz")
     result = {
         "kind": ROOT_KIND, "path": ROOT_PATH, "sha256": metadata["sha256"],

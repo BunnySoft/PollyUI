@@ -119,7 +119,7 @@ def check_bootstrap(path, layout):
             if len(header) != 110 or header[:6] != b"070701":
                 raise ValueError("Invalid bootstrap newc header")
             fields = [int(header[index:index + 8], 16) for index in range(6, 110, 8)]
-            _, mode, uid, gid, _, _, size, _, _, _, _, namesize, _ = fields
+            _, mode, uid, gid, _, _, size, _, _, major, minor, namesize, _ = fields
             if not 1 <= namesize <= 4096 or size > ROOT["MAX_BOOTSTRAP_BYTES"]:
                 raise ValueError("Oversize bootstrap entry")
             name = source.read(namesize)
@@ -134,14 +134,14 @@ def check_bootstrap(path, layout):
                 raise ValueError("Duplicate/non-root bootstrap entry: " + name)
             if (name.endswith(".squashfs") or
                     not (name in {".", "init", "bin", "etc", "lib", "lib64", "dev", "proc", "sys",
-                                  "run", "tmp", "media", "newroot"} or
+                                  "run", "tmp", "media", "newroot", "dev/console", "dev/null"} or
                          name.startswith(("bin/", "etc/polly-live-", "lib/", "lib64/")))):
                 raise ValueError("Full runtime/unexpected path in bootstrap: " + name)
             data = source.read(size)
             if len(data) != size:
                 raise ValueError("Truncated bootstrap entry")
             source.read(-size % 4)
-            found[name] = (mode, data)
+            found[name] = (mode, data, major, minor)
             if stat.S_ISREG(mode):
                 total += size
                 if total > ROOT["MAX_BOOTSTRAP_BYTES"]:
@@ -155,11 +155,12 @@ def check_bootstrap(path, layout):
     if len(records) != len(bootstrap["files"]) or set(records) != set(found) - {"."}:
         raise ValueError("Bootstrap file inventory differs")
     for name, record in records.items():
-        mode, data = found[name]
+        mode, data, major, minor = found[name]
         if (mode != record["mode"] or
                 stat.S_ISREG(mode) and (len(data) != record["size"] or
                                        hashlib.sha256(data).hexdigest() != record["sha256"]) or
-                stat.S_ISLNK(mode) and data.decode() != record["link"]):
+                stat.S_ISLNK(mode) and data.decode() != record["link"] or
+                stat.S_ISCHR(mode) and [major, minor] != record["device"]):
             raise ValueError("Bootstrap node differs from exact inventory: " + name)
 
 

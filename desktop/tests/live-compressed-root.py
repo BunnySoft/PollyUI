@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shutil
 import stat
 import struct
 import subprocess
@@ -116,6 +117,7 @@ class CompressedRoot(unittest.TestCase):
             directory = Path(temp) / "bootstrap"
             (directory / "bin").mkdir(parents=True)
             (directory / "etc").mkdir()
+            (directory / "dev").mkdir()
             identity, sha, size = "a" * 32, "b" * 64, 100
             (directory / "etc/polly-live-root").write_text(
                 f"POLLY_MEDIA_ID={identity}\nPOLLY_ROOT_SHA256={sha}\nPOLLY_ROOT_BYTES={size}\n")
@@ -126,6 +128,8 @@ class CompressedRoot(unittest.TestCase):
             files = [{"path": item.relative_to(directory).as_posix(), "mode": item.stat().st_mode,
                       **({"size": item.stat().st_size, "sha256": root["digest"](item)} if item.is_file() else {})}
                      for item in sorted(directory.rglob("*"))]
+            files.extend({"path": name, "mode": stat.S_IFCHR | mode, "device": [major, minor]}
+                         for name, (major, minor, mode) in root["DEVICES"].items())
             layout = {"mediaIdentity": identity, "sha256": sha, "size": size, "bootstrap": {
                 "size": path.stat().st_size, "sha256": root["digest"](path), "uncompressedBytes": total,
                 "files": files}}
@@ -137,6 +141,37 @@ class CompressedRoot(unittest.TestCase):
             (directory / "root.squashfs").write_bytes(b"never embed the full root")
             with self.assertRaisesRegex(ValueError, "contain no SquashFS"):
                 root["write_cpio"](directory, path)
+
+    def test_first_mount_failures_are_visible_before_proc_and_never_continue_boot(self):
+        for failed in ("devtmpfs", "proc"):
+            with self.subTest(failed=failed), tempfile.TemporaryDirectory() as temp:
+                directory = Path(temp)
+                for name in ("bin", "dev", "proc", "sys", "run", "tmp"):
+                    (directory / name).mkdir()
+                (directory / "dev/console").write_bytes(b"")
+                (directory / "bin/busybox").write_bytes(Path(shutil.which("busybox")).read_bytes())
+                (directory / "bin/busybox").chmod(0o755)
+                (directory / "bin/chmod").symlink_to("busybox")
+                (directory / "bin/mount").write_text(
+                    '#!/bin/busybox sh\nprintf "%s\\n" "$2" >>/mount-attempts\n'
+                    '[ "$2" != "$FAIL_MOUNT" ]\n')
+                (directory / "bin/mount").chmod(0o755)
+                (directory / "bin/sh").write_text(
+                    '#!/bin/busybox sh\nprintf diagnostic-shell >/failure-path\n'
+                    'kill -TERM "$PPID"\nexit 0\n')
+                (directory / "bin/sh").chmod(0o755)
+                (directory / "init").write_bytes((REPO / "desktop/release/debian/live-bootstrap").read_bytes())
+                result = subprocess.run(["chroot", str(directory), "/bin/busybox", "sh", "/init"],
+                                        text=True, capture_output=True, timeout=5,
+                                        env={**os.environ, "FAIL_MOUNT": failed})
+                self.assertNotEqual(result.returncode, 0)
+                text = (directory / "dev/console").read_text()
+                self.assertIn("[untimed: /proc/uptime unavailable] Polly Live: ERROR:", text)
+                self.assertIn("No disk writes or alternate root attempted", text)
+                self.assertNotIn("Copying compressed root", text)
+                self.assertEqual((directory / "failure-path").read_text(), "diagnostic-shell")
+                self.assertEqual((directory / "mount-attempts").read_text().splitlines(),
+                                 ["devtmpfs"] if failed == "devtmpfs" else ["devtmpfs", "proc"])
 
     def test_exact_tool_applet_and_dynamic_uuid_probe_closure(self):
         with tempfile.TemporaryDirectory() as temp:

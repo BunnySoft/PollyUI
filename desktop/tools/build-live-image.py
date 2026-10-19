@@ -171,7 +171,7 @@ def main():
             resources = assets["write_theme"](staging / "grub-theme")
             resources.append("boot/grub/themes/polly/theme.txt=" + str(repo / "desktop/release/live/grub-theme.txt"))
         run("grub-mkstandalone", "-O", "x86_64-efi", "--locales=", "--fonts=unicode" if debian else "--fonts=",
-            "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal probe" +
+            "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal probe halt" +
             (" all_video efi_gop gfxterm gfxmenu png font" if debian else ""),
             "-o", str(efi), "boot/grub/grub.cfg=" + str(cfg), *resources)
         fat = boot / "efiboot.img"
