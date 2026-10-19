@@ -63,7 +63,7 @@ export function sourceInventory(repo) {
     const file = path.join(repo, name), info = lstatSync(file);
     if (info.isDirectory()) {
       for (const child of readdirSync(file).sort()) {
-        if (['.git', '__pycache__'].includes(child)) continue;
+        if (['.git', '__pycache__', 'node_modules'].includes(child)) continue;
         visit(path.posix.join(name, child));
       }
     } else {

@@ -26,10 +26,10 @@ export function validateLiveLayout(manifest) {
 export function validateLiveRootReceipt(manifest, origin) {
   const layout = validateLiveLayout(manifest);
   if (Object.hasOwn(manifest, 'sku')) {
-    for (const field of ['sku', 'hardwareProfile', 'nativeRuntime', 'imageToolsID', 'sizeReport', 'kernelInput'])
+    for (const field of ['sku', 'hardwareProfile', 'nativeRuntime', 'imageToolsID', 'sizeReport', 'kernelInput', 'configuration'])
       if (!isDeepStrictEqual(origin[field], manifest[field]))
         throw new Error('Hardware profile does not match actual root verification receipt: ' + field);
-  } else if (Object.hasOwn(origin, 'sku') || origin.hardwareProfile !== undefined)
+  } else if (Object.hasOwn(origin, 'sku') || origin.hardwareProfile !== undefined || origin.configuration !== undefined)
     throw new Error('Unlabelled hardware profile verification receipt');
   if (layout === 'legacy-initramfs') {
     if ((origin.schemaVersion ?? 1) !== 1 || origin.rootLayout !== undefined)

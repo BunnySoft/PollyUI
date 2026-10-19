@@ -79,12 +79,14 @@ function fixture(t, fail = '') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'polly-entry-control-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const source = path.join(root, 'source'), bundle = path.join(root, 'runtime'), output = path.join(root, 'output');
-  for (const name of ['build-live-skus.mjs', 'live-profiles.mjs', 'live-layout.mjs', 'package-contract.mjs',
+  for (const name of ['build-live-skus.mjs', 'live-profiles.mjs', 'live-config.mjs', 'configuration-receipt.mjs',
+    'live-layout.mjs', 'package-contract.mjs',
     'publish-live-iso.mjs', 'release-report.mjs', 'build-live.sh', 'live-root.py',
     'offline-live-overlay.py', 'retain-live-inputs.py', 'build-live-image.py', 'verify-live-runtime.py']) {
     write(path.join(source, 'desktop/tools', name), fs.readFileSync(path.join(repo, 'desktop/tools', name)));
   }
-  for (const name of ['live-profiles.json', 'live-profile.py', 'basic-kernel.py', 'live-display.py', 'Containerfile.live'])
+  for (const name of ['live-profiles.json', 'live-profile.py', 'basic-kernel.py', 'live-display.py', 'Containerfile.live',
+    'runtime-packages.json', 'boot-dependencies.json', 'live-config.py', 'archive-trust.json'])
     write(path.join(source, 'desktop/release/debian', name), fs.readFileSync(path.join(repo, 'desktop/release/debian', name)));
   for (const name of ['shared/probe', 'sysrt/probe', 'third_party/quickjs/probe', 'third_party/yoga/probe'])
     write(path.join(source, name), 'frozen input\n');

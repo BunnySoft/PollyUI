@@ -177,6 +177,7 @@ export async function inspectRelease(directory) {
     architecture: manifest.architecture, source: { revision: source, dirty },
     artifacts: entries, packages, payload: { bytes: payloadBytes, files, ...(groups ? { groups } : {}) },
     ...(inputs ? { buildInputs: inputs } : {}),
+    ...(manifest.configuration ? { configuration: manifest.configuration } : {}),
     ...(localPackages ? { localPackages } : {}),
     ...(live ? { minimumGuestMemoryMiB: manifest.minimumGuestMemoryMiB, runtimeImage: manifest.runtimeImage,
       ...(Object.hasOwn(manifest, 'sku') ? { sku: manifest.sku, hardwareProfile: manifest.hardwareProfile,

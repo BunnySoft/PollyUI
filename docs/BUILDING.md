@@ -6,6 +6,10 @@
 
 ## 1. 选择构建范围
 
+配置驱动的 SKU、纯 JS 工具安装、只读 `--plan`、显式 `--build`、
+依赖锁和当前极简版阻断条件，集中见 [YAML 配置构建说明](CONFIGURED-BUILDS.md)。
+旧 `--sku/--skus` 和默认标准版语义不变；配置文件不是已经构建的 minimal ISO。
+
 | 目标 | 平台与入口 | 产物 |
 | --- | --- | --- |
 | 通用 GUI | Windows x64 / macOS / Linux，下面第 3、4 节 | `pollyui-engine` 静态库、`pollyui-playground` |

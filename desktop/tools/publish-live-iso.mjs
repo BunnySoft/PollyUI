@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateLiveRootReceipt } from './live-layout.mjs';
+import { resolvePlan, configIdentity, objectHash } from './live-config.mjs';
+import { configurationLabel } from './configuration-receipt.mjs';
 
 export const DEFAULT_DESTINATION = String.raw`D:\temp\PollyOS`;
 export const ALIAS = 'PollyOS.iso';
@@ -47,6 +49,31 @@ export function verifyBundle(directory) {
   const read = name => JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
   const manifest = read('live-manifest.json'), origin = read('candidate-origin.json'), iso = manifest.iso;
   const layout = validateLiveRootReceipt(manifest, origin);
+  if (manifest.configuration !== undefined) {
+    for (const name of ['resolved-plan.json', 'packages.lock.json', 'configuration-sbom.spdx.json'])
+      if (!checksums.has(name)) throw new Error('Missing configured build input: ' + name);
+    const plan = read('resolved-plan.json'), lock = read('packages.lock.json');
+    const expected = resolvePlan(plan.configuration, lock);
+    if (objectHash(expected) !== objectHash(plan) ||
+        objectHash(configIdentity(plan)) !== objectHash(manifest.configuration) ||
+        plan.configuration.hardware !== manifest.sku ||
+        lock.runtimeImageID !== manifest.runtimeImage ||
+        lock.runtimeManifestSha256 !== manifest.nativeRuntime.manifestSha256 ||
+        objectHash(plan.resolution.packages.map(({ name, version, architecture }) => ({ name, version, architecture }))
+          .sort((a, b) => a.name.localeCompare(b.name))) !==
+        objectHash(manifest.sizeReport.packages.map(({ name, version, architecture }) => ({ name, version, architecture }))
+          .sort((a, b) => a.name.localeCompare(b.name))))
+      throw new Error('Configured media differs from resolved plan/native runtime/actual package inventory');
+    const sbom = read('configuration-sbom.spdx.json');
+    if (sbom.spdxVersion !== 'SPDX-2.3' || objectHash(sbom.configuration) !== objectHash(manifest.configuration) ||
+        sbom.nativeRuntimeManifestSha256 !== manifest.nativeRuntime.manifestSha256 ||
+        objectHash(sbom.packages?.map(({ name, versionInfo, architecture }) => ({ name, versionInfo, architecture }))) !==
+        objectHash(lock.packages.map(item => ({
+          name: item.name, versionInfo: item.version, architecture: item.architecture,
+        })))) throw new Error('Configured SBOM differs from actual locked native/package inputs');
+  } else if (['resolved-plan.json', 'packages.lock.json', 'configuration-sbom.spdx.json']
+    .some(name => checksums.has(name) || fs.existsSync(path.join(directory, name))))
+    throw new Error('Unlabelled configured media inputs');
   if (layout === 'squashfs-ram-overlay' &&
       (checksums.get(manifest.usb?.name?.toLowerCase())?.sha !== manifest.usb?.sha256 ||
        !Number.isSafeInteger(manifest.usb.size) || manifest.usb.size <= 0 ||
@@ -92,6 +119,8 @@ export function publish(directory, destination = DEFAULT_DESTINATION, options = 
   if (typeof updateAlias !== 'boolean') throw new Error('updateAlias must be an explicit boolean');
   if (updateAlias && Object.hasOwn(manifest, 'sku') && manifest.sku !== 'full')
     throw new Error('Only the explicit full hardware SKU may update PollyOS.iso; publish reduced SKUs versioned-only');
+  if (updateAlias && manifest.configuration && !manifest.configuration.stableAliasEligible)
+    throw new Error('Only the exact standard full capability/package contract may update PollyOS.iso');
   const relative = path.relative(directory, destination);
   if (!relative || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
     throw new Error('Publication destination must not be inside its source bundle');
@@ -102,6 +131,7 @@ export function publish(directory, destination = DEFAULT_DESTINATION, options = 
     throw new Error('Refusing to replace a non-regular ISO alias');
   const release = path.join(destination, `pollydesktop-${manifest.version}-${manifest.distribution}-` +
     (Object.hasOwn(manifest, 'sku') ? `${manifest.sku}-` : '') +
+    (manifest.configuration ? configurationLabel(manifest.configuration) + '-' : '') +
     `${origin.runtimeSourceRevision.slice(0, 7)}-${origin.mediaProducerRevision.slice(0, 7)}-${manifest.iso.sha256.slice(0, 12)}`);
   if (fs.existsSync(release)) {
     if (fs.lstatSync(release).isSymbolicLink() ||
@@ -124,6 +154,7 @@ export function publish(directory, destination = DEFAULT_DESTINATION, options = 
   const iso = path.join(release, manifest.iso.name);
   if (!updateAlias) return {
     schemaVersion: 1, releaseDirectory: release, iso, sku: manifest.sku,
+    ...(manifest.configuration ? { configuration: manifest.configuration } : {}),
     alias: null, aliasType: 'not-updated', bytes: regular(iso).size, sha256: manifest.iso.sha256,
     runtimeSourceRevision: origin.runtimeSourceRevision, mediaProducerRevision: manifest.sourceRevision,
     runtimeImageID: manifest.runtimeImage, isoFileIdentity: identity(iso),
@@ -143,6 +174,7 @@ export function publish(directory, destination = DEFAULT_DESTINATION, options = 
     throw new Error('Published alias identity verification failed');
   return {
     schemaVersion: 1, releaseDirectory: release, iso, alias, aliasType: 'hardlink',
+    ...(manifest.configuration ? { configuration: manifest.configuration } : {}),
     bytes: regular(iso).size, sha256: manifest.iso.sha256,
     runtimeSourceRevision: origin.runtimeSourceRevision, mediaProducerRevision: manifest.sourceRevision,
     runtimeImageID: manifest.runtimeImage, isoFileIdentity: identity(iso), aliasFileIdentity: identity(alias),

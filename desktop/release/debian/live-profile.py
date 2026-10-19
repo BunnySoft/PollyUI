@@ -276,7 +276,7 @@ def verify_legacy_export(archive, members):
             raise ValueError("Invalid legacy runtime origin")
         with archive.extractfile(origin) as source:
             value = json.loads(source.read())
-        if not isinstance(value, dict) or any(key in value for key in ("sku", "hardwareProfile", "nativeRuntime")):
+        if not isinstance(value, dict) or any(key in value for key in ("sku", "hardwareProfile", "nativeRuntime", "configuration")):
             raise ValueError("Legacy initramfs cannot contain a hardware SKU runtime origin")
 
 
@@ -314,7 +314,7 @@ def size_report(root, sku, repo):
 
 def validate_media(value):
     if "sku" not in value:
-        if any(key in value for key in ("hardwareProfile", "nativeRuntime", "sizeReport")):
+        if any(key in value for key in ("hardwareProfile", "nativeRuntime", "sizeReport", "configuration")):
             raise ValueError("Unlabelled hardware profile receipt")
         return None
     selected = profile(value["sku"])
@@ -344,8 +344,18 @@ def validate_media(value):
             value.get("runtimeImage") != native["imageID"] or
             not re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", value.get("imageToolsID", ""))):
         raise ValueError("Missing immutable common native runtime/tools identity")
+    configured = value.get("configuration")
+    if (value["root"].get("configuration") != configured or value.get("sizeReport", {}).get("configuration") != configured):
+        raise ValueError("Root/size configuration identity mismatch")
+    label = ""
+    if configured is not None:
+        if (configured.get("schemaVersion") != 1 or
+                not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", configured.get("name", "")) or
+                not re.fullmatch(r"[0-9a-f]{64}", configured.get("planSha256", ""))):
+            raise ValueError("Invalid configured media identity")
+        label = "-" + configured["name"] + "-" + configured["planSha256"][:12]
     for key, suffix in (("iso", "uefi-live.iso"), ("usb", "uefi-usb.img")):
-        if value.get(key, {}).get("name") != f"pollydesktop-{value['version']}-debian13-{value['sku']}-x86_64-{suffix}":
+        if value.get(key, {}).get("name") != f"pollydesktop-{value['version']}-debian13-{value['sku']}{label}-x86_64-{suffix}":
             raise ValueError("Media filename does not match hardware SKU")
     report = value.get("sizeReport", {})
     if (report.get("sku") != value["sku"] or report.get("manifestSha256") != selected["manifestSha256"] or

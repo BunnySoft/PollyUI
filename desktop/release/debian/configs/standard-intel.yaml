@@ -1,0 +1,19 @@
+schemaVersion: 1
+name: standard-intel
+description: Standard desktop with the existing Intel graphics, wireless and audio firmware set.
+target: {distribution: debian13, architecture: x86_64}
+hardware: intel
+media: live-iso-usb
+nativeVariant: standard-effects4
+capabilities: {renderer: raster, webgl2: true, vulkan: true, fonts: wide, ime: luna-pinyin, audio: standard}
+packageGroups:
+  - description: Native runtime roots, including Chinese IME and broad fonts
+    stage: runtime
+    install: [dbus-daemon, dbus-bin, pipewire-bin, libspa-0.2-modules, file, libmagic1t64, libmagic-mgc, python3, libegl1, libegl-mesa0, libgl1, libgl1-mesa-dri, mesa-vulkan-drivers, libgles2, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, xkb-data, adwaita-icon-theme, fonts-dejavu-core, fonts-noto-core, fonts-noto-cjk, fonts-noto-color-emoji, librime-data, rime-data-luna-pinyin, libinput-bin, foot, ca-certificates]
+  - description: System services and Intel hardware
+    stage: platform
+    install: [systemd-sysv, udev, dbus, libpam-systemd, polkitd=126-2, python3, kmod, intel-microcode, iucode-tool, iwd, dhcpcd, openresolv, wireless-regdb, iproute2, iw, rfkill, ethtool, pciutils, usbutils, alsa-utils, util-linux, linux-image-amd64, firmware-intel-graphics, firmware-iwlwifi, firmware-sof-signed]
+  - description: Pinned early graphical splash
+    stage: boot
+    install: [plymouth=24.004.60-5, libplymouth5=24.004.60-5, plymouth-label=24.004.60-5]
+policy: {noRecommends: true, forbidden: [], pins: []}
