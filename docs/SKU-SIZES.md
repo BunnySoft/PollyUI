@@ -6,7 +6,7 @@
 |---|---|---|---|---|---:|---|
 | **micro** | Alpine 3.24 + musl + BusyBox | Pixman + `drm_dumb` + `tinywl` | 无 Rime；一个 Wayland 演示应用 | 25–50 MB | **26 MB 原型已构建/已启动** |
 | **thin** | Debian 13 + BusyBox | Pixman + `drm_dumb` | WQY 字体；一个应用；无 systemd/PAM/Rime | 150–220 MB | **169 MB 原型已构建/已启动** |
-| **minimal-zh** | Debian 13 + systemd/PAM | Pixman + `drm_dumb` | WQY + Rime Luna + PollyUI/PollyWM | 300–400 MB | 阻塞于 native variant 与 APT lock |
+| **minimal-zh** | Debian 13 + systemd/PAM | Pixman + `drm_dumb` | WQY + Rime Luna + PollyUI/PollyWM | 300–400 MB | CPU PollyWM 已跑通；完整 ISO 未完成 |
 | **standard** | Debian 13 + systemd/PAM | GLES2 + Mesa | 完整应用、Noto、Rime、PollyUI | 约 577 MB | 已构建/已启动 |
 | **full** | Debian 13 + systemd/PAM | GLES2 + Mesa + 厂商固件 | 完整硬件覆盖 | 约 726 MB | 已构建/已启动 |
 
@@ -74,11 +74,23 @@
 - 标准音频
 - 无 Mesa/LLVM/Vulkan/Noto/Emoji
 
-**当前阻塞**
+**已跑通（2026-10-20）**
 
-- `minimal-zh-cpu` native variant 未实现
-- 需要受控 APT `--lock`
-- 需要真实 DRM/输入/字体/ABI 资格
+- PollyWM 已用 Pixman-only wlroots 编译：`ldd` 不含 GBM/EGL/GLES/LLVM
+- Debian minbase + BusyBox + Pixman PollyWM 在 QEMU virtio-gpu 下完成
+  1280x800 modeset，`PollyWM ready`，客户端成功映射
+- 构建入口：`desktop/release/minimal-zh/build-pollywm.sh`
+- 说明：`desktop/release/minimal-zh/README.md`
+- 这是 native compositor 证明，不是完整 `minimal-zh` ISO
+
+**仍缺**
+
+- PollyUI/Polly shell 的 CPU-only 构建
+- WQY + Rime Luna 与中文输入/字体资格
+- systemd/PAM/UID 1000 与 Live 集成
+- 受控 APT `--lock` 和 `--config minimal-zh-vm --build`
+- 受支持的 `drm_dumb` 路径（不能长期依赖删除 DMABUF 检查）
+- 输入、多输出、恢复、物理机资格
 
 ## 尺寸依据（实测 vm SKU）
 

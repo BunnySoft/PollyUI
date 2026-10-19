@@ -11,7 +11,8 @@
 尺寸档位（micro/thin/minimal-zh/standard/full）的合同、体积依据和当前状态见
 [尺寸 SKU 阶梯](SKU-SIZES.md)。可启动的 micro 原型构建入口见
 [desktop/release/micro](../desktop/release/micro/README.md)，thin 原型见
-[desktop/release/thin](../desktop/release/thin/README.md)。
+[desktop/release/thin](../desktop/release/thin/README.md)，minimal-zh 的 CPU native
+进展见 [desktop/release/minimal-zh](../desktop/release/minimal-zh/README.md)。
 旧 `--sku/--skus` 和默认标准版语义不变；配置文件不是已经构建的 minimal ISO。
 
 | 目标 | 平台与入口 | 产物 |

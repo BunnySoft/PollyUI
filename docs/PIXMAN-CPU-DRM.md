@@ -144,3 +144,17 @@ Debian 13 minbase + glibc + BusyBox PID 1，复用同一 Pixman wlroots：
 - 说明：`desktop/release/thin/README.md`
 
 该原型不含 systemd/PAM/Rime/WQY，仍是 kiosk，不是最终 `thin` 或 `minimal-zh`。
+
+## 9. Pixman PollyWM 结果
+
+在同一个 Pixman-only wlroots 上，PollyWM 已成功编译并运行：
+
+- `ldd` 不含 `libgbm`、`libEGL`、`libGLES`、`libLLVM`
+- Debian minbase + BusyBox + PollyWM 在 QEMU virtio-gpu 下完成 1280x800
+  modeset，日志出现 `PollyWM ready: WAYLAND_DISPLAY=wayland-0`
+- 客户端成功映射，截图显示窗口边框/阴影
+- 构建入口：`desktop/release/minimal-zh/build-pollywm.sh`
+- 说明：`desktop/release/minimal-zh/README.md`
+
+它仍不是完整 `minimal-zh`：缺 PollyUI shell、WQY/Rime、systemd/PAM、APT lock
+和受支持的 `drm_dumb` 生产路径。
