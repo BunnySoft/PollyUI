@@ -85,7 +85,7 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 | 压缩根 | `boot/root.squashfs`；654405632 bytes；SHA256 `0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549` |
 | 小型 bootstrap | 4332358 bytes 压缩；13120270 bytes 普通文件展开量 |
 
-正式双媒体结构/全部payload/来源链与容器PID1交接分别通过；UEFI/QEMU/Hyper-V/physical/真实SquashFSloop挂载/介质移除均NOT RUN，启动秒数NOT MEASURED，不冒十秒已消失。
+构建发布时Agent未执行真实boot，原冻结回执NOT RUN不改；后续用户Hyper-V录像已见新RAM复制/校验OK/根挂载切换及桌面（日志uptime复制1.39→3.03s、切根3.81s，录像约20.5s桌面含8sGRUB倒计时）。录像未显示ISOhash/应用源码，属用户观察，不冒自动验收或旧新版同条件加速比；物理/拔介质/完整Apps未测。
 
 **未覆盖：** 代码已消除整根提前展开并增加真实阶段提示，但仍读取整份压缩根到RAM；实际启动/图形反馈/速度和完整Apps/splash/E22/物理资格未完成。SDK40a2/pin7b58，两实验OFF、Startsolid；旧性能HOLD不改。
 
