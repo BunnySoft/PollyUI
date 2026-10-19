@@ -3,7 +3,7 @@
 更新时间：2026-10-19。唯一任务源为 [POLLYOS-PLAN.json](POLLYOS-PLAN.json)；
 本页解释版本范围，不另维护一套完成状态。执行清单从该 JSON 生成。
 
-**最新候选：** 含早期图形启动的压缩内存根 Live ISO 已交付为
+**固定入口所指候选（旧版保留）：** 含早期图形启动的压缩内存根 Live ISO 已交付为
 `D:\temp\PollyOS\PollyOS.iso`，实际 runtime/overlay/media producer 均为 clean
 `8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f`，版本 `0.1.0-alpha.8`。
 695,502,848 字节，SHA256
@@ -40,9 +40,15 @@ handoff 退出后归 WM/App，原生启动图继续承接至 READY。
 顶层 `tools/build.sh --live` 可用 `--sku` 单选或 `--skus` 多选，默认 full；
 详 [构建入口](BUILDING.md#hardware-sku-live-builds)。basic 必须显式提供经验证的
 专用 simpledrm kernel pack，其余五类继续 stock kernel。所有类保共享 Mesa/LLVM、
-中文与 Apps；本轮没有实际编专用内核、组装六份正式镜像或量测压缩节省/基础图形输出。
+中文与 Apps；后续已有下文五份实际媒体和压缩尺寸，basic 专用内核/基础图形输出仍未完成。
 页首 8e6 和固定入口未变。LiveCD 与 Install 分离，当前 Install 只接 full locked
 platform，精简 Install 明确拒绝，不冒已交多安装版或安装器。
+
+**最新独立 SKU 实际批次：** 已构建并导出 vm/intel/nvidia/amd/full 五份 ISO 和完整
+USB，ISO 分别 577.62/651.82/682.09/668.43/726.30 MB（十进制）。
+native 复用 8e6，媒体 producer 为 cd747；实际内容与 Windows 全包核验通过，
+不是新硬件 boot 资格。basic 此次独立内核构建失败，尚未交付；固定入口未自动改到
+任一 SKU。详细路径/摘要/尝试记录见 [当前交接](POLLYOS-HANDOFF.md)。
 
 ## Alpha 的范围
 

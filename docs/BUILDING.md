@@ -514,6 +514,11 @@ stock kernel：其余五版选 `stockKernel`，basic 仅安装专用 image，禁
 meta。source/config/package/image/release 身份写入 source-input receipts、origin、
 media/root/bootstrap；实际启动 kernel/config 不符即拒绝。
 
+首次生成专用内核 pack 会编译基线配置选中的内核与模块，耗时远高于使用 Debian
+预编译内核包的 stock SKU。此配置不是最小模块配置，不能因名为 basic 就预期
+内核包或 ISO 大幅缩小。已生成且验证通过的 pack 可以在后续构建中复用；只有内核
+源码/配置等输入改变时才需重新生成，不应为每次 ISO 组装重复编译内核。
+
 basic 仍不删 App/中文 IME/Mesa，保物理存储/输入/USB/有线驱动和 Intel 微码，
 但不含显卡/Wi-Fi/SOF 固件。只在 basic 的 GRUB/module blacklist 和 root-owned
 modprobe policy 中阻止竞争 GPU 模块；内建不能阻的竞争驱动直接拒绝。
@@ -523,12 +528,35 @@ modprobe policy 中阻止竞争 GPU 模块；内建不能阻的竞争驱动直�
 connector 和非空模式。缺失、接管或歧义留清晰 console 诊断，绝不以 framebuffer
 动画/headless 当成功。现实际 READY、Plymouth handoff 与账号/PAM 不变。
 
-**本轮只完成源码/工具/fixture，未编真实专用内核、未实测 basic 输出、未生成新
-正式六类 ISO，也未测压缩节省或所有主机/分辨率。** 原四-profile 显式 manifest 的
+**源码验证阶段不等于真实内核或图形资格。** 后续实际批次已交付下面五个 stock
+SKU。basic 的首次完整专用内核尝试在真实链接 `vmlinux` 后因缺少启动镜像 Zstd
+压缩工具失败，尚未交付内核 pack/basic 媒体或实测其输出，原始错误单列于交接。
+原四-profile 显式 manifest 的
 结构/hash 与此六-profile 不同，旧 fixture/source 资格不覆盖新源码；从未发布过
 四类显式 SKU 正式媒体。旧无 SKU schema 1/2 媒体继续只读兼容，不重标身份。
 Windows 请在已有 Linux/WSL 环境运行上面入口；Windows MSVC `tools/build.ps1`
 不变，不会隐式启动 WSL 或猜远端路径。
+
+#### 2026-10-19 实际 stock SKU 体积
+
+同一真实 BUILD 的五个 stock SKU 已生成完整 ISO/USB 并通过实际载荷及 Windows
+全包核验。复用 native `8e6ca02`，media producer `cd7472e3`、stock kernel
+`6.12.113+deb13-amd64`；不是每 SKU 重编 native 或用旧 full Live 层重标。
+下面是压缩 ISO 的实际十进制 MB（1 MB = 1,000,000 字节），并非 Installed-Size：
+
+| SKU | ISO MB | 相对本批 full 缩小 |
+| --- | ---: | ---: |
+| vm | 577.62 | 20.47% |
+| intel | 651.82 | 10.25% |
+| nvidia | 682.09 | 6.09% |
+| amd | 668.43 | 7.97% |
+| full | 726.30 | 基准 |
+
+完整 Windows 路径、逐份 ISO/USB 字节和摘要见
+[实际构建交接](POLLYOS-HANDOFF.md)。各目录的 `SHA256SUMS` 包含来源、阶段和实际
+OS 输入档；所有已有 native pins 保持，公共已有包没有升级。
+当前仅构建/内容校验通过，未新增 UEFI/Hyper-V/物理启动资格；`PollyOS.iso`
+固定入口不自动改变。basic 单独记录内核尝试，不把缺依赖/失败阶段当交付成功。
 
 ### 旧单 full 调用（兼容入口）
 

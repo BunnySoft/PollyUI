@@ -4,7 +4,7 @@
 > `b68faa6566043c791b36f8b244323b08378156aa`。本文用于技术介绍、设计约束说明和开发交接；
 > 后续文档提交不改变已经生成的镜像及其源码版本。
 
-**2026-10-19 当前状态补充：** 最新 memory-only Live 候选为 clean `8e6ca02` 的
+**2026-10-19 固定入口状态补充：** 当前 `PollyOS.iso` 所指旧 memory-only Live 候选为 clean `8e6ca02` 的
 `0.1.0-alpha.8`，固定 `D:\temp\PollyOS\PollyOS.iso` 已原子硬链切到新版本目录内 ISO，
 695,502,848 字节，SHA256
 `33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb`。
@@ -33,9 +33,15 @@
 `--sku` 单选或 `--skus` 多选、默认 full；固定公共 Runtime/源码/tools 后串行组装，
 产物命名和实际 profile 回执隔离。basic 需要显式专用 simpledrm kernel pack，
 其它五类用 stock kernel，仍共享 Mesa/LLVM、中文与 Apps，不以启动选项冒内容裁剪。
-LiveCD 与 Install 分离，精简 Install 尚未接线并明确拒绝。本轮只交源码与组件，
-未编专用内核或生成六份正式镜像，basic 输出及压缩节省未测；页首 8e6 仍是现发布媒体，
+LiveCD 与 Install 分离，精简 Install 尚未接线并明确拒绝。源码与组件之外，
+已有下文五份实际媒体；basic 专用内核此次构建失败，实际输出仍未测。页首 8e6 是固定入口所指媒体，
 见 [构建指南](BUILDING.md#hardware-sku-live-builds)和 [最新交接](POLLYOS-HANDOFF.md)。
+
+后续实际构建已交付 vm/intel/nvidia/amd/full 五份独立 SKU ISO/完整 USB，native
+复用 8e6、媒体 producer cd747，十进制 ISO 体积依次
+577.62/651.82/682.09/668.43/726.30 MB；VM 比本批 full 实际小 20.47%。
+真实载荷与 Windows 全包校验通过，但没有新增硬件启动资格。
+basic 此次专用内核构建失败，五份不因此改标 basic，固定入口也未自动替换。
 
 本轮新增 **D1 持久安装虚拟盘候选**：用户确认 GPT/EFI、ext4 A/B 系统槽和独立
 `/home` 布局，已实现镜像构建及 A/A/B/A 四次冷启动的数据连续性。

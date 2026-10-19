@@ -1,5 +1,93 @@
 # PollyOS 当前批次交接
 
+## 2026-10-19 实际 SKU 构建批次（五个 stock 已交，basic 构建失败）
+
+以下五个 SKU 已由同一次真实 BUILD 串行构建并导出 Windows，源实际 ISO/USB
+载荷验证及 Windows 独立全包摘要核验均通过。不是微型 fixture，也不是旧镜像重标。
+**`basic` 的本次专用内核构建失败，尚无内核 pack/ISO；没有运行本批次的 VM/物理启动。**
+固定 `D:\temp\PollyOS\PollyOS.iso` 仍是旧 8e6，未自动更新。
+
+| SKU | ISO 字节 | USB `.img` 字节 | ISO 相对本批 full 缩小 | 全包摘要数 |
+| --- | ---: | ---: | ---: | ---: |
+| vm | 577,619,968 | 630,194,176 | 20.47% | 211 |
+| intel | 651,823,104 | 704,643,072 | 10.25% | 214 |
+| nvidia | 682,092,544 | 735,051,776 | 6.09% | 214 |
+| amd | 668,428,288 | 721,420,288 | 7.97% | 214 |
+| full | 726,300,672 | 779,091,968 | 基准 | 217 |
+
+这是同一 native/stock kernel 批次的**实际压缩媒体大小**，不是 dpkg 展开字节估算。
+目录均位于 `D:\temp\PollyOS\`：
+
+| SKU | 独立版本目录 |
+| --- | --- |
+| vm | `pollydesktop-0.1.0-alpha.8-debian13-vm-8e6ca02-cd7472e-5d816c32c5fc` |
+| intel | `pollydesktop-0.1.0-alpha.8-debian13-intel-8e6ca02-cd7472e-fd417a5fae27` |
+| nvidia | `pollydesktop-0.1.0-alpha.8-debian13-nvidia-8e6ca02-cd7472e-ef8aa42bb0ea` |
+| amd | `pollydesktop-0.1.0-alpha.8-debian13-amd-8e6ca02-cd7472e-be7b3a611c79` |
+| full | `pollydesktop-0.1.0-alpha.8-debian13-full-8e6ca02-cd7472e-53cfbbb846f1` |
+
+每个目录的 ISO 名为 `pollydesktop-0.1.0-alpha.8-debian13-<sku>-x86_64-uefi-live.iso`，
+并含完整 `...-uefi-usb.img`、生成 GRUB、manifest/origin、sizeReport、实际 OS 包和
+签名来源/阶段记录；`SHA256SUMS` 覆盖完整目录，USB 未裁剪。
+
+| SKU | ISO SHA256 |
+| --- | --- |
+| vm | `5d816c32c5fcf4a8d83f548f565a529f9831dd80377ffb0c1f291a799125ef25` |
+| intel | `fd417a5fae271d965897b69e68b420761880b3aa08b89e7636e36abb4963db50` |
+| nvidia | `ef8aa42bb0ea82d29ea33721053562f68db56a9cebf9e48fbb0f68191df38b87` |
+| amd | `be7b3a611c79ea338015ce7898a15bf8485e6da2e8b4f8d8a5372153313e5f0e` |
+| full | `53cfbbb846f115d845b10a56006be7b1801cab1237660170d1c98d707b2a5d4b` |
+
+本批媒体 producer 为 clean `cd7472e3029220c60488a7d61c8ffce03b2a417c`，
+tree `7a17d7f5c6594d127273738526ff9d35264fe067`；复用已资格 native
+`8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f`，没有伪称 native 重编。
+干净公共镜像 `aa2463c48fdb009bea52b1c76fb7c9a4ff1c7b6b2b59c861871ef9263fe17ab3`
+从纯 OS 底座、精确缺包与原 native bundle 组装，核对六个修补 Mesa 实际库字节，
+不使用已有 full Live 镜像删 metadata 冒精简底座。各 SKU 的 240 native pins 均
+由 assembled 原验证器实际执行并通过，公共已有包零升级；stock kernel 为
+`6.12.113+deb13-amd64`，工具仍 `125f203e...`，SDK 配对不变。
+
+每份实际 ISO/USB 各 **414 总 runtime/overlay 路径，其中 27 overlays**；bootstrap
+218 nodes/45 modules，regular 展开约 33.12 MB，保留 64 MiB 上限。
+五份 OS 增量并集的 74 个精确版本 `.deb`（约 216 MB）由官方签名 Release →
+完整 Packages → archive/version/arch/SHA 链核验，含
+`firmware-amd-graphics=20250410-2`。包总数分别 348/351/351/351/353。
+仍共享完整 stock modules、Mesa/LLVM、中文/IME 与 Apps；NVIDIA 仍是 Nouveau/Mesa。
+未执行新的 boot、介质拔除或物理适配验证，也没有生成 Install 版。
+
+真实尝试暴露并修正了两处源码问题：`cd7472e3` 将 Live session-mode 脚本从错误
+`0644` 改回严格契约 `0755`，不放宽 oracle；`ad870ca8` 在最终 olddefconfig 后
+执行标准 syncconfig，再核 `.config`/`auto.conf` 有效策略一致性与原严格 release，
+并把 captured stdout 原字节写入失败日志。原真实失败、诊断和重试各自保留。
+另私有 Node 外置资源不足及导出自身活动 stderr 的共享冲突属于构建环境/导出失败，
+没有作为媒体成功重写；已复制大文件经完整 size/SHA 后复用，不重复 copy。
+
+basic 已核官方 signed source `linux-source-6.12=6.12.113-1`，实际 syncconfig 后
+得到 `6.12.113-polly-basic`；新关联 Python 5 项已实际通过。
+真 producer 进入 bindeb-pkg 后发现构建环境缺 `bc/cpio/kmod/rsync`；独立 builder
+`e158195ced497334f78548ed435005e8019bd5545611dae54ce6a1daf0cb00dc`
+从原 SDK 派生，仅补实际缺失包及必要闭包，APT 不升级已有包，未改原 SDK/宿主服务。
+新的独立尝试真正进入 `-j1` 内核 CC/LD 编译，在北京时间 17:12:09 至 22:27:44
+运行约 5 小时 15 分钟后，以 `make bindeb-pkg` 返回 2 / producer true exit 1
+结束，**不是原 21,600 秒单步上限超时**。原始日志
+`basic-pack-ad870-deps-FIRST.failed-4gvy92ry.log` 已保留。完整 Windows 副本
+`basic-ad870/kernel-build-deps-FIRST.raw.log` 为 821,290 字节，SHA256
+`93e916b4db62e11954e0489b7038d4703a067089f98a89829062af3d33680b42`。
+实际日志 18540–18585 行已见 `LD vmlinux`、System.map/SORTTAB 和启动镜像 OBJCOPY，
+随后 `ZSTD22 .../vmlinux.bin.zst` 因 **`/bin/sh: 1: zstd: not found`** 返回 127，
+再逐层导致 bzImage/bindeb-pkg 返回 2。这是 `CONFIG_KERNEL_ZSTD` 的镜像压缩
+构建工具缺失，不是已禁用的模块 Zstd 压缩、simpledrm 配置、OOM 或磁盘故障。
+没有通过验证的内核 pack 或 basic 媒体，更不代表已有 simpledrm 桌面资格。
+未自动重跑或扩大资源限制；前置工具检查小修另记如下，避免同类依赖到编译末段才暴露。
+
+失败临时目录 `/work/.polly-kernel-j8yrm89x` 已由原 producer 的 TemporaryDirectory
+正常清除，source/obj/vmlinux 均不存在，不能冒称可增量恢复；早期保留的 release
+诊断树只含小型配置探测，不是这轮完整编译结果。最后收据已核自有 compiler、
+API listener、helper 和容器全部为 0，没有安装 zstd 或擅自启动第二轮长编译。
+后续小修 `59500797` 在最终配置核验后、bindeb-pkg 之前检查选中 Zstd 时的工具，
+缺失即保日志早失败；相关 producer 控制回归通过，make 边界为明确替身，
+不冒 basic 真编译成功。用户将在另一台电脑继续构建，本批如实交付五成一败及原证据。
+
 ## 2026-10-19 六种 SKU 与 BUILD 参数已接线，现发布媒体不变
 
 后续源码 `b9b2042b` 和审阅修正 `365fdcf6552729f6315735c3a752a3815865bd77`
