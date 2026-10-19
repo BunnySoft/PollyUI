@@ -1228,7 +1228,7 @@
       "label": "Live 硬件精简与完整 SKU",
       "kind": "subtask",
       "parent": "system-build",
-      "scope": "同一构建入口从公共Runtime按声明式full/vm/intel/nvidia配置组装不同内容ISO/USB，full默认保当前兼容范围。先按包选择物理GPU/WiFi/SOF固件，CPU微码与显卡独立，物理版保网卡音频；不随意删共享Mesa/LLVM或内核包内部文件、不改中文IME/App/账户/早期启动。profile必须与实际包/根payload绑定，产物命名、manifest、size报告、verifier和publisher按SKU隔离并保旧无SKU媒体兼容；未知/重复/缺必需/有禁止包均明确拒绝。关闭源码与组件范围时准确列仍共享的内核/Mesa和实际验证层级，不能将展开字节冒压缩节省、厂商名冒全型号支持、Nouveau冒专有驱动或fixture冒正式新ISO。",
+      "scope": "同一构建入口从公共Runtime按声明式full/vm/intel/nvidia配置组装不同内容ISO/USB，full默认保当前兼容范围。先按包选择物理GPU/WiFi/SOF固件，CPU微码与显卡独立，物理版保网卡音频；不随意删共享Mesa/LLVM或内核包内部文件、不改中文IME/App/账户/早期启动。LiveCD不捆绑新增安装器，各SKU锁定platform供独立Install链路明确选择，不把Live公开预设带入安装版。profile必须与实际包/根payload绑定，产物命名、manifest、size报告、verifier和publisher按SKU隔离并保旧无SKU媒体兼容；未知/重复/缺必需/有禁止包均明确拒绝。关闭源码与组件范围时准确列仍共享的内核/Mesa和实际验证层级，不能将展开字节冒压缩节省、厂商名冒全型号支持、Nouveau冒专有驱动、fixture冒正式新ISO或声称新Install媒体已交。",
       "priority": "P2",
       "modes": [
         "live",
