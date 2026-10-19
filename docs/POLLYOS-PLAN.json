@@ -1242,6 +1242,25 @@
       "evidence": "2026-10-19已交源码/组件范围：68a40ae9→487e55e6200fcb50e23cfe328bbd83b92dcf372f正常合311940e9d1a51bbb9db94c345ecfc7098f5cebe2。live-profiles.json统一full/vm/intel/nvidia包组；真实干净公共Runtime拒firmware/kernel/profile残留，四SKU串行复用固定source/nativebundle/runtime-tools IDs并隔离platform/Live标签和输出，不重native/SDK。VM去四物理固件，Intel/NVIDIA仅去另一家graphics并保物理WiFi/SOF与CPU微码；完整kernel/Mesa/LLVM/中文IME/App仍共享。marker实际包必需/禁止、root/bootstrap与ISOUSB receipt绑定，包级metadata/actualregular及最终媒体size分账；SKU文件/版本名隔离，显式SKU默认不更新alias且仅full能明确更新。Install保独立链路，精简输入及orphan metadata在两入口明确拒绝，legacyinitramfs不接新SKU。父review修runpy真constructor缺导入、Node完整唯一包集合、Install/legacy降级缺口，原失败保留；1550canonicalrawblobs后44Python/16Node全过，含实际constructor四profile（外部ELF/modules边界替身）、实际shell→Node控制流（Podman替身）和tiny非bootable ISOUSB四profile。父合入Windows13过，新publisher只读复验旧8e6实际216摘要/原aliasinode562949954769671/links2未变。只读root实审regular1415935296B/固件267464310B；IntelGPU29587061/NVIDIA65633076/iwlwifi116721656/SOF35505120仅展开bytes。实际APT平台组装、四份正式ISO/压缩节省、新Install媒体、VM/物理资格均未执行，不把fixtures或raw差额冒正式新产物；旧8e6及所有历史媒体/收据保留。"
     },
     {
+      "id": "live-basic-amd-skus",
+      "label": "Live 基础图形与 AMD SKU",
+      "kind": "subtask",
+      "parent": "system-build",
+      "scope": "补齐basic/vm/intel/nvidia/amd/full六SKU及BUILD单选--sku、多选--skus和无副作用help；full默认，AMD图形固件/amdgpu与full三GPU合集齐接，CPU微码不由GPU厂商推断。basic必须是通用simpledrm DRM/KMS加现pixman/raster的源码可达链路，不是仅无固件枚举或Plymouth图片替桌面。当前stockkernel不支持，使用显式SHA核验Linuxsource/config的专用kernel构建脚本及basic-kernel-pack可选输入，单image.deb/单release/config/module身份绑定根、boot、origin和媒体；不自动换所有SKU内核、下载未核kernel或改WM/SDK。basic设备探测、GPU接管限制、加速入口策略和错误诊断一起接线；保其它SKU旧调用、旧无SKU包解析和Live/Install隔离。闭合仅限源码与组件，必须分清make/Podman替身、实际归档和真正内核编译/图形boot资格，不把未测basic宣称任何机器可用。",
+      "priority": "P2",
+      "modes": [
+        "live",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [
+        "live-hardware-skus",
+        "live-compressed-root-boot"
+      ],
+      "evidence": "2026-10-19用户确认basic|vm|intel|nvidia|amd|full后明确“我们来补齐这些，BUILD脚本可以作为选项参数”。父只读actual8e6 target6.12.111配置SHA7264f6c17e856bf18ec53085a01be10d8e466f32a8dcb13c08c4e705d3b2c35b：DRM_SIMPLEDRM=n/SYSFB_SIMPLEFB=n、EFI/simplefb=y，不能供现wlroots通用DRM桌面；nativeI915/XE/Nouveau/AMDGPU/Radeon都是m。配对SDK缓存wlroots0.19.3真实allocator源具有DRMprimary/master+dumb/mmap/PRIME+pixman数据路径，不冒实际GPU资格。用户暂不可答kernel路线澄清，按自主要求保守选basic显式专用kernel输入/其余SKUstock不变，脚本不自动安装工具/下载kernel/实际大编译；07c3500a同owner实施，现正式8e6媒体/alias不动。"
+    },
+    {
       "id": "bug-native-fractional-layout",
       "label": "已交可选小数布局后端",
       "kind": "subtask",
