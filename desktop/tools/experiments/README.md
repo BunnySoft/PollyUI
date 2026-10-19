@@ -16,13 +16,13 @@ Podman/KVM.
 
 The tested result is documented in `docs/PIXMAN-CPU-DRM.md`.
 
-## Micro (WIP)
+## Micro
 
-The Alpine `micro` prototype is not yet a working build. Current blocker:
+The Alpine `micro` prototype is now built and booted: **26 MB** ISO with
+Pixman DRM at 1280x800. Build and test entries live in
+`desktop/release/micro/`; the prototype is not a supported PollyOS desktop and
+has no Rime/PAM/systemd/multi-app shell.
 
-- Alpine `wlroots` needs `hwdata` at pkg-config time; installing the Alpine
-  `hwdata` package does not provide a pkg-config file in this builder.
-- The Alpine builder also needs `libxkbcommon-dev`; it was added locally but the
-  reproducible recipe still needs to be written.
-
-Do not claim a micro ISO exists until an actual image is built and booted.
+The earlier builder blockers were resolved by adding an Alpine `hwdata`
+pkg-config file, `libxkbcommon-dev`, GLES headers for wlroots' unconditional
+`gles2.h` include, and using `LIBSEAT_BACKEND=noop` for the single-app test.

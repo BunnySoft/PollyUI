@@ -9,7 +9,8 @@
 配置驱动的 SKU、纯 JS 工具安装、只读 `--plan`、显式 `--build`、
 依赖锁和当前极简版阻断条件，集中见 [YAML 配置构建说明](CONFIGURED-BUILDS.md)。
 尺寸档位（micro/thin/minimal-zh/standard/full）的合同、体积依据和当前状态见
-[尺寸 SKU 阶梯](SKU-SIZES.md)。
+[尺寸 SKU 阶梯](SKU-SIZES.md)。可启动的 micro 原型构建入口见
+[desktop/release/micro](../desktop/release/micro/README.md)。
 旧 `--sku/--skus` 和默认标准版语义不变；配置文件不是已经构建的 minimal ISO。
 
 | 目标 | 平台与入口 | 产物 |

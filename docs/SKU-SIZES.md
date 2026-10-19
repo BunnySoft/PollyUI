@@ -4,7 +4,7 @@
 
 | SKU | 底座/初始化 | 图形 | 中文/应用 | 目标 ISO | 状态 |
 |---|---|---|---|---|---:|---|
-| **micro** | Alpine 3.24 + musl + BusyBox | Pixman + `drm_dumb` + `tinywl` | 无 Rime；一个 Wayland 演示应用 | 25–50 MB | 原型构建中；Pixman DRM 已在 QEMU 验证 |
+| **micro** | Alpine 3.24 + musl + BusyBox | Pixman + `drm_dumb` + `tinywl` | 无 Rime；一个 Wayland 演示应用 | 25–50 MB | **26 MB 原型已构建/已启动** |
 | **thin** | Debian 13 + BusyBox/seatd | Pixman + `drm_dumb` | WQY 字体；一个应用；无 systemd/PAM/Rime | 150–220 MB | 计划 |
 | **minimal-zh** | Debian 13 + systemd/PAM | Pixman + `drm_dumb` | WQY + Rime Luna + PollyUI/PollyWM | 300–400 MB | 阻塞于 native variant 与 APT lock |
 | **standard** | Debian 13 + systemd/PAM | GLES2 + Mesa | 完整应用、Noto、Rime、PollyUI | 约 577 MB | 已构建/已启动 |
@@ -29,6 +29,14 @@
 **构建路径**
 
 独立 Alpine initramfs + kernel + GRUB ISO，不复用 Debian Live 链。
+
+**实测（2026-10-20）**
+
+- ISO：**26 MB**
+- SHA-256：`cfd9fc2d9edb5dbd77326dada0349f8af1f2d41bdc6ec75f0176301ee70c0495`
+- QEMU/KVM + `virtio-gpu-pci`：1280x800 modeset、`drm_dumb` + Pixman、可见 SHM 客户端
+- 构建入口：`desktop/release/micro/build.sh`
+- 测试入口：`desktop/release/micro/test-qemu.sh`
 
 ## thin
 

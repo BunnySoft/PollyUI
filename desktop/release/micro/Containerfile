@@ -1,0 +1,14 @@
+FROM docker.io/library/alpine:3.24
+
+# Build-only image for the Micro prototype. It is not part of the runtime.
+RUN apk add --no-cache --no-scripts \
+      build-base meson ninja python3 curl tar xz \
+      wayland-dev wayland-protocols pixman-dev libdrm-dev libseat-dev \
+      libdisplay-info-dev libliftoff-dev hwdata eudev-dev libinput-dev \
+      libxkbcommon-dev mesa-dev linux-virt linux-headers busybox-static \
+      grub grub-efi xorriso mtools dosfstools cpio gzip
+RUN mkdir -p /usr/lib/pkgconfig && \
+    printf 'pkgdatadir=/usr/share/hwdata\n\nName: hwdata\nDescription: Hardware identification data\nVersion: 0.408\n' \
+      > /usr/lib/pkgconfig/hwdata.pc
+ENTRYPOINT []
+CMD ["/bin/sh"]
