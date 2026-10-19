@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "distribution": "debian13",
+  "architecture": "x86_64",
+  "defaultSku": "full",
+  "packageGroups": {
+    "common": [
+      "systemd-sysv", "udev", "dbus", "libpam-systemd", "polkitd=126-2",
+      "python3", "kmod", "linux-image-amd64", "intel-microcode", "iucode-tool",
+      "iwd", "dhcpcd", "openresolv", "wireless-regdb", "iproute2", "iw",
+      "rfkill", "ethtool", "pciutils", "usbutils", "alsa-utils", "util-linux"
+    ],
+    "intelGraphics": ["firmware-intel-graphics"],
+    "nvidiaGraphics": ["firmware-nvidia-graphics"],
+    "physicalNetworkAudio": ["firmware-iwlwifi", "firmware-sof-signed"]
+  },
+  "shared": [
+    "One unchanged native application/Chinese IME/font runtime and paired SDK; no application or language trimming.",
+    "Complete Debian kernel/module packages, including other vendors' modules; no monolithic kernel split.",
+    "Complete corrected Mesa/Gallium/Vulkan packages and LLVM/software rendering; other vendors' drivers remain.",
+    "Intel CPU microcode is independent of graphics selection and remains in every SKU.",
+    "Same early Plymouth, bounded 64 MiB bootstrap, verified compressed RAM root, accounts/PAM and diagnostics.",
+    "Unsigned x86_64 UEFI development media; package selection is not hardware or boot certification."
+  ],
+  "profiles": {
+    "full": {
+      "packageGroups": ["common", "intelGraphics", "nvidiaGraphics", "physicalNetworkAudio"],
+      "requiredModules": ["i915", "nouveau", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
+      "support": [
+        "Current declared Intel UHD770 + NVIDIA RTX4070Ti/RTX4060Ti open-source Nouveau/Mesa route, I226-V and AX211/SOF firmware set.",
+        "Includes the VM graphics/storage/input/network kernel paths; not universal AMD or all-hardware certification."
+      ]
+    },
+    "vm": {
+      "packageGroups": ["common"],
+      "requiredModules": ["virtio_gpu", "virtio_pci", "virtio_blk", "virtio_scsi", "virtio_net", "hyperv_drm", "hv_storvsc", "hv_netvsc", "hid_hyperv", "hyperv_keyboard", "usbhid", "xhci_pci", "usb_storage", "snd_hda_intel"],
+      "support": [
+        "Virtual display/storage/input/network paths for the existing QEMU/Hyper-V development configurations and software rendering.",
+        "No physical GPU, Intel Wi-Fi or SOF firmware; not a claim of new VM boot acceptance."
+      ]
+    },
+    "intel": {
+      "packageGroups": ["common", "intelGraphics", "physicalNetworkAudio"],
+      "requiredModules": ["i915", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
+      "support": [
+        "Current declared Intel UHD770 / I226-V / AX211 physical target; retains physical network/audio firmware.",
+        "Omits NVIDIA-specific graphics firmware, not NVIDIA code from the shared kernel/Mesa packages."
+      ]
+    },
+    "nvidia": {
+      "packageGroups": ["common", "nvidiaGraphics", "physicalNetworkAudio"],
+      "requiredModules": ["nouveau", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
+      "support": [
+        "Current declared RTX4070Ti/RTX4060Ti open-source Nouveau/Mesa route; no proprietary NVIDIA driver is added.",
+        "Omits Intel graphics firmware, but retains Intel CPU microcode and physical network/audio firmware."
+      ]
+    }
+  }
+}

@@ -1886,3 +1886,19 @@ The wlroots tinywl example informed the Wayland lifecycle and scene integration.
 Its MIT license notice is retained in `LICENSE.wlroots`. Project-owned PollyUI
 and PollyDesktop code uses the root `LICENSE` (MIT); dependencies, fonts and
 input-method data retain their separate licenses.
+## Hardware-specific development media
+
+The Debian Live builder supports declarative `full` (default), `vm`, `intel` and
+`nvidia` hardware SKUs. Use the [multi-SKU build entry](../docs/BUILDING.md#hardware-sku-live-builds)
+to reuse one frozen native runtime/SDK pairing and tools image, then assemble
+profiles sequentially from that **clean common runtime**, not by deleting metadata
+from a firmware-heavy full base. Only firmware package selection changes this round.
+The full Debian kernel, corrected Mesa/Gallium/Vulkan/LLVM, software rendering,
+Chinese IME/fonts, Apps, account/PAM policy and diagnostics remain shared.
+NVIDIA means the existing open-source Nouveau/Mesa route, not a proprietary driver.
+These names describe package support scope, not new boot or hardware certification.
+
+LiveCD and Install remain separate media. Live does not bundle a new installer.
+Each SKU retains its own locked platform input, but the existing Install filename/
+manifest contract is still full-only: reduced platforms are explicitly refused
+instead of producing misleading unlabelled Install media.

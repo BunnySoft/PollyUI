@@ -5,6 +5,32 @@ Keep `desktop/VERSION` unchanged until the coordinator freezes the integrated
 Shell/configuration commit and chooses the next Alpha version. Do not overwrite
 historical bundles, evidence directories or shared image tags.
 
+Hardware selection is a separate **Live** packaging axis. After freezing one
+native runtime, use [the sequential SKU entry](../../docs/BUILDING.md#hardware-sku-live-builds)
+with its actual bundle/runtime/tools IDs. Do not repeat native packaging for
+`full`, `vm`, `intel`, `nvidia`, reuse a firmware-heavy full base, or regard a
+boot argument as size reduction. Exact Mesa pins, Chinese IME/Apps, accounts/PAM,
+early Plymouth, 64 MiB bootstrap and actual READY remain common. The complete
+kernel/Mesa/Vulkan/LLVM still ships; the manifest reports that limit and measured
+package/root/bootstrap/ISO/USB bytes without predicted compressed savings.
+
+Minimal tooling-only checks (no native build, apt or guest):
+
+```sh
+node --test desktop/tests/live-profiles.mjs desktop/tests/publish-live-iso.mjs desktop/tests/release-report.mjs
+# In an existing private root tools container, source read-only, writable /tmp:
+python3 -I -B desktop/tests/live-profiles.py
+python3 -I -B desktop/tests/live-sku-media.py
+```
+
+The latter makes tiny synthetic, deliberately non-bootable ISO/USB **files** and
+verifies actual root/boot profile bytes for all four SKUs. Its receipts are
+`fixtureOnly` and cannot be published; it is not a real SKU or boot result.
+New explicit-SKU publication is versioned-only by default; only explicitly
+selected `full --update-alias` may change `PollyOS.iso`.
+LiveCD contains no new installer. Reduced locked platforms are retained, but
+both Install entry points refuse them until Install naming/manifests are wired.
+
 Use an **isolated, disposable Ninja build tree**. `package-linux.mjs` verifies its
 source directory/options, reconfigures it, checks the native Linux x86_64/LP64
 FileSystem ABI against target headers, and uses `--clean-first` before building

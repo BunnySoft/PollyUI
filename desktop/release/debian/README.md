@@ -6,6 +6,35 @@ retains the detailed Debian/storage/profile contracts and historical commands;
 cached images or developer volumes mentioned here are not prerequisites on a
 new machine.
 
+## Declarative hardware SKUs
+
+[`live-profiles.json`](live-profiles.json) defines `full` (default), `vm`, `intel`
+and `nvidia`: package groups, required modules, supported scope and the parts that
+remain shared. [`live-profile.py`](live-profile.py) owns strict selection and
+package/metadata qualification. See [the build entry](../../../docs/BUILDING.md#hardware-sku-live-builds)
+and [media/size contracts](../../LIVE.md#hardware-sku-live-builds).
+`Containerfile.live` selects packages **before installation** from a clean common
+native runtime and refuses any existing platform/Live or physical firmware base.
+It never simulates a smaller image by deleting the full base's metadata or libraries.
+Exact runtime Mesa pins remain checked after assembly.
+
+The multi-SKU entry retains both immutable platform and Live IDs in
+`build-run.json` under `artifacts[]`, with unique per-run/SKU tags.
+Platform images contain locked `template` accounts; only the final Live stage
+adds public presets and the Live boot overlay. LiveCD does not contain a new
+installer. To select the full platform for the separate existing Install flow:
+
+```sh
+# PLATFORM_ID is artifacts[].platformImageID for sku=full in this run's build-run.json.
+POLLY_PLATFORM_IMAGE="$PLATFORM_ID" sh desktop/tools/build-installed.sh "$OUT/install-full"
+```
+
+Do not guess a shared tag or pass a Live ID. A reduced template can be checked
+explicitly using the same frozen source and `debian-live-payload.sh template vm`
+(or `intel`/`nvidia`), but `build-installed.sh` deliberately refuses it until the
+Install media filename/manifest contract is SKU-aware. This round does not
+generate or qualify multi-SKU Install artifacts.
+
 This is the Debian 13 trixie amd64 migration path. The accepted Alpine alpha.4
 source and artifact hashes are preserved in `baseline.json`. Debian is a
 separate candidate: on 2026-10-07 the user confirmed alpha.5-r2 boots and runs on

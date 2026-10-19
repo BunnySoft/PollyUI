@@ -366,6 +366,98 @@ runtime 检查。如果某个精确包已不可下载，需要保存的包/对�
 
 ### 生成 memory-only UEFI ISO
 
+<a id="hardware-sku-live-builds"></a>
+### 硬件 SKU：一份 native runtime，多份独立 LiveCD
+
+推荐新构建使用下面的入口。先完成上面的 **一次** native runtime 打包及 clean
+冻结校验，保留 `RUNTIME_ID` 与 `$OUT/runtime`；不要为每个硬件重新编译 Apps、
+中文 IME、Mesa 或 SDK。工具镜像也只准备一次，或使用已保存的兼容 immutable ID：
+
+```sh
+cd "$REPO"
+# 只准备公共 image-tools；这一步不是 SDK/native 重编。
+podman build --pull=never --target image-tools \
+  -t localhost/polly-debian-live-tools \
+  -f desktop/release/debian/Containerfile.live desktop
+TOOLS_ID=$(podman image inspect --format '{{.Id}}' localhost/polly-debian-live-tools)
+
+sh desktop/tools/build-live.sh --debian "$OUT/live-skus" \
+  --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" \
+  --tools-image "$TOOLS_ID" --skus full,vm,intel,nvidia
+# 等价直接入口：node desktop/tools/build-live-skus.mjs OUTPUT [上面的参数]
+# 省略 --skus 时默认为 full；空、重复、未知 SKU 都拒绝。
+```
+
+该入口要求真实干净 Git checkout 与已冻结 Debian bundle，不接受外部 false-clean
+标签。它在新输出目录中冻结一份源码/原生 bundle，记录源码字节摘要，并一次解析
+runtime/tools 的真实 image ID；后续所有重步骤只消费这些固定输入。按所选顺序
+**串行**组装，不并发四套大构建，不重建 native/SDK/tools，不改共享 convenience
+tag 或稳定 ISO alias。包组装仍可能联网获取已声明的 Debian 包；不是离线下载器。
+传入已含固件/kernel/profile 的 full/platform/Live base 会失败，不能靠删除
+metadata 把它冒充干净 runtime。
+
+`desktop/release/debian/live-profiles.json` 是唯一 profile manifest。`full` 保留
+当前已声明范围，不代表所有 AMD/所有硬件认证；`nvidia` 仅当前 Nouveau/Mesa
+开源路线。`intel` 去 NVIDIA graphics firmware，`nvidia` 去 Intel graphics
+firmware；二者均保留物理网络/音频固件。`vm` 去这两种 graphics、Intel Wi-Fi 和
+SOF 的四个固件包，保虚拟显示/存储/输入/网络模块和软件渲染。Intel CPU 微码与
+GPU 无关，所有 SKU 都保留。
+
+本轮仍共享 **完整 kernel/modules、修补后的 Mesa/Gallium/Vulkan/LLVM、native
+runtime、Apps、中文 IME/字体**，所以不是“完全无其它厂商驱动”。不删除单个
+`.so` 或破坏 dpkg 依赖。深度拆 kernel/Mesa 包及其配对 SDK 是后续工作。
+Early Plymouth、64 MiB bootstrap、RAMroot/READY、账户/PAM与诊断保持不变。
+
+输出为：
+
+```text
+live-skus/
+  build.log                       # 真实命令和首次失败保留
+  build-run.json                  # 固定 source/native/tools ID、每 SKU 平台/Live ID及完成状态
+  common/source/                  # 一份冻结源码，所有 SKU 共用
+  common/runtime/                 # 一份冻结 native bundle，所有 SKU 共用
+  full/inputs/                    # root.tar、实际 origin、frozen-overlays
+  full/media/pollydesktop-<version>-debian13-full-x86_64-uefi-live.iso
+  full/media/pollydesktop-<version>-debian13-full-x86_64-uefi-usb.img
+  full/media/live-manifest.json
+  full/media/candidate-origin.json
+  full/media/SHA256SUMS
+  vm/...                          # 所选其它 SKU，各自 inputs/media
+  intel/...
+  nvidia/...
+```
+
+每份 `live-manifest.json` 的 `sizeReport` 同时给出真实包级数据、最终 ISO/USB、
+压缩/未压缩 root 和 bootstrap 字节；dpkg Installed-Size 与实际 root 中包清单
+所属 regular 文件字节分开。归属可能重叠，未归属生成文件不算入包，`/boot` 文件
+独立列出。**不能拿 rawbytes 差额预报压缩 ISO 节省。** 支持/仍共享范围在同一
+manifest 中，source-owned qualifier 与 actual-root/boot-profile/USB 校验绑定。
+
+```sh
+node desktop/tools/release-report.mjs "$OUT/live-skus/vm/media"
+# 校验后只发布独立版本目录，默认不改 PollyOS.iso：
+node desktop/tools/publish-live-iso.mjs "$OUT/live-skus/vm/media" --destination /path/to/releases
+# 只有 full 可显式更新稳定 alias；精简 SKU 即使传此参数也拒绝：
+node desktop/tools/publish-live-iso.mjs "$OUT/live-skus/full/media" \
+  --destination /path/to/releases --update-alias
+```
+
+新显式 SKU 连 full 的文件名/版本目录也含 SKU，不与旧无 SKU schema 1/2 媒体撞名；
+旧媒体只读解析/校验仍兼容。完整性通过不是 UEFI/Hyper-V/物理资格。
+LiveCD 与 Install 介质独立：每 SKU 另保 locked `template` platform；当前 Install
+文件名/manifest 尚未接 SKU，脚本明确拒绝精简 profile 输入，不悄然生无 SKU 成品。
+`full` 可按本 run 的 `artifacts[].platformImageID` 明确选择：
+
+```sh
+POLLY_PLATFORM_IMAGE="$FULL_PLATFORM_ID" sh desktop/tools/build-installed.sh "$OUT/install-full"
+```
+
+不能传 Live ID，也不默认选最后完成的 SKU。此轮没有新增物理安装器或多 Install 产物。
+
+### 旧单 full 调用（兼容入口）
+
+下面的一参数调用保持原行为；不因新增 SKU 改写历史产物。新多 SKU 构建优先用上节。
+
 ```sh
 cd "$REPO"
 POLLY_RUNTIME_IMAGE="$RUNTIME_ID" \

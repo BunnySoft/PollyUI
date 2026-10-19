@@ -25,7 +25,6 @@ platform=${POLLY_PLATFORM_IMAGE:-localhost/polly-debian-platform-base}
 platform_id=$(podman image inspect --format '{{.Id}}' "$platform")
 tools=localhost/polly-debian-live-tools
 base=localhost/polly-debian-installed-base
-sdk_id=$(podman image inspect --format '{{.Id}}' "${POLLY_SDK_IMAGE:-localhost/polly-debian-sdk-mesa:polly1}")
 temporary=$(mktemp -d)
 container=
 cleanup() {
@@ -36,8 +35,11 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+podman run --rm --network=none -v "$repo:/workspace:ro" --entrypoint python3 "$platform_id" \
+    -I -B /workspace/desktop/release/debian/live-profile.py installed-input
 podman run --rm --network=none -v "$repo:/workspace:ro" --entrypoint sh "$platform_id" \
     /workspace/desktop/tests/debian-live-payload.sh template
+sdk_id=$(podman image inspect --format '{{.Id}}' "${POLLY_SDK_IMAGE:-localhost/polly-debian-sdk-mesa:polly1}")
 podman build --quiet --build-arg "PLATFORM_IMAGE=$platform_id" --build-arg "SDK_IMAGE=$sdk_id" -t "$base" \
     -f desktop/release/debian/Containerfile.install desktop
 base_id=$(podman image inspect --format '{{.Id}}' "$base")

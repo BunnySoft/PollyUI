@@ -65,6 +65,10 @@ export function verifyBundle(directory) {
       !Number.isSafeInteger(origin.isoPayloadFilesVerified) || origin.isoPayloadFilesVerified <= 0 ||
       manifest.architecture !== 'x86_64')
     throw new Error('ISO payload/source verification receipt does not match this clean Live bundle');
+  if (Object.hasOwn(manifest, 'sku') &&
+      (manifest.nativeRuntime.sourceRevision !== origin.runtimeSourceRevision ||
+       manifest.nativeRuntime.manifestSha256 !== origin.runtimeManifestSha256))
+    throw new Error('Common native runtime source/manifest differs from actual verification receipt');
   for (const value of [manifest.version, manifest.distribution])
     if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9.+_-]*$/.test(value))
       throw new Error('Unsafe version or distribution');
@@ -78,21 +82,26 @@ const identity = file => {
   const info = fs.statSync(file, { bigint: true });
   return { device: String(info.dev), inode: String(info.ino), links: Number(info.nlink) };
 };
-export function publish(directory, destination = DEFAULT_DESTINATION) {
+export function publish(directory, destination = DEFAULT_DESTINATION, options = {}) {
   if (process.platform !== 'win32' && destination === DEFAULT_DESTINATION)
     throw new Error('The default is a Windows path; non-Windows hosts must pass --destination');
   directory = fs.realpathSync(directory);
   destination = path.resolve(destination);
   const { manifest, origin, checksums } = verifyBundle(directory);
+  const updateAlias = options.updateAlias ?? !Object.hasOwn(manifest, 'sku');
+  if (typeof updateAlias !== 'boolean') throw new Error('updateAlias must be an explicit boolean');
+  if (updateAlias && Object.hasOwn(manifest, 'sku') && manifest.sku !== 'full')
+    throw new Error('Only the explicit full hardware SKU may update PollyOS.iso; publish reduced SKUs versioned-only');
   const relative = path.relative(directory, destination);
   if (!relative || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
     throw new Error('Publication destination must not be inside its source bundle');
   fs.mkdirSync(destination, { recursive: true });
   const alias = path.join(destination, ALIAS);
   const aliasInfo = fs.lstatSync(alias, { throwIfNoEntry: false });
-  if (aliasInfo && !aliasInfo.isFile())
+  if (updateAlias && aliasInfo && !aliasInfo.isFile())
     throw new Error('Refusing to replace a non-regular ISO alias');
   const release = path.join(destination, `pollydesktop-${manifest.version}-${manifest.distribution}-` +
+    (Object.hasOwn(manifest, 'sku') ? `${manifest.sku}-` : '') +
     `${origin.runtimeSourceRevision.slice(0, 7)}-${origin.mediaProducerRevision.slice(0, 7)}-${manifest.iso.sha256.slice(0, 12)}`);
   if (fs.existsSync(release)) {
     if (fs.lstatSync(release).isSymbolicLink() ||
@@ -113,6 +122,13 @@ export function publish(directory, destination = DEFAULT_DESTINATION) {
     } finally { if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true }); }
   }
   const iso = path.join(release, manifest.iso.name);
+  if (!updateAlias) return {
+    schemaVersion: 1, releaseDirectory: release, iso, sku: manifest.sku,
+    alias: null, aliasType: 'not-updated', bytes: regular(iso).size, sha256: manifest.iso.sha256,
+    runtimeSourceRevision: origin.runtimeSourceRevision, mediaProducerRevision: manifest.sourceRevision,
+    runtimeImageID: manifest.runtimeImage, isoFileIdentity: identity(iso),
+    limits: ['Versioned SKU publication only; stable alias was not changed. Not boot/hardware qualification.'],
+  };
   const temporary = path.join(destination, '.PollyOS-' + randomUUID() + '.iso');
   try {
     fs.linkSync(iso, temporary);
@@ -136,7 +152,19 @@ export function publish(directory, destination = DEFAULT_DESTINATION) {
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length !== 1 && !(args.length === 3 && args[1] === '--destination'))
-    throw new Error('Usage: node publish-live-iso.mjs VERIFIED_MEDIA [--destination DIRECTORY]');
-  console.log(JSON.stringify(publish(args[0], args[2]), null, 2));
+  const directory = args.shift();
+  let destination, updateAlias;
+  const seen = new Set();
+  while (args.length) {
+    const option = args.shift();
+    if (seen.has(option)) throw new Error('Duplicate publication option: ' + option);
+    seen.add(option);
+    if (option === '--destination' && args[0] && !args[0].startsWith('--')) destination = args.shift();
+    else if (option === '--update-alias') updateAlias = true;
+    else if (option === '--no-alias') updateAlias = false;
+    else throw new Error('Invalid publication option: ' + option);
+  }
+  if (!directory || directory.startsWith('--') || seen.has('--update-alias') && seen.has('--no-alias'))
+    throw new Error('Usage: node publish-live-iso.mjs VERIFIED_MEDIA [--destination DIRECTORY] [--update-alias|--no-alias]');
+  console.log(JSON.stringify(publish(directory, destination, { updateAlias }), null, 2));
 }

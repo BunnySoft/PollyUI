@@ -297,7 +297,7 @@ def copy_plymouth(root, bootstrap, copied):
     return sorted(copied)
 
 
-def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashfs):
+def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashfs, sku=None):
     for option in ("CONFIG_DEVTMPFS", "CONFIG_TMPFS", "CONFIG_PROC_FS", "CONFIG_SYSFS",
                    "CONFIG_EFI_PARTITION", "CONFIG_MSDOS_PARTITION", "CONFIG_VT",
                    "CONFIG_VT_CONSOLE", "CONFIG_FB_EFI", "CONFIG_FRAMEBUFFER_CONSOLE"):
@@ -365,6 +365,12 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
         f"POLLY_ROOT_BYTES={metadata['size']}\n")
     (bootstrap / "etc/polly-live-modules").write_text("\n".join(MODULES) + "\n")
     (bootstrap / "etc/polly-live-graphics-modules").write_text("\n".join(GRAPHICS_MODULES) + "\n")
+    hardware = None
+    if sku is not None:
+        profiles = runpy.run_path(str(repo / "desktop/release/debian/live-profile.py"))
+        selected = profiles["verify"](root, sku)
+        hardware = {key: selected[key] for key in ("sku", "manifestSha256")}
+        (bootstrap / "etc/polly-live-hardware").write_bytes(profiles["marker"](sku))
     inventory = []
     for path in sorted(bootstrap.rglob("*")):
         info = path.lstat()
@@ -389,5 +395,7 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
             "files": inventory,
         },
     }
+    if hardware is not None:
+        result["hardwareProfile"] = hardware
     shutil.rmtree(bootstrap)
     return result

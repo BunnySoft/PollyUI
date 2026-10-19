@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Small source/resource qualification cases; no daemon, package install, images or power calls."""
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -45,7 +46,9 @@ class PowerPackaging(unittest.TestCase):
             (self.root / "etc/polly-account-profile").write_text(profile + "\n")
             self.assertEqual(self.qualify()["newPackages"][0], {"name": "polkitd", "version": "126-2"})
         live = (REPO / "desktop/release/debian/Containerfile.live").read_text().split("FROM platform-base AS live-base")[0]
-        self.assertIn("polkitd=126-2", live)
+        manifest = json.loads((REPO / "desktop/release/debian/live-profiles.json").read_text())
+        self.assertIn("polkitd=126-2", manifest["packageGroups"]["common"])
+        self.assertIn("live-profile.py packages", live)
         self.assertIn("COPY release/debian/00-polly-power.rules", live)
         installed = (REPO / "desktop/release/debian/Containerfile.install").read_text()
         self.assertIn("FROM ${PLATFORM_IMAGE}", installed)

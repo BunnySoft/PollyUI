@@ -2,7 +2,14 @@
 set -eu
 profile=${1:-live}
 case "$profile" in live|template) ;; *) echo "Invalid payload profile" >&2; exit 2 ;; esac
-test "$#" -le 1
+test "$#" -le 2
+if [ "$#" -eq 2 ]; then
+    hardware_sku=$2
+    python3 -I -B /workspace/desktop/release/debian/live-profile.py verify --sku "$hardware_sku"
+else
+    hardware_sku=full
+    python3 -I -B /workspace/desktop/release/debian/live-profile.py verify
+fi
 test -f /etc/polly-account-profile
 test ! -L /etc/polly-account-profile
 test "$(cat /etc/polly-account-profile)" = "$profile"
@@ -13,7 +20,8 @@ test "$VERSION_CODENAME" = trixie
 set -- /lib/modules/*
 test "$#" -eq 1
 kernel=${1##*/}
-for module in i915 nouveau igc iwlwifi snd_hda_intel xhci_pci usb_storage virtio_gpu; do
+modules=$(python3 -I -B /workspace/desktop/release/debian/live-profile.py modules --sku "$hardware_sku")
+for module in $modules; do
     modinfo -k "$kernel" -n "$module"
 done
 test -r /boot/intel-ucode.img
