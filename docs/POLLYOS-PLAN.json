@@ -1279,6 +1279,24 @@
       "evidence": "2026-10-19实际六SKU尝试已收尾：五stock成功、basic失败，关闭仅指真实尝试/交付记录完成，不是六份全PASS。cleancommon aa2463c48fdb009bea52b1c76fb7c9a4ff1c7b6b2b59c861871ef9263fe17ab3核原native8e6全部bytes/mode/owner/SDK，未伪重编；私有Node abort134/导出活动日志sharing错误FIRST保留。0534真assembled揭session-mode.sh错644，cd7472e3正常修755保原oracle；同一BUILD五stock0，mode/240pins/actualISOUSB414总路径其中27overlays/size/profile齐核，公共已有包0升级，stockkernel6.12.113+deb13-amd64。Windows独立vm211/intel214/nvidia214/amd214/full217摘要通过，ISO577619968/651823104/682092544/668428288/726300672B、USB630194176/704643072/735051776/721420288/779091968B，完整路径SHA详HANDOFF，VM比本批full小20.47%。74OS增量deb官方签名链通过，含AMD固件20250410-2。basic官方source6.12.113认证通过；ad870ca8标准syncconfig修真实stale auto.conf，Python5实际过且真release6.12.113-polly-basic。ownbuilder e158195c从原SDK只加6必要包/0升级，真-j1编译18935.546秒至LDvmlinux后ZSTD22阶段报zstd:notfound127→bindeb2/producer1，非超时/OOM/磁盘推测。原rawlog821290B/SHA93e916b4db62e11954e0489b7038d4703a067089f98a89829062af3d33680b42保留，未成pack或basicISO；临时source/obj/vmlinux已正常清除、不可增量续编。59500797补CONFIG_KERNEL_ZSTD工具早检查/原压缩配置不变，相关mockproducer测试通过但不冒第二次内核成功。own编译/API/helper/容器0，无新APT/zstd安装或重跑，旧8e6 aliasinode562949954769671/links2不动，无boot/Install/物理资格。用户将另机尝试，按要求保完整错误/成功媒体身份并提交主线；后续文档SHA不重标cd/ad原产物。"
     },
     {
+      "id": "live-configured-builds",
+      "label": "Live YAML 配置驱动构建",
+      "kind": "subtask",
+      "parent": "system-build",
+      "scope": "以每SKU独立YAML的说明/分stage顶层包集合驱动同一计划与既有构建后端，严格安全解析、未知/重复/类型/冲突拒绝；--plan只读且无后端副作用，--build显式消费锁定native和离线APT解析输入。APT解传递依赖不自造包管理器，计划unresolved/blocked/resolved-unverified与真实认证分别标记；配置/native需求/完整计划hash、真实根/manifest/origin/size/SBOM/发布身份一起绑定。standard旧SKU/无配置媒体保持兼容，非精确标准full能力不得覆稳定alias。附集中构建说明；minimal未有配对native变体时必须编译前明确blocked，不以旧完整bundle重标极简。闭合源码和非编译测试范围，不能把mock签名/APT/容器当实际配置镜像已构建。",
+      "priority": "P2",
+      "modes": [
+        "live",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "live-basic-amd-skus"
+      ],
+      "evidence": "2026-10-19先在独立bunnysoft-chinese-minimal-build实现bd6fa467→18c11c85→77037a64，9YAML=standard六硬件+minimal中文vm/basic/full，成熟lazy yaml纯JS精确依赖仅buildtools，集中strictschema/stage包请求、原source/runtime/ABI/包pin门保持。新配置必须给受控离线lock/snapshot/archives，预检源码固定Debian信任根再原生gpgv/索引/包control/hash及file-only APT模拟，缺输入失败；本轮未运行真实认证/APT。配置platform/live显式networknone，旧在线APT入口不变。父独立Node30项26pass/4原Linuxskip/0fail，packagecontract/report通过；新Python15纯mock单测通过，所有外部APT/gpgv/dpkg受控替身，无真实编译或镜像生成。分支发布器RO核旧8e6实际216摘要+stockfull217摘要，原aliasinode562949954769671/links2不变。集中docs/CONFIGURED-BUILDS.md含环境、schema、plan/build、lock可信边界、缓存/产物/排错/测试及minimal阻塞。用户随后明确要求新方式分支也合main并同步本地远端，正常合c85c5bb227d089d8b6d718b9fdefbea89a53ac86，mergedmain复跑Node/Python通过；未额外native/kernel/APT/media构建，真实minimal runtime/ISO/中文实画/boot仍未资格。"
+    },
+    {
       "id": "bug-native-fractional-layout",
       "label": "已交可选小数布局后端",
       "kind": "subtask",

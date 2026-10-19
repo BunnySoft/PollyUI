@@ -1,5 +1,37 @@
 # PollyOS 当前批次交接
 
+## 2026-10-19 YAML 配置构建已合入 main
+
+按用户后续明确要求，独立配置分支的 `bd6fa467`、`18c11c85`、
+`77037a648ce99a1f40f9aef9e9ed071195ae10d0` 已正常合入
+`c85c5bb227d089d8b6d718b9fdefbea89a53ac86`；basic 镜像压缩工具早检查
+`59500797` 也已正常合入。未覆盖或重写分支历史，以下实际媒体的原 cd/ad
+producer 身份不随合并改变。
+
+新入口接受每 SKU 一份 YAML，包含说明和 runtime/platform/boot 的顶层包集合，
+集中严格解析并生成确定的构建计划。已有 6 份 standard 与 3 份中文 minimal 配置，
+旧 `--sku/--skus` 行为保留；standard/native 合同、硬件 profile、实际包清单和
+配置身份绑定，非标准 full 配置不能因名称冒默认发布资格。
+在另一台电脑上的准备和完整步骤见 [配置构建说明](CONFIGURED-BUILDS.md)。
+
+```sh
+(cd desktop/tools && npm ci --ignore-scripts --no-audit --no-fund)
+bash tools/build.sh --live \
+  --config desktop/release/debian/configs/standard-vm.yaml --plan
+```
+
+`--plan` 不编译、不创建输出或调用 APT/容器；未提供真实依赖解析输入时显示
+`unresolved`。新 `--build` 是受控离线输入接口，需要已资格 native bundle/image、
+tools、真实 APT lock/snapshot/archive；本轮未附在线锁采集器，不应手工编造锁。
+minimal 的 CPU native/字体闭包变体尚未制作，计划明确 `blocked`，并在任何后端
+操作前拒绝实际构建；不是已有 minimal ISO。原单硬件入口仍可使用原在线签名 APT
+组装，不受新配置的离线模式替换。
+
+合并后的非编译复验为 Node 30 项中 26 通过、4 项原 Linux-only 测试跳过，
+原 package-contract/release-report 通过；Python 15 项纯 mock adapter 通过。
+签名/APT/容器等均为受控模拟，未因此取得实际认证/配置镜像/图形/中文实画资格。
+仅恢复锁定的纯 JS 工具依赖，没有启动新的 native/SDK/内核/ISO 编译。
+
 ## 2026-10-19 实际 SKU 构建批次（五个 stock 已交，basic 构建失败）
 
 以下五个 SKU 已由同一次真实 BUILD 串行构建并导出 Windows，源实际 ISO/USB
