@@ -286,13 +286,25 @@ def e22_markdown(plan, history):
             text.extend([
                 "| 交付字段 | 实际值 |",
                 "| --- | --- |",
-                f"| 稳定 ISO 路径 | `{publication['alias']}` |",
+                f"| 本次 ISO 入口 | `{publication['alias']}` |",
                 f"| 版本化 ISO | `{publication['iso']}` |",
                 f"| 大小 | {publication['bytes']} bytes |",
                 f"| SHA256 | `{publication['sha256']}` |",
                 f"| 运行时源码 | `{publication['runtimeSourceRevision']}` |",
                 f"| 媒体生产源码 | `{publication['mediaProducerRevision']}` |",
                 f"| 镜像内容核验 | {publication['payloadPathsVerified']} 条实际 runtime/overlay 路径 |",
+            ])
+            layout = publication.get("rootLayout")
+            if layout:
+                text.extend([
+                    f"| 根布局 | `{layout['kind']}`；压缩根复制到 RAM：{layout['copyToRam']}；可写层：`{layout['writable']}` |",
+                    f"| 压缩根 | `{layout['path']}`；{layout['size']} bytes；SHA256 `{layout['sha256']}` |",
+                    f"| 小型 bootstrap | {layout['bootstrap']['size']} bytes 压缩；{layout['bootstrap']['uncompressedBytes']} bytes 普通文件展开量 |",
+                ])
+            stable_alias = publication.get("stableAlias")
+            if stable_alias and not stable_alias["updated"]:
+                text.append(f"| 原固定入口（未更新） | `{stable_alias['path']}` 仍为 `{stable_alias['runtimeSourceRevision']}`；{cell(stable_alias['reason'])} |")
+            text.extend([
                 "",
                 publication["baseline"], "",
                 "**未覆盖：** " + publication["limits"], "",

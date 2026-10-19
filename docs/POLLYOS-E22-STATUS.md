@@ -66,27 +66,31 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 **当前已交GUI集中手测ISO：已完成。**
 
-根据用户用包含诊断增强的代码build ISO请求，以已推送97eb6d6源码新编并交付；旧843/DDD版本及证据保留，用户自行Hyper-V手测。
+根据用户修正早期启动等待/反馈问题请求，以已推送179f20e源码新编独立SquashFS+小bootstrap正式候选；旧97/843/DDD与证据保留。
 
-最新ISO冻结于clean97eb6d6源码，实际包含增强的polly-live-diagnostics和Monterey在内七主题，使用已资格SDK40a2/ABI4/pin7b58；两实验startup开关均默认OFF、标准Startsolid。源码/媒体身份和未启动限制以以下回执为准；不把诊断增强冒黑屏修复或挪用旧启动结果。
+最新候选为clean179f20e/schema2压缩RAMroot，bootstrap约4.3MB压缩/13.1MB普通文件展开，独立SquashFS654405632B，后续复制RAM再按需解压；早期真实阶段可见设计不伪造百分比。保持SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题。真实启动/脱介质/实际提速未测，不挪用旧资格；旧固定入口因Windows拒绝替换未切换，请用本次版本专用入口。
 
 只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。
 
 | 交付字段 | 实际值 |
 | --- | --- |
-| 稳定 ISO 路径 | `D:\temp\PollyOS\PollyOS.iso` |
-| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-97eb6d6-97eb6d6-0ce6d1690f93\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
-| 大小 | 715036672 bytes |
-| SHA256 | `0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906` |
-| 运行时源码 | `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` |
-| 媒体生产源码 | `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` |
+| 本次 ISO 入口 | `D:\temp\PollyOS\PollyOS-179f20e.iso` |
+| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
+| 大小 | 709148672 bytes |
+| SHA256 | `88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89` |
+| 运行时源码 | `179f20e0d28a49071edfae6d0eb57f0cc9b625ac` |
+| 媒体生产源码 | `179f20e0d28a49071edfae6d0eb57f0cc9b625ac` |
 | 镜像内容核验 | 404 条实际 runtime/overlay 路径 |
+| 根布局 | `squashfs-ram-overlay`；压缩根复制到 RAM：True；可写层：`tmpfs-overlay` |
+| 压缩根 | `boot/root.squashfs`；654405632 bytes；SHA256 `0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549` |
+| 小型 bootstrap | 4332358 bytes 压缩；13120270 bytes 普通文件展开量 |
+| 原固定入口（未更新） | `D:\temp\PollyOS\PollyOS.iso` 仍为 `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681`；Windows EPERM拒绝原子替换，旧97原inode与SHA保持；没有关闭用户VM或光盘句柄。 |
 
-本次诊断增强97ISO的UEFI/QEMU、Hyper-V和物理启动均NOT RUN；真实新编native/package及actualISO诊断脚本/七主题/资源链已核，由用户自行Hyper-V检验，不借旧介质启动结果。
+正式双媒体结构/全部payload/来源链与容器PID1交接分别通过；UEFI/QEMU/Hyper-V/physical/真实SquashFSloop挂载/介质移除均NOT RUN，启动秒数NOT MEASURED，不冒十秒已消失。
 
-**未覆盖：** 诊断增强不等已确定黑屏根因或已修启动停顿，启动策略/超时原样；完整Apps/default splash/物理实时资格未验，无安装器/持久guestdisk。SDK40a2/pin7b58，FIR/Yoga均defaultOFF、Startsolid；性能HOLD和E22剩余不改绿。
+**未覆盖：** 代码已消除整根提前展开并增加真实阶段提示，但仍读取整份压缩根到RAM；实际启动/图形反馈/速度和完整Apps/splash/E22/物理资格未完成。SDK40a2/pin7b58，两实验OFF、Startsolid；旧性能HOLD不改。
 
-稳定路径与版本文件为同一inode的硬链接；已打开的VM光盘句柄可能仍指向旧inode，需用户自行重新选择介质，未操作任何existingVM。
+请选PollyOS-179f20e.iso版本专用新入口（与新版本文件同inode硬链）；PollyOS.iso仍旧97，标准publisher更新失败已披露，不关闭/卸载用户VM来强推。
 
 ## 原 35 项去向
 

@@ -1,8 +1,62 @@
 # PollyOS 当前批次交接
 
-## 2026-10-19 诊断增强版 97eb6d6 ISO
+## 2026-10-19 压缩内存根启动候选 179f20e
 
-最新固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 已原子切换到以下诊断版。
+**请挂载新文件 `D:\temp\PollyOS\PollyOS-179f20e.iso`。**
+标准发布器更新 `D:\temp\PollyOS\PollyOS.iso` 时 Windows 返回 `EPERM`；
+没有覆盖旧 inode、关闭光盘句柄或操作用户 VM，**该固定入口仍是旧 97 版**。
+新文件名是以下完整版本目录内 ISO 的已核验硬链接，不是覆盖失败后的静默成功：
+
+```text
+D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso
+```
+
+ISO **709,148,672 字节**，SHA256：
+
+```text
+88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89
+```
+
+同包 USB 镜像 **761,266,176 字节**，SHA256
+`003b8a8a103f3b5175f43025e8e08e3d36c387d9e97b5eb361d5ce0920a2bf15`；
+它是普通文件，本次没有写入任何 USB 设备。
+runtime、overlay、media producer 均为 clean
+`179f20e0d28a49071edfae6d0eb57f0cc9b625ac`，tree
+`ba11cd42cf3ddf5677070b9acf236b46d4a9f29b`，实际 GUI 自报相同 alpha.8 身份。
+源码两正常提交 `85105eeb`、`e18e24ae` 已审阅并正常合入该 main；
+后续交付文档不改变介质源码身份。
+
+| 结构 | 本轮实际产物 |
+| --- | --- |
+| 内核展开的 bootstrap | gzip **4,332,358 字节**，普通文件展开 **13,120,270 字节**；116 个清单节点、39 个目标内核模块，不含完整系统或 `.squashfs` |
+| 独立压缩根 | `boot/root.squashfs` **654,405,632 字节**；SHA256 `0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549` |
+| 运行设计 | 通过本轮唯一 marker/文件系统 UUID 定位只读启动介质；压缩根复制到 RAM 并核 hash，卸载介质后，以 RAM loop 上的只读 SquashFS + tmpfs upper/work 运行 |
+| 用户反馈 | GRUB 分别提示加载 kernel/bootstrap/启动 kernel；早期 init 在大复制之前显示真实阶段和单调时间，失败保留可见错误，不伪造百分比 |
+
+这移除了原先在首个系统画面前展开约 1.41 GiB 全系统文件的结构性工作。
+**仍需读取整份压缩根到 RAM，不能把结构缩小当作实测启动秒数。**
+真实 SquashFS loop 挂载、目标内核启动、Hyper-V 画面/耗时及实际移除介质后运行
+均 **NOT RUN / NOT MEASURED**；不声称用户机器的十秒黑屏已实测消失。
+已执行的私有 PID1/tmpfs/overlay/mount-move/switch_root 测试只证明该部件交接，
+不冒真实 SquashFS 挂载或整机引导。
+
+新编 runtime 的 1536 canonical 源文件、UID1000 打包 Shell/WM、9 项启动检查、
+配对 ABI/pin 负例已过。正式 ISO/USB 的 **404 + 404** runtime/overlay 路径、
+17 overlays、bootstrap 字节/字符设备/模式/所有者、根身份与完整 EFI/kernel/
+microcode/generated GRUB 一致性、七主题/79 图标及原生 SDK 链已核；
+Windows 独立复验 **145 条**交付摘要。两实验仍 default OFF、Start 实色。
+新工具镜像 `9bddc231...` 只用于构建，依赖闭包（含工具层 liblzma5 u1→u2）
+如实保留收据；Live 的 240 项运行时包未因此升级。
+
+旧 97/843/DDD ISO 和全部 FIRST/结构样件不覆盖。之前 dirty/fixtureOnly 的结构
+样件没有作为本候选复用或重标。自有构建进程已退出，共享 Podman 未停止；
+本次不操作用户 Hyper-V、宿主服务、权限或物理设备。需要用户测试时选择页首
+新文件，而不是本次替换被拒绝、仍指旧版的 `PollyOS.iso`。
+
+## 2026-10-19 旧 97eb6d6 诊断 ISO（固定入口仍指此版）
+
+该诊断版发布时固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 切换到以下文件，
+且因本次替换被 Windows 拒绝，目前仍指此版；新候选见页首版本专用入口。
 runtime、overlay、media producer 均为 clean
 `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681`，tree
 `2a9c2b8f011de25b6c7a3e319ce83389299b6398`，版本 `0.1.0-alpha.8`：

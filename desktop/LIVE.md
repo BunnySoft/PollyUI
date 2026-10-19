@@ -5,8 +5,23 @@ source checkout, native SDK bootstrapping, runtime packaging and ISO generation.
 The delivery records below describe historical artifacts, not reusable build
 inputs or a requirement to obtain the maintainer's cached containers.
 
-**2026-10-19 diagnostic-enhanced candidate:** `D:\temp\PollyOS\PollyOS.iso`
-now points to the clean `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` Alpha.8 ISO:
+**2026-10-19 compressed RAM-root candidate:** use
+`D:\temp\PollyOS\PollyOS-179f20e.iso`, clean runtime/overlay/media source
+`179f20e0d28a49071edfae6d0eb57f0cc9b625ac`, 709148672 bytes, SHA-256
+`88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89`.
+The 4332358-byte bootstrap expands 13120270 regular-file bytes, not the entire
+root. The independent 654405632-byte SquashFS is copied to RAM before a read-only
+loop/tmpfs-overlay handoff. Actual ISO+USB content and all 145 delivery checksums
+passed, including 404 runtime/overlay paths per medium and generated GRUB identity.
+**Real boot, startup timing and actual media-eject operation are NOT RUN.**
+Windows refused the standard publisher's replacement of `PollyOS.iso` (`EPERM`);
+that old fixed entry still refers to 97. No VM/handle was closed. The new
+version-specific entry is a verified hard link to the immutable release bundle,
+not a silently successful stable-alias replacement. See the current handoff.
+
+**2026-10-19 previous diagnostic candidate (retained):** the unchanged
+`D:\temp\PollyOS\PollyOS.iso` still points to this
+clean `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` Alpha.8 ISO:
 715036672 bytes, SHA-256
 `0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906`.
 The actual ISO includes the enhanced `polly-live-diagnostics` collector
