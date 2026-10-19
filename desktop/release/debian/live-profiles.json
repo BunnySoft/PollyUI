@@ -6,53 +6,108 @@
   "packageGroups": {
     "common": [
       "systemd-sysv", "udev", "dbus", "libpam-systemd", "polkitd=126-2",
-      "python3", "kmod", "linux-image-amd64", "intel-microcode", "iucode-tool",
+      "python3", "kmod", "intel-microcode", "iucode-tool",
       "iwd", "dhcpcd", "openresolv", "wireless-regdb", "iproute2", "iw",
       "rfkill", "ethtool", "pciutils", "usbutils", "alsa-utils", "util-linux"
     ],
+    "stockKernel": ["linux-image-amd64"],
     "intelGraphics": ["firmware-intel-graphics"],
     "nvidiaGraphics": ["firmware-nvidia-graphics"],
+    "amdGraphics": ["firmware-amd-graphics"],
     "physicalNetworkAudio": ["firmware-iwlwifi", "firmware-sof-signed"]
   },
   "shared": [
     "One unchanged native application/Chinese IME/font runtime and paired SDK; no application or language trimming.",
     "Complete Debian kernel/module packages, including other vendors' modules; no monolithic kernel split.",
     "Complete corrected Mesa/Gallium/Vulkan packages and LLVM/software rendering; other vendors' drivers remain.",
-    "Intel CPU microcode is independent of graphics selection and remains in every SKU.",
+    "Intel CPU microcode is independent of graphics selection and remains in every SKU. AMD CPU microcode is not added in this source revision.",
     "Same early Plymouth, bounded 64 MiB bootstrap, verified compressed RAM root, accounts/PAM and diagnostics.",
     "Unsigned x86_64 UEFI development media; package selection is not hardware or boot certification."
   ],
+  "displayPolicies": {
+    "native": {
+      "kind": "native-kms",
+      "bootstrapModules": ["hyperv_drm", "virtio_gpu"],
+      "blockedModules": [],
+      "kernelArguments": []
+    },
+    "vm": {
+      "kind": "virtual-kms",
+      "bootstrapModules": ["hyperv_drm", "virtio_gpu"],
+      "blockedModules": [],
+      "kernelArguments": []
+    },
+    "basic": {
+      "kind": "simpledrm-software",
+      "bootstrapModules": ["simpledrm"],
+      "blockedModules": ["i915", "xe", "nouveau", "nvidia", "nvidia_drm", "nvidia_modeset", "amdgpu", "radeon", "virtio_gpu", "hyperv_drm", "vmwgfx", "qxl", "bochs", "vboxvideo", "ast", "mgag200"],
+      "kernelArguments": [
+        "module_blacklist=i915,xe,nouveau,nvidia,nvidia_drm,nvidia_modeset,amdgpu,radeon,virtio_gpu,hyperv_drm,vmwgfx,qxl,bochs,vboxvideo,ast,mgag200",
+        "modprobe.blacklist=i915,xe,nouveau,nvidia,nvidia_drm,nvidia_modeset,amdgpu,radeon,virtio_gpu,hyperv_drm,vmwgfx,qxl,bochs,vboxvideo,ast,mgag200"
+      ]
+    }
+  },
   "profiles": {
+    "basic": {
+      "packageGroups": ["common"],
+      "displayPolicy": "basic",
+      "kernelPolicy": "basic-pack",
+      "requiredModules": ["simpledrm", "ahci", "sd_mod", "xhci_pci", "usb_storage", "usbhid", "hid_generic", "igc", "e1000e", "r8169"],
+      "support": [
+        "Pending UEFI GOP -> simpledrm DRM/KMS -> existing wlroots pixman/raster software path, not a framebuffer compositor.",
+        "Current qualified Debian 6.12.111+deb13-amd64 has CONFIG_DRM_SIMPLEDRM and CONFIG_SYSFB_SIMPLEFB disabled: this SKU fails closed, not a deliverable generic desktop.",
+        "Requires a separately approved compatible kernel and actual output qualification; no native GPU acceleration, physical GPU firmware, Wi-Fi or SOF firmware. Wired/storage/input kernel paths remain.",
+        "No promise of every host, mode/resolution or automatic graphical fallback; Plymouth/simplefb success is not desktop readiness."
+      ]
+    },
     "full": {
-      "packageGroups": ["common", "intelGraphics", "nvidiaGraphics", "physicalNetworkAudio"],
-      "requiredModules": ["i915", "nouveau", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
+      "packageGroups": ["common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics", "physicalNetworkAudio"],
+      "displayPolicy": "native",
+      "kernelPolicy": "stock",
+      "requiredModules": ["i915", "nouveau", "amdgpu", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
       "support": [
         "Current declared Intel UHD770 + NVIDIA RTX4070Ti/RTX4060Ti open-source Nouveau/Mesa route, I226-V and AX211/SOF firmware set.",
-        "Includes the VM graphics/storage/input/network kernel paths; not universal AMD or all-hardware certification."
+        "Adds the AMD amdgpu/firmware-amd-graphics package route and VM paths. This three-GPU firmware set is not all-model or all-hardware certification."
       ]
     },
     "vm": {
-      "packageGroups": ["common"],
+      "packageGroups": ["common", "stockKernel"],
+      "displayPolicy": "vm",
+      "kernelPolicy": "stock",
       "requiredModules": ["virtio_gpu", "virtio_pci", "virtio_blk", "virtio_scsi", "virtio_net", "hyperv_drm", "hv_storvsc", "hv_netvsc", "hid_hyperv", "hyperv_keyboard", "usbhid", "xhci_pci", "usb_storage", "snd_hda_intel"],
       "support": [
         "Virtual display/storage/input/network paths for the existing QEMU/Hyper-V development configurations and software rendering.",
-        "No physical GPU, Intel Wi-Fi or SOF firmware; not a claim of new VM boot acceptance."
+        "No Intel/NVIDIA/AMD physical GPU, Intel Wi-Fi or SOF firmware; virtual KMS policy is distinct from basic's simpledrm-only software policy. Not new VM boot acceptance."
       ]
     },
     "intel": {
-      "packageGroups": ["common", "intelGraphics", "physicalNetworkAudio"],
+      "packageGroups": ["common", "stockKernel", "intelGraphics", "physicalNetworkAudio"],
+      "displayPolicy": "native",
+      "kernelPolicy": "stock",
       "requiredModules": ["i915", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
       "support": [
         "Current declared Intel UHD770 / I226-V / AX211 physical target; retains physical network/audio firmware.",
-        "Omits NVIDIA-specific graphics firmware, not NVIDIA code from the shared kernel/Mesa packages."
+        "Omits NVIDIA/AMD graphics firmware, not their code from the shared kernel/Mesa packages."
       ]
     },
     "nvidia": {
-      "packageGroups": ["common", "nvidiaGraphics", "physicalNetworkAudio"],
+      "packageGroups": ["common", "stockKernel", "nvidiaGraphics", "physicalNetworkAudio"],
+      "displayPolicy": "native",
+      "kernelPolicy": "stock",
       "requiredModules": ["nouveau", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
       "support": [
         "Current declared RTX4070Ti/RTX4060Ti open-source Nouveau/Mesa route; no proprietary NVIDIA driver is added.",
-        "Omits Intel graphics firmware, but retains Intel CPU microcode and physical network/audio firmware."
+        "Omits Intel/AMD graphics firmware, but retains Intel CPU microcode and physical network/audio firmware."
+      ]
+    },
+    "amd": {
+      "packageGroups": ["common", "stockKernel", "amdGraphics", "physicalNetworkAudio"],
+      "displayPolicy": "native",
+      "kernelPolicy": "stock",
+      "requiredModules": ["amdgpu", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
+      "support": [
+        "Open-source AMD amdgpu/Mesa package route with firmware-amd-graphics; exact cards/output modes still require qualification.",
+        "Omits Intel/NVIDIA graphics firmware, retains Intel CPU microcode and physical network/audio firmware. GPU vendor does not select CPU microcode; AMD CPU microcode is not added here."
       ]
     }
   }

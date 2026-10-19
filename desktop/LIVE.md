@@ -17,14 +17,19 @@ builds the SDK/native runtime/tools or publishes a stable alias.
 
 | SKU | Firmware packages selected in addition to common CPU microcode |
 | --- | --- |
-| `full` | Intel graphics, NVIDIA graphics, Intel Wi-Fi and SOF; the current declared hardware set, not all AMD/all hardware |
-| `vm` | None of those four physical firmware packages; virtual display/storage/input/network modules and software rendering remain |
-| `intel` | Intel graphics, Intel Wi-Fi and SOF; excludes NVIDIA-specific graphics firmware |
-| `nvidia` | NVIDIA graphics, Intel Wi-Fi and SOF; excludes Intel graphics firmware; open-source Nouveau/Mesa only |
+| `basic` | No physical GPU/Wi-Fi/SOF firmware; dedicated simpledrm KMS kernel input, CPU-only pixman/raster. **Stock kernel unsupported; no basic media/boot qualification yet.** |
+| `vm` | No Intel/NVIDIA/AMD graphics, Wi-Fi or SOF firmware; existing virtual KMS/storage/input/network and software rendering |
+| `intel` | Intel graphics, Intel Wi-Fi and SOF; excludes NVIDIA/AMD graphics firmware |
+| `nvidia` | NVIDIA graphics, Intel Wi-Fi and SOF; excludes Intel/AMD graphics firmware; open-source Nouveau/Mesa only |
+| `amd` | AMD graphics, Intel Wi-Fi and SOF; amdgpu/Mesa, excludes Intel/NVIDIA graphics firmware; no all-model certification |
+| `full` | Union of Intel/NVIDIA/AMD graphics, Intel Wi-Fi and SOF; not all-model/all-hardware certification |
 
 CPU microcode is independent of GPU selection. Physical network/audio firmware is
-not removed from Intel/NVIDIA images. The **complete common kernel/modules,
-corrected Mesa/Gallium/Vulkan and LLVM** remain in every profile, including other
+not removed from Intel/NVIDIA/AMD images. Intel microcode remains in every SKU;
+**AMD CPU microcode is not added in this revision**. Stock kernel/module packages
+remain common to the five non-basic profiles; basic requires a separately built,
+complete dedicated kernel package. The **corrected Mesa/Gallium/Vulkan and LLVM**
+remain in every profile, including other
 vendors' code. Chinese IME/font/App functionality, early Plymouth, the 64 MiB
 bootstrap limit, RAM-root integrity, accounts/PAM, actual READY and diagnostics
 are unchanged. Splitting monolithic kernel/Mesa packages needs separate paired
@@ -60,6 +65,62 @@ An orphan marker or manifest copy cannot downgrade an export to legacy Install.
 The explicit historical `--legacy-initramfs` route accepts only unlabelled old
 roots: any new hardware marker/copy or SKU-bearing runtime origin is refused,
 including a new `full` marker, rather than dropping its SKU label.
+
+### Basic display and dedicated kernel input
+
+`bash tools/build.sh --live --help` is a no-build help entry; `--live OUTPUT`
+forwards to the same Debian Live builder before native tool/Skia checks.
+`--sku NAME` selects one profile, `--skus NAME,...` selects several, and mixing
+them or native build flags is refused. Windows users run this in an existing
+Linux/WSL environment; `tools/build.ps1` is unchanged.
+
+`basic` is not a renamed VM profile or an acceleration boot argument. Its intended
+path is UEFI GOP -> Linux **simpledrm DRM/KMS** -> the existing wlroots DRM dumb
+allocator + pixman -> raster clients. The current stock
+`6.12.111+deb13-amd64` has `CONFIG_DRM_SIMPLEDRM` and `CONFIG_SYSFB_SIMPLEFB`
+disabled; EFI/simplefb is not a wlroots desktop output. Stock basic assembly
+therefore fails visibly. No basic kernel, output or host/resolution matrix has
+been compiled/boot-qualified in this revision.
+
+Only basic accepts/requires `--basic-kernel-pack DIRECTORY`. The explicit local
+pack contains a single `kernel-image.deb`, exact `kernel.config` and
+`kernel-pack.json` binding release, architecture, package bytes, final config,
+provided source/base-config SHA256 and build strategy. The optional offline
+`release/debian/basic-kernel.py build` route uses standard `bindeb-pkg` from an
+explicit SHA-verified local Linux source archive and base config. It enables
+`DRM_SIMPLEDRM=m`, `SYSFB_SIMPLEFB=y`, disables old `FB_SIMPLE`, verifies final
+config and packages only the dedicated image (no headers/debug/meta packages).
+Its `debian-bindeb-pkg-simpledrm-unsigned-dev` strategy clears distribution trust/
+revocation certificate paths. When module signing is enabled, it signs all modules
+with the standard automatic build-local key, including with signature enforcement.
+Pre-existing private build keys are refused without reading them; private keys are
+never exported in the pack or logs. This does not establish Secure Boot trust.
+All failures after configuration starts, including final pack acceptance, retain
+unique raw logs and propagate the original error before publishing output.
+It never downloads a kernel or installs build tools. See the build guide for
+commands; stock profiles never consume the pack.
+
+The entry copies and verifies the pack before assembly, rechecks immutable input
+hashes, and records its source/config/package/image identity in origin, media,
+RAM root and bootstrap receipts. Basic's exact kernel image replaces—not joins—
+the stock `linux-image-amd64` group. Its early module closure includes simpledrm,
+loaded even without splash. Only basic's generated GRUB command lines and
+root-owned modprobe policy block competing native GPU modules; built-in
+competitors are refused. `nomodeset` is never used. Its menus contain no GPU
+acceleration entry, and explicit GPU requests are refused.
+
+Before the desktop starts, basic requires one primary DRM node matching sysfs,
+the `simple-framebuffer` platform driver (and `simpledrm` module link if present),
+a connected KMS connector and a mode. Native takeover, missing/ambiguous devices
+or no modes retain visible console diagnostics, never a headless success.
+This is a source-reachable, fail-closed path, **not actual simpledrm display
+acceptance**. Plymouth framebuffer success does not satisfy the existing actual
+desktop READY gate, which is unchanged.
+
+Six-profile source adds AMD/full firmware and display/kernel contracts, changing
+the profile manifest digest. No explicit-SKU formal media was released from the
+earlier four-profile source. Those old fixture results/digests do not qualify
+this source; old no-SKU schema 1/2 media remains readable without relabelling.
 
 **2026-10-19 compressed RAM-root candidate:** use
 `D:\temp\PollyOS\PollyOS-179f20e.iso`, clean runtime/overlay/media source

@@ -10,10 +10,29 @@
 #   ./tools/build.sh --skia-root DIR # matching Skia source/header directory
 #   ./tools/build.sh --run           # launch the demo afterward
 #   ./tools/build.sh --run gui/examples/playground/gallery.mjs   # run with a JS app
+#   ./tools/build.sh --live OUTPUT --sku amd --runtime-bundle DIR --runtime-image ID --tools-image ID
+#   ./tools/build.sh --live --help   # Live SKU help, no native build or input requirements
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
+
+for argument in "$@"; do
+  if [[ "$argument" == --live ]]; then
+    if [[ "${1:-}" != --live ]]; then
+      echo "--live must be first and cannot be combined with native build options" >&2
+      exit 2
+    fi
+    shift
+    for option in "$@"; do
+      case "$option" in
+        --clean|--run|--metal|--desktop-services|--skia-dir|--skia-root|--live)
+          echo "--live cannot be combined with native build options: $option" >&2; exit 2 ;;
+      esac
+    done
+    exec sh "$repo/desktop/tools/build-live.sh" --debian "$@"
+  fi
+done
 
 clean=0
 run=0

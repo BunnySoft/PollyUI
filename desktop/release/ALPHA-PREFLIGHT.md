@@ -8,7 +8,7 @@ historical bundles, evidence directories or shared image tags.
 Hardware selection is a separate **Live** packaging axis. After freezing one
 native runtime, use [the sequential SKU entry](../../docs/BUILDING.md#hardware-sku-live-builds)
 with its actual bundle/runtime/tools IDs. Do not repeat native packaging for
-`full`, `vm`, `intel`, `nvidia`, reuse a firmware-heavy full base, or regard a
+`basic`, `vm`, `intel`, `nvidia`, `amd`, `full`, reuse a firmware-heavy full base, or regard a
 boot argument as size reduction. Exact Mesa pins, Chinese IME/Apps, accounts/PAM,
 early Plymouth, 64 MiB bootstrap and actual READY remain common. The complete
 kernel/Mesa/Vulkan/LLVM still ships; the manifest reports that limit and measured
@@ -22,18 +22,26 @@ node --test desktop/tests/live-profiles.mjs desktop/tests/publish-live-iso.mjs d
 node --test desktop/tests/live-sku-build.mjs
 # In an existing private root tools container, source read-only, writable /tmp:
 python3 -I -B desktop/tests/live-profiles.py
+python3 -I -B desktop/tests/basic-kernel.py
 python3 -I -B desktop/tests/live-bootstrap-constructor.py
 python3 -I -B desktop/tests/live-sku-media.py
 ```
 
 The latter makes tiny synthetic, deliberately non-bootable ISO/USB **files** and
-verifies actual root/boot profile bytes for all four SKUs. Its receipts are
+verifies actual root/boot profile bytes for all six SKUs. Its receipts are
 `fixtureOnly` and cannot be published; it is not a real SKU or boot result.
 The constructor test executes actual `build_bootstrap`, profile verification,
 hardware-marker creation and cpio packing, replacing only external ELF/module
 copy boundaries. The entry test executes the actual shell/Node entry and source/
 bundle freeze, integrity/reporting and failure control; only external Podman
 operations use synthetic boundary data. Neither is an apt/native-build result.
+`basic-kernel.py` uses real tiny, non-bootable .deb/archive inputs to check
+source/config/package/release/hash and malformed-pack rejection; kernel make
+control is explicitly stubbed. The actual stock kernel lacks simpledrm.
+Basic requires a SHA-verified dedicated kernel pack; these fixtures are not a
+real kernel compile, simpledrm output, GOP mode or hardware acceptance result.
+The real entry test starts at `tools/build.sh --live`, includes help/mixed-option
+rejection, freezes the dedicated pack and runs all six sequential profile paths.
 New explicit-SKU publication is versioned-only by default; only explicitly
 selected `full --update-alias` may change `PollyOS.iso`.
 LiveCD contains no new installer. Reduced locked platforms are retained, but

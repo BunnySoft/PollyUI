@@ -33,6 +33,7 @@ try {
   } else if (args[0] === 'rm') phase = 'rm';
   else if (args[0] === 'run') {
     if (args.includes('clean-runtime')) phase = 'clean-runtime';
+    else if (args.some(arg => arg.endsWith('/basic-kernel.py'))) phase = 'kernel-pack';
     else if (args.some(arg => arg.endsWith('/package-modes.py'))) phase = 'package-modes';
     else if (args.some(arg => arg.endsWith('/debian-live-payload.sh'))) {
       phase = args.at(-2) === 'template' ? 'qualify-template' : 'qualify-live';
@@ -75,6 +76,9 @@ try {
   } else if (args[0] === 'build') {
     if (!['platform-base', 'live-base'].includes(value('--target'))) throw new Error('Entry rebuilt tools/native');
     if (!args.includes('RUNTIME_IMAGE=' + state.runtimeID)) throw new Error('Build used a mutable runtime');
+    if (value('--build-context') !== 'basic-kernel-pack=' + path.join(state.output, 'common',
+      sku === 'basic' ? 'basic-kernel' : 'kernel-none'))
+      throw new Error('Build did not isolate basic kernel input from stock profiles');
     const recipe = value('-f');
     if (!recipe.startsWith(state.output + '/common/source/') ||
         fs.readFileSync(recipe, 'utf8').includes('changed after freeze'))
@@ -95,6 +99,19 @@ try {
     if (['package-modes', 'retain', 'media', 'verify'].includes(phase) && id !== state.toolsID)
       throw new Error('Tool image identity changed');
     if (phase === 'clean-runtime' && id !== state.runtimeID) throw new Error('Runtime identity changed');
+    if (phase === 'clean-runtime' && process.env.POLLY_SKU_FIXTURE_TAMPER) {
+      const file = { source: path.join(source, 'gui/probe.mjs'), runtime: path.join(bundle, 'manifest.json'),
+        kernel: path.join(state.output, 'common/basic-kernel/kernel-image.deb') }[process.env.POLLY_SKU_FIXTURE_TAMPER];
+      fs.appendFileSync(file, '\nchanged frozen input\n');
+    }
+    if (phase === 'kernel-pack') {
+      const result = spawnSync('python3', ['-I', '-B', path.join(source, 'desktop/release/debian/basic-kernel.py'),
+        'verify', mounts.get('/kernel-pack')], { encoding: 'utf8' });
+      if (result.status !== 0) throw new Error(result.stderr);
+      state.kernelInput = JSON.parse(result.stdout);
+      fs.appendFileSync(path.join(state.kernelExternal, 'kernel-image.deb'), 'changed external source pack after freeze');
+      process.stdout.write(result.stdout);
+    }
     if (phase === 'assembled') state.containers[value('--name')] = sku;
     if (phase === 'retain') fs.mkdirSync(path.join(mounts.get('/sku'), 'inputs/frozen-overlays'));
     if (phase === 'media') {
@@ -113,20 +130,26 @@ try {
       };
       const iso = artifact('uefi-live.iso'), usb = artifact('uefi-usb.img'), config = 'synthetic config\n';
       fs.writeFileSync(path.join(directory, 'grub.cfg'), config);
-      const packages = profile.requiredPackages.map(spec => {
+      const packages = [...profile.requiredPackages,
+        ...(sku === 'basic' ? [state.kernelInput.package.name + '=' + state.kernelInput.package.version] : [])].map(spec => {
         const [name, version = '1.0'] = spec.split('=');
         return { name, version, architecture: 'amd64', installedSizeBytes: 1024, regularFileBytes: 10 };
       });
       const layout = { kind: 'squashfs-ram-overlay', path: 'boot/root.squashfs', size: 100, sha256: 'd'.repeat(64),
         copyToRam: true, writable: 'tmpfs-overlay', mediaIdentity: 'e'.repeat(32),
         hardwareProfile: { sku, manifestSha256: profile.manifestSha256 },
-        bootstrap: { path: 'boot/initramfs.gz', size: 20, sha256: 'f'.repeat(64), uncompressedBytes: 40 } };
+        displayPolicy: profile.displayPolicy,
+        ...(sku === 'basic' ? { kernelInput: state.kernelInput } : {}),
+        bootstrap: { path: 'boot/initramfs.gz', size: 20, sha256: 'f'.repeat(64), uncompressedBytes: 40,
+          graphicsModules: profile.displayPolicy.bootstrapModules } };
       write(path.join(directory, 'live-manifest.json'), {
         schemaVersion: 2, stage: 'development-live-image', version: '0.1.0-alpha.8',
         architecture: 'x86_64', distribution: 'debian13', sku, hardwareProfile: profile,
+        ...(sku === 'basic' ? { kernelInput: state.kernelInput } : {}),
         sourceRevision: value('--source-revision'), sourceDirty: false, runtimeImage: state.runtimeID,
         nativeRuntime: native, imageToolsID: state.toolsID, root: layout,
-        grub: { templateSha256: 'a'.repeat(64), embeddedSha256: sha(config) },
+        grub: { templateSha256: 'a'.repeat(64), embeddedSha256: sha(config),
+          kernelArguments: profile.displayPolicy.kernelArguments },
         iso, usb, files: 5, uncompressedPayloadBytes: 500,
         packages: packages.map(({ name, version }) => ({ name, version })),
         sizeReport: { schemaVersion: 1, sku, manifestSha256: profile.manifestSha256, packages,
@@ -142,13 +165,13 @@ try {
         runtimeManifestSha256: manifest.nativeRuntime.manifestSha256, mediaProducerRevision: manifest.sourceRevision,
         runtimeImageID: state.runtimeID, isoSha256: manifest.iso.sha256, isoPayloadFilesVerified: 5,
         usbSha256: manifest.usb.sha256, usbPayloadFilesVerified: 5, bootstrapVerified: true, rootLayout: manifest.root,
-        ...Object.fromEntries(['sku', 'hardwareProfile', 'nativeRuntime', 'imageToolsID', 'sizeReport']
+        ...Object.fromEntries(['sku', 'hardwareProfile', 'nativeRuntime', 'imageToolsID', 'sizeReport', 'kernelInput']
           .map(key => [key, manifest[key]])),
       });
       fs.writeFileSync(path.join(directory, 'SHA256SUMS'), fs.readdirSync(directory).sort()
         .map(name => sha(fs.readFileSync(path.join(directory, name))) + '  ' + name).join('\n') + '\n');
     }
-    process.stdout.write('PASS: external orchestration boundary fixture ' + phase);
+    if (phase !== 'kernel-pack') process.stdout.write('PASS: external orchestration boundary fixture ' + phase);
   }
   write(stateFile, state);
 } catch (error) {

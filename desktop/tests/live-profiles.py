@@ -18,12 +18,31 @@ REPO = Path(__file__).resolve().parents[2]
 profiles = runpy.run_path(str(REPO / "desktop/release/debian/live-profile.py"))
 verify = runpy.run_path(str(REPO / "desktop/tools/verify-live-runtime.py"))
 root_tools = runpy.run_path(str(REPO / "desktop/tools/live-root.py"))
+SKUS = ("basic", "vm", "intel", "nvidia", "amd", "full")
+BASIC_CONFIG = "\n".join(name + "=y" for name in (
+    "CONFIG_DEVTMPFS", "CONFIG_TMPFS", "CONFIG_PROC_FS", "CONFIG_SYSFS", "CONFIG_EFI_PARTITION",
+    "CONFIG_MSDOS_PARTITION", "CONFIG_VT", "CONFIG_VT_CONSOLE", "CONFIG_FB_EFI", "CONFIG_FRAMEBUFFER_CONSOLE",
+    "CONFIG_SYSFB_SIMPLEFB")) + ('\nCONFIG_DRM_SIMPLEDRM=m\n# CONFIG_FB_SIMPLE is not set\n'
+                               'CONFIG_SYSTEM_TRUSTED_KEYS=""\nCONFIG_SYSTEM_REVOCATION_KEYS=""\n'
+                               'CONFIG_MODULE_SIG=y\nCONFIG_MODULE_SIG_ALL=y\nCONFIG_MODULE_SIG_FORCE=y\n'
+                               'CONFIG_MODULE_SIG_KEY="certs/signing_key.pem"\n')
+
+
+def basic_receipt():
+    return {"schemaVersion": 1, "kind": "polly-basic-kernel-pack", "kernelRelease": "6.12.111-polly-basic",
+            "package": {"name": "linux-image-6.12.111-polly-basic", "version": "1.0", "architecture": "amd64",
+                        "sha256": "a" * 64, "size": 100},
+            "configSha256": hashlib.sha256(BASIC_CONFIG.encode()).hexdigest(),
+            "packManifestSha256": "b" * 64, "imageSha256": hashlib.sha256(b"not-a-kernel").hexdigest(),
+            "source": {"archiveSha256": "c" * 64, "baseConfigSha256": "d" * 64,
+                       "strategy": "debian-bindeb-pkg-simpledrm-unsigned-dev"}}
 
 
 def seed(root, sku, *, marked=True):
     selected = profiles["profile"](sku)
     status = []
-    for spec in [*selected["requiredPackages"], "mesa-libgallium=25.0+polly1",
+    for spec in [*selected["requiredPackages"], *(["linux-image-6.12.111-polly-basic=1.0"] if sku == "basic" else []),
+                 "mesa-libgallium=25.0+polly1",
                  "mesa-vulkan-drivers=25.0+polly1", "libllvm19=19.1"]:
         name, _, version = spec.partition("=")
         status.append(f"Package: {name}\nStatus: install ok installed\nArchitecture: amd64\n"
@@ -42,12 +61,19 @@ def seed(root, sku, *, marked=True):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             target.chmod(0o644)
+    if sku == "basic":
+        for name, data in (("usr/share/polly-basic-kernel.json", (json.dumps(basic_receipt()) + "\n").encode()),
+                           ("usr/share/polly-basic-kernel.config", BASIC_CONFIG.encode()),
+                           (profiles["BASIC_MODPROBE"], profiles["modprobe_policy"]("basic"))):
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_bytes(data)
+            (root / name).chmod(0o644)
     return selected
 
 
 class HardwareProfiles(unittest.TestCase):
-    def test_four_package_sets_missing_forbidden_and_legacy_full(self):
-        for sku in ("full", "vm", "intel", "nvidia"):
+    def test_six_package_sets_missing_forbidden_and_legacy_full(self):
+        for sku in SKUS:
             with self.subTest(sku=sku), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 selected = seed(root, sku)
@@ -65,7 +91,7 @@ class HardwareProfiles(unittest.TestCase):
                     del broken[name.split("=")[0]]
                     with self.assertRaisesRegex(ValueError, "Missing/wrong"):
                         profiles["verify_packages"](broken, selected)
-                for name in [*selected["forbiddenPackages"], "firmware-amd-graphics"]:
+                for name in [*selected["forbiddenPackages"], "firmware-unknown"]:
                     with self.assertRaisesRegex(ValueError, "Forbidden|Undeclared"):
                         profiles["verify_packages"]({**installed, name: {"version": "1"}}, selected)
                 if sku != "full":
@@ -74,12 +100,15 @@ class HardwareProfiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             seed(root, "full", marked=False)
+            status = root / "var/lib/dpkg/status"
+            status.write_text("\n\n".join(block for block in status.read_text().split("\n\n")
+                                         if not block.startswith("Package: firmware-amd-graphics\n")))
             self.assertEqual(profiles["verify"](root)["sku"], "full")
             with self.assertRaises(FileNotFoundError):
                 profiles["verify"](root, "full")
 
     def test_strict_sku_selection_and_manifest_fields(self):
-        self.assertEqual(profiles["select"]("full,vm,intel,nvidia"), ["full", "vm", "intel", "nvidia"])
+        self.assertEqual(profiles["select"](",".join(SKUS)), list(SKUS))
         for value in ("", "full,", ",vm", "vm,vm", "VM", "unknown", "intel, nvidia", "vm;id"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 profiles["select"](value)
@@ -253,6 +282,7 @@ class HardwareProfiles(unittest.TestCase):
             (root / "etc/polly-live-root").write_text(
                 f"POLLY_MEDIA_ID={identity}\nPOLLY_ROOT_SHA256={sha}\nPOLLY_ROOT_BYTES=200\n")
             (root / "etc/polly-live-hardware").write_bytes(profiles["marker"]("vm"))
+            (root / "etc/polly-live-graphics-modules").write_text("hyperv_drm\nvirtio_gpu\n")
             (root / "init").write_bytes(b"synthetic-not-bootable")
             (root / "bin/busybox").write_bytes(b"synthetic-not-executable")
             path = Path(temporary) / "initramfs.gz"
@@ -266,8 +296,10 @@ class HardwareProfiles(unittest.TestCase):
                                for name, (major, minor, mode) in root_tools["DEVICES"].items())
                 return {"mediaIdentity": identity, "sha256": sha, "size": 200,
                         "hardwareProfile": {key: profiles["profile"]("vm")[key] for key in ("sku", "manifestSha256")},
+                        "displayPolicy": profiles["profile"]("vm")["displayPolicy"],
                         "bootstrap": {"size": path.stat().st_size, "sha256": root_tools["digest"](path),
-                                      "uncompressedBytes": total, "files": records}}
+                                      "uncompressedBytes": total, "files": records,
+                                      "graphicsModules": ["hyperv_drm", "virtio_gpu"]}}
             verify["check_bootstrap"](path, pack())
             for content, mode in ((profiles["marker"]("full"), 0o644), (profiles["marker"]("vm"), 0o666)):
                 (root / "etc/polly-live-hardware").write_bytes(content)

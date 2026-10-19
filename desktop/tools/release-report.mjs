@@ -180,7 +180,8 @@ export async function inspectRelease(directory) {
     ...(localPackages ? { localPackages } : {}),
     ...(live ? { minimumGuestMemoryMiB: manifest.minimumGuestMemoryMiB, runtimeImage: manifest.runtimeImage,
       ...(Object.hasOwn(manifest, 'sku') ? { sku: manifest.sku, hardwareProfile: manifest.hardwareProfile,
-        nativeRuntime: manifest.nativeRuntime, imageToolsID: manifest.imageToolsID, sizeReport: manifest.sizeReport } : {}) } : {}),
+        nativeRuntime: manifest.nativeRuntime, imageToolsID: manifest.imageToolsID, sizeReport: manifest.sizeReport,
+        ...(manifest.sku === 'basic' ? { kernelInput: manifest.kernelInput } : {}) } : {}) } : {}),
     limits: [
       'Local integrity/provenance report, not a trusted signature or automatic release approval.',
       'Runtime archive extraction metadata must also pass package-modes.py; no files are extracted here.',

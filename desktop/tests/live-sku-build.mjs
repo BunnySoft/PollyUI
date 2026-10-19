@@ -84,12 +84,13 @@ function fixture(t, fail = '') {
     'offline-live-overlay.py', 'retain-live-inputs.py', 'build-live-image.py', 'verify-live-runtime.py']) {
     write(path.join(source, 'desktop/tools', name), fs.readFileSync(path.join(repo, 'desktop/tools', name)));
   }
-  for (const name of ['live-profiles.json', 'live-profile.py', 'Containerfile.live'])
+  for (const name of ['live-profiles.json', 'live-profile.py', 'basic-kernel.py', 'live-display.py', 'Containerfile.live'])
     write(path.join(source, 'desktop/release/debian', name), fs.readFileSync(path.join(repo, 'desktop/release/debian', name)));
   for (const name of ['shared/probe', 'sysrt/probe', 'third_party/quickjs/probe', 'third_party/yoga/probe'])
     write(path.join(source, name), 'frozen input\n');
   write(path.join(source, 'CMakeLists.txt'), '# fixture only\n');
   write(path.join(source, 'gui/probe.mjs'), 'FROZEN SOURCE\n');
+  write(path.join(source, 'tools/build.sh'), fs.readFileSync(path.join(repo, 'tools/build.sh')));
   const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
   const git = args => execFileSync(realGit, ['-C', source, ...args], { encoding: 'utf8' }).trim();
   git(['init', '--quiet', '--initial-branch=fixture']);
@@ -100,20 +101,26 @@ function fixture(t, fail = '') {
       'Copilot-Session: 07c3500a-0c35-4b7c-95a7-dfec58790dd0']);
   const revision = git(['rev-parse', 'HEAD']);
   runtimeFixture(bundle);
+  const kernelPack = path.join(root, 'kernel-pack');
+  fs.mkdirSync(kernelPack);
+  execFileSync('python3', ['-I', '-B', '-c',
+    'import runpy,sys; from pathlib import Path; runpy.run_path(sys.argv[1])["pack"](Path(sys.argv[2]))',
+    path.join(repo, 'desktop/tests/basic-kernel.py'), kernelPack], { stdio: 'pipe' });
   const bin = path.join(root, 'bin'), shim = fileURLToPath(new URL('./live-sku-build-fixture.mjs', import.meta.url));
   for (const name of ['podman', 'git']) {
     write(path.join(bin, name), `#!/bin/sh\nexec "${process.execPath}" "${shim}" ${name} "$@"\n`);
     fs.chmodSync(path.join(bin, name), 0o755);
   }
   json(path.join(root, 'backend.json'), { source, output, tags: {}, containers: {}, mutated: false,
-    runtimeID: '1'.repeat(64), toolsID: '2'.repeat(64), runtimeLookups: 0, toolsLookups: 0 });
+    kernelExternal: kernelPack, runtimeID: '1'.repeat(64), toolsID: '2'.repeat(64), runtimeLookups: 0, toolsLookups: 0 });
   write(path.join(root, 'stable/PollyOS.iso'), 'untouched stable fixture\n');
   const env = { ...process.env, PATH: bin + ':' + process.env.PATH,
     POLLY_SKU_FIXTURE_ROOT: root, POLLY_SKU_FIXTURE_REAL_GIT: realGit, POLLY_SKU_FIXTURE_FAIL: fail };
-  const execute = () => spawnSync('sh', [path.join(source, 'desktop/tools/build-live.sh'), '--debian', output,
+  const execute = () => spawnSync('bash', [path.join(source, 'tools/build.sh'), '--live', output,
     '--runtime-bundle', bundle, '--runtime-image', 'fixture-runtime', '--tools-image', 'fixture-tools',
-    '--skus', 'full,vm,intel,nvidia'], { cwd: root, env, encoding: 'utf8', timeout: 90000, maxBuffer: 8 * 1024 * 1024 });
-  return { root, output, source, revision, execute };
+    '--skus', 'basic,vm,intel,nvidia,amd,full', '--basic-kernel-pack', kernelPack],
+  { cwd: root, env, encoding: 'utf8', timeout: 90000, maxBuffer: 8 * 1024 * 1024 });
+  return { root, output, source, revision, execute, env };
 }
 function events(f) {
   const rows = fs.readFileSync(path.join(f.root, 'trace.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
@@ -135,12 +142,12 @@ test('actual shell/Node entry freezes inputs once and serially executes every SK
     assert.equal(result.status, 0, result.stderr + '\n' + (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : ''));
     const trace = events(f), state = read(path.join(f.output, 'build-run.json'));
     assert.deepEqual(trace.map(row => row.phase),
-      ['git-head', 'git-status', 'inspect-runtime', 'inspect-tools', 'package-modes', 'clean-runtime',
-        ...['full', 'vm', 'intel', 'nvidia'].flatMap(() => perSku)]);
+      ['git-head', 'git-status', 'inspect-runtime', 'inspect-tools', 'kernel-pack', 'package-modes', 'clean-runtime',
+        ...['basic', 'vm', 'intel', 'nvidia', 'amd', 'full'].flatMap(() => perSku)]);
     assert.equal(state.status, 'complete');
     assert.equal(state.sourceRevision, f.revision);
-    assert.deepEqual(state.artifacts.map(item => item.sku), ['full', 'vm', 'intel', 'nvidia']);
-    assert.equal(new Set(state.artifacts.flatMap(item => Object.values(item.tags))).size, 8);
+    assert.deepEqual(state.artifacts.map(item => item.sku), ['basic', 'vm', 'intel', 'nvidia', 'amd', 'full']);
+    assert.equal(new Set(state.artifacts.flatMap(item => Object.values(item.tags))).size, 12);
     assert.ok(state.artifacts.every(item => item.report.nativeRuntime.imageID === state.nativeRuntime.imageID &&
       item.report.imageToolsID === state.imageToolsID));
     const backend = read(path.join(f.root, 'backend.json'));
@@ -152,7 +159,11 @@ test('actual shell/Node entry freezes inputs once and serially executes every SK
       assert.ok(fs.existsSync(path.join(f.output, sku, 'media/candidate-origin.json')));
     assert.equal(fs.readFileSync(path.join(f.root, 'stable/PollyOS.iso'), 'utf8'), 'untouched stable fixture\n');
     assert.ok(!fs.existsSync(path.join(f.output, 'PollyOS.iso')));
-    console.log('PASS: real entry control flow, frozen source/native/tools, four sequential isolated SKUs; boundaries mocked');
+    assert.deepEqual(state.artifacts[0].report.kernelInput, state.basicKernelInput);
+    assert.notEqual(sha(fs.readFileSync(path.join(f.root, 'kernel-pack/kernel-image.deb'))), state.basicKernelInput.package.sha256);
+    assert.equal(sha(fs.readFileSync(path.join(f.output, 'common/basic-kernel/kernel-image.deb'))), state.basicKernelInput.package.sha256);
+    assert.deepEqual(read(path.join(f.output, 'common/source-inputs.json')).kernelInput, state.basicKernelInput);
+    console.log('PASS: real top BUILD entry, kernel pack verification, frozen source/native/tools, six sequential SKUs; external builds mocked');
   });
 test('actual entry stops on a failed SKU, cleans its container and never enters later SKUs',
   { skip: process.platform !== 'linux' }, t => {
@@ -160,14 +171,46 @@ test('actual entry stops on a failed SKU, cleans its container and never enters 
     assert.notEqual(result.status, 0);
     const trace = events(f), state = read(path.join(f.output, 'build-run.json'));
     assert.equal(state.status, 'failed');
-    assert.deepEqual(state.artifacts.map(item => item.sku), ['full']);
+    assert.deepEqual(state.artifacts.map(item => item.sku), ['basic']);
     assert.deepEqual(trace.slice(-8).map(row => row.phase),
       ['build-platform', 'inspect-platform', 'build-live', 'inspect-live',
         'qualify-template', 'qualify-live', 'assembled', 'rm']);
     assert.ok(!fs.existsSync(path.join(f.output, 'intel')));
     assert.ok(!fs.existsSync(path.join(f.output, 'nvidia')));
+    assert.ok(!fs.existsSync(path.join(f.output, 'amd')));
     assert.ok(!fs.existsSync(path.join(f.output, 'vm/media')));
     assert.equal(fs.readFileSync(path.join(f.root, 'stable/PollyOS.iso'), 'utf8'), 'untouched stable fixture\n');
     assert.match(fs.readFileSync(path.join(f.output, 'build.log'), 'utf8'), /injected backend failure/);
     console.log('PASS: real entry failure stopping and cleanup; no later SKU or stable publication');
+  });
+test('top BUILD --live help has no native/backend/output side effects and rejects mixed native arguments',
+  { skip: process.platform !== 'linux' }, t => {
+    const f = fixture(t);
+    const entry = path.join(f.source, 'tools/build.sh');
+    const help = spawnSync('bash', [entry, '--live', '--help'], { env: f.env, encoding: 'utf8' });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /basic,vm,intel,nvidia,amd,full/);
+    assert.ok(!fs.existsSync(f.output));
+    assert.ok(!fs.existsSync(path.join(f.root, 'trace.jsonl')));
+    for (const args of [['--clean', '--live', '--help'], ['--live', '--help', '--metal'],
+      ['--live', f.output, '--run'], ['--live', '--help', '--live'], ['--live', f.output, '--unknown']]) {
+      const result = spawnSync('bash', [entry, ...args], { env: f.env, encoding: 'utf8' });
+      assert.notEqual(result.status, 0);
+      assert.ok(!fs.existsSync(f.output));
+      assert.ok(!fs.existsSync(path.join(f.root, 'trace.jsonl')));
+    }
+  });
+test('actual entry rejects mutations of frozen source, runtime or dedicated kernel before any SKU build',
+  { skip: process.platform !== 'linux' }, t => {
+    for (const kind of ['source', 'runtime', 'kernel']) {
+      const f = fixture(t);
+      f.env.POLLY_SKU_FIXTURE_TAMPER = kind;
+      const result = f.execute();
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /frozen SKU inputs changed|dedicated basic kernel inputs changed/);
+      const state = read(path.join(f.output, 'build-run.json'));
+      assert.equal(state.status, 'failed');
+      assert.deepEqual(state.artifacts, []);
+      assert.ok(!events(f).some(event => event.phase.startsWith('build-')));
+    }
   });

@@ -3,17 +3,23 @@ FROM ${RUNTIME_IMAGE} AS platform-base
 USER root
 WORKDIR /
 ARG HARDWARE_SKU=full
-COPY release/debian/live-profile.py release/debian/live-profiles.json /tmp/polly-hardware/
+COPY release/debian/live-profile.py release/debian/live-profiles.json release/debian/basic-kernel.py release/debian/live-display.py /usr/lib/polly-hardware/
+COPY tools/live-root.py /usr/lib/polly-hardware/live-root.py
+COPY --from=basic-kernel-pack / /tmp/polly-basic-kernel/
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
-RUN python3 -I -B /tmp/polly-hardware/live-profile.py clean-runtime && \
-    packages=$(python3 -I -B /tmp/polly-hardware/live-profile.py packages --sku "$HARDWARE_SKU") && \
+RUN python3 -I -B /usr/lib/polly-hardware/live-profile.py clean-runtime && \
+    packages=$(python3 -I -B /usr/lib/polly-hardware/live-profile.py packages --sku "$HARDWARE_SKU") && \
     chmod 644 /etc/apt/sources.list.d/backports.sources && \
     apt-get update -qq && apt-get install -y --no-install-recommends \
     $packages && \
+    if [ "$HARDWARE_SKU" = basic ]; then \
+        python3 -I -B /usr/lib/polly-hardware/basic-kernel.py install /tmp/polly-basic-kernel; \
+    else test ! -e /tmp/polly-basic-kernel/kernel-pack.json; fi && \
     test "$(dpkg-query -W -f='${Version}' polkitd)" = 126-2 && \
     iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode && \
-    python3 -I -B /tmp/polly-hardware/live-profile.py mark --sku "$HARDWARE_SKU" && \
-    rm -rf /tmp/polly-hardware
+    python3 -I -B /usr/lib/polly-hardware/live-profile.py mark --sku "$HARDWARE_SKU" && \
+    chmod 644 /usr/lib/polly-hardware/* && chown -R 0:0 /usr/lib/polly-hardware && \
+    rm -rf /tmp/polly-basic-kernel
 COPY release/live/init /init
 COPY release/live/session /usr/bin/polly-live-session
 COPY release/live/diagnostics /usr/bin/polly-live-diagnostics

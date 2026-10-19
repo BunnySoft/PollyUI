@@ -130,6 +130,12 @@ uuid=$(printf '%s' "$uuid" | tr '[:upper:]' '[:lower:]')
 while read -r module; do
     modprobe "$module" || fail "Cannot load driver $module"
 done </etc/polly-live-modules
+if [ -f /etc/polly-live-graphics-required ]; then
+    while read -r module; do
+        modprobe "$module" || fail "Required basic KMS driver $module unavailable"
+    done </etc/polly-live-graphics-required
+    mdev -s
+fi
 start_splash
 
 stage "Finding the exact boot filesystem (read-only)"

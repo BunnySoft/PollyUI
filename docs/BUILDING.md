@@ -381,29 +381,36 @@ podman build --pull=never --target image-tools \
   -f desktop/release/debian/Containerfile.live desktop
 TOOLS_ID=$(podman image inspect --format '{{.Id}}' localhost/polly-debian-live-tools)
 
-sh desktop/tools/build-live.sh --debian "$OUT/live-skus" \
+bash tools/build.sh --live "$OUT/live-skus" \
   --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" \
-  --tools-image "$TOOLS_ID" --skus full,vm,intel,nvidia
+  --tools-image "$TOOLS_ID" --skus vm,intel,nvidia,amd,full
+# 单选可用 --sku amd，不能与 --skus 同时出现；两者均省略默认 full。
+# --live --help 无需 runtime/kernel 输入，不创建输出，也不检查 Skia/CMake。
 # 等价直接入口：node desktop/tools/build-live-skus.mjs OUTPUT [上面的参数]
-# 省略 --skus 时默认为 full；空、重复、未知 SKU 都拒绝。
+# 兼容脚本入口：sh desktop/tools/build-live.sh --debian OUTPUT [上面的参数]
+# basic 另需下面的专用内核 pack；空、重复、未知 SKU 和混用 native 参数均拒绝。
 ```
 
 该入口要求真实干净 Git checkout 与已冻结 Debian bundle，不接受外部 false-clean
 标签。它在新输出目录中冻结一份源码/原生 bundle，记录源码字节摘要，并一次解析
 runtime/tools 的真实 image ID；后续所有重步骤只消费这些固定输入。按所选顺序
-**串行**组装，不并发四套大构建，不重建 native/SDK/tools，不改共享 convenience
+**串行**组装，不并发多套大构建，不重建 native/SDK/tools，不改共享 convenience
 tag 或稳定 ISO alias。包组装仍可能联网获取已声明的 Debian 包；不是离线下载器。
 传入已含固件/kernel/profile 的 full/platform/Live base 会失败，不能靠删除
 metadata 把它冒充干净 runtime。
 
 `desktop/release/debian/live-profiles.json` 是唯一 profile manifest。`full` 保留
-当前已声明范围，不代表所有 AMD/所有硬件认证；`nvidia` 仅当前 Nouveau/Mesa
-开源路线。`intel` 去 NVIDIA graphics firmware，`nvidia` 去 Intel graphics
+当前包组范围，不代表所有型号/所有硬件认证；`nvidia` 仅当前 Nouveau/Mesa
+开源路线，`amd` 是 amdgpu/Mesa + `firmware-amd-graphics`。`intel` 去 NVIDIA/AMD
+graphics firmware，`nvidia` 去 Intel/AMD graphics
 firmware；二者均保留物理网络/音频固件。`vm` 去这两种 graphics、Intel Wi-Fi 和
-SOF 的四个固件包，保虚拟显示/存储/输入/网络模块和软件渲染。Intel CPU 微码与
-GPU 无关，所有 SKU 都保留。
+SOF（也不带 AMD graphics），保虚拟显示/存储/输入/网络模块和软件渲染。
+`amd` 去 Intel/NVIDIA graphics，同时保留物理网络/音频；`full` 是三家显卡固件的
+合集。Intel CPU 微码与 GPU 无关，所有 SKU 都保留；**本轮未新增 AMD CPU 微码**，
+不能因为有 AMD 显卡 SKU 就声称 AMD CPU 微码已覆盖。
 
-本轮仍共享 **完整 kernel/modules、修补后的 Mesa/Gallium/Vulkan/LLVM、native
+五个非 basic SKU 仍共享完整 stock kernel/modules；basic 用下述独立完整内核包。
+所有 SKU 仍共享 **修补后的 Mesa/Gallium/Vulkan/LLVM、native
 runtime、Apps、中文 IME/字体**，所以不是“完全无其它厂商驱动”。不删除单个
 `.so` 或破坏 dpkg 依赖。深度拆 kernel/Mesa 包及其配对 SDK 是后续工作。
 Early Plymouth、64 MiB bootstrap、RAMroot/READY、账户/PAM与诊断保持不变。
@@ -425,6 +432,8 @@ live-skus/
   vm/...                          # 所选其它 SKU，各自 inputs/media
   intel/...
   nvidia/...
+  amd/...
+# 若显式选择 basic 并提供专用内核 pack，还会有 common/basic-kernel/ 和 basic/。
 ```
 
 每份 `live-manifest.json` 的 `sizeReport` 同时给出真实包级数据、最终 ISO/USB、
@@ -453,6 +462,73 @@ POLLY_PLATFORM_IMAGE="$FULL_PLATFORM_ID" sh desktop/tools/build-installed.sh "$O
 ```
 
 不能传 Live ID，也不默认选最后完成的 SKU。此轮没有新增物理安装器或多 Install 产物。
+
+#### basic：显式的专用 simpledrm 内核输入
+
+`basic` 的目标是物理机最低图形路径：UEFI GOP → simpledrm DRM/KMS →
+现有 wlroots DRM dumb-buffer allocator/pixman → CPU raster。它与 `vm` 的
+virtio/Hyper-V KMS 策略不同，不能只是“不带 GPU 固件”的重命名。
+实际当前 stock `6.12.111+deb13-amd64` 的 `CONFIG_DRM_SIMPLEDRM` 和
+`CONFIG_SYSFB_SIMPLEFB` 均关闭；已有 EFI/simplefb/Plymouth 不构成桌面 KMS。
+因此 `--sku basic` **没有专用 pack 时明确拒绝**，不冒称 stock 内核可显示。
+
+准备自己授权、来源已核验的完整 Linux 源码 tar 与基线 config，传入它们的明确
+SHA256。在具有标准 Linux kernel/Debian `bindeb-pkg` 所需本地工具的 Linux
+构建环境执行；缺工具直接失败，不会联网补装，也不重建现有 native SDK：
+
+```sh
+# LINUX_SOURCE_TAR / LINUX_SOURCE_SHA256 / BASE_KERNEL_CONFIG / BASE_CONFIG_SHA256
+# 必须由本次选择的本地可信输入提供，不能用下载失败后的空值或可变 URL 代替。
+python3 -I -B desktop/release/debian/basic-kernel.py build \
+  --source "$LINUX_SOURCE_TAR" --source-sha256 "$LINUX_SOURCE_SHA256" \
+  --config "$BASE_KERNEL_CONFIG" --config-sha256 "$BASE_CONFIG_SHA256" \
+  --output "$OUT/basic-kernel-pack" --jobs 2
+
+python3 -I -B desktop/release/debian/basic-kernel.py verify "$OUT/basic-kernel-pack"
+bash tools/build.sh --live "$OUT/live-basic" --sku basic \
+  --basic-kernel-pack "$OUT/basic-kernel-pack" \
+  --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
+# 六类同一入口可用 --skus basic,vm,intel,nvidia,amd,full，仍必须提供 --basic-kernel-pack。
+```
+
+该独立可选内核构建脚本只从已校验源码/config 执行 olddefconfig → scripts/config
+开启 `DRM_SIMPLEDRM=m`/`SYSFB_SIMPLEFB=y`、关闭旧 `FB_SIMPLE`、保早期可解压模块格式
+→ olddefconfig → 核最终 config → 标准 bindeb-pkg。不会下载内核、引第三方内核、
+补装 toolchain、替换其它五版默认内核或修改 WM/SDK。
+`source.strategy=debian-bindeb-pkg-simpledrm-unsigned-dev` 明确采用开发版信任策略：
+清空 `SYSTEM_TRUSTED_KEYS`/`SYSTEM_REVOCATION_KEYS` 的发行版证书路径；若
+`MODULE_SIG=y`，显式启用 `MODULE_SIG_ALL` 并恢复标准
+`MODULE_SIG_KEY="certs/signing_key.pem"`，避免 FORCE 签名内核拒绝未签的必需模块。
+未开模块签名不强造缺失配置项；最终 pack config 仍须满足一致性校验。
+预存在源码中的该 private key 路径会被拒绝，不读取 key 内容；内核只在临时私有
+buildtree 自动生成构建 key，不导出、不入 pack/日志，不赋予 Secure Boot 信任。
+配置/编译开始后的所有失败（含 release、包选择、dpkg 字段或最终 pack 验证）
+都保留唯一完整失败日志并原错抛出，未通过最终验证不发布输出。
+
+pack 仅含一个专用 `linux-image-<release>-polly-basic` 的 `kernel-image.deb`、
+`kernel.config`、`kernel-pack.json` 和构建日志；headers/dbg/meta 包不入。
+校验 raw SHA、真实 dpkg 包名/版本/amd64、唯一 kernel/module release、包内 config
+与 simpledrm 模块后才允许 basic 组装。输入复制到 `common/basic-kernel` 再验，
+所有 SKU 之间重新核 hash，不从可变外部目录再次取包。common 包组不再硬编码
+stock kernel：其余五版选 `stockKernel`，basic 仅安装专用 image，禁止并存 stock
+meta。source/config/package/image/release 身份写入 source-input receipts、origin、
+media/root/bootstrap；实际启动 kernel/config 不符即拒绝。
+
+basic 仍不删 App/中文 IME/Mesa，保物理存储/输入/USB/有线驱动和 Intel 微码，
+但不含显卡/Wi-Fi/SOF 固件。只在 basic 的 GRUB/module blacklist 和 root-owned
+modprobe policy 中阻止竞争 GPU 模块；内建不能阻的竞争驱动直接拒绝。
+不使用 `nomodeset`；simpledrm 即使无 splash 也提前加载。菜单不提供 GPU 加速，
+显式 GPU 请求被拒；启动桌面前核唯一 primary DRM 节点与 sysfs 一致、
+`simple-framebuffer` platform driver/可选 `simpledrm` module link、connected KMS
+connector 和非空模式。缺失、接管或歧义留清晰 console 诊断，绝不以 framebuffer
+动画/headless 当成功。现实际 READY、Plymouth handoff 与账号/PAM 不变。
+
+**本轮只完成源码/工具/fixture，未编真实专用内核、未实测 basic 输出、未生成新
+正式六类 ISO，也未测压缩节省或所有主机/分辨率。** 原四-profile 显式 manifest 的
+结构/hash 与此六-profile 不同，旧 fixture/source 资格不覆盖新源码；从未发布过
+四类显式 SKU 正式媒体。旧无 SKU schema 1/2 媒体继续只读兼容，不重标身份。
+Windows 请在已有 Linux/WSL 环境运行上面入口；Windows MSVC `tools/build.ps1`
+不变，不会隐式启动 WSL 或猜远端路径。
 
 ### 旧单 full 调用（兼容入口）
 

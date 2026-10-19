@@ -8,8 +8,9 @@ new machine.
 
 ## Declarative hardware SKUs
 
-[`live-profiles.json`](live-profiles.json) defines `full` (default), `vm`, `intel`
-and `nvidia`: package groups, required modules, supported scope and the parts that
+[`live-profiles.json`](live-profiles.json) defines `basic`, `vm`, `intel`, `nvidia`,
+`amd` and `full` (default): package groups, required modules, display/kernel policies,
+supported scope and the parts that
 remain shared. [`live-profile.py`](live-profile.py) owns strict selection and
 package/metadata qualification. See [the build entry](../../../docs/BUILDING.md#hardware-sku-live-builds)
 and [media/size contracts](../../LIVE.md#hardware-sku-live-builds).
@@ -17,6 +18,25 @@ and [media/size contracts](../../LIVE.md#hardware-sku-live-builds).
 native runtime and refuses any existing platform/Live or physical firmware base.
 It never simulates a smaller image by deleting the full base's metadata or libraries.
 Exact runtime Mesa pins remain checked after assembly.
+
+`tools/build.sh --live` dispatches to this same entry before any native prerequisites.
+Use `--sku NAME` or `--skus NAME,...`; `--live --help` needs no runtime inputs and
+creates no output. Native build flags cannot be mixed into Live arguments.
+AMD/full add `firmware-amd-graphics` and the amdgpu module closure. Other profiles
+do not acquire AMD graphics firmware. Intel CPU microcode is independent of GPU
+choice; AMD CPU microcode is not added.
+
+The current stock kernel cannot provide basic's simpledrm path:
+`CONFIG_DRM_SIMPLEDRM=n` and `CONFIG_SYSFB_SIMPLEFB=n`, not a usable KMS fallback.
+Basic requires an explicit, independently built `--basic-kernel-pack`: one
+dedicated `linux-image-<release>-polly-basic` .deb, exact config and SHA-bound
+source/package manifest. `basic-kernel.py build` provides an offline local
+source/base-config -> standard bindeb-pkg route; it does not download or replace
+the stock kernel for the other five profiles. Its final config, one kernel and
+module release, simpledrm module and exact package/config/image bytes are checked
+before use. The source-verified pack is frozen/rechecked across the whole run.
+No real dedicated kernel build or basic boot/display qualification is claimed.
+See [basic policy](../../LIVE.md#basic-display-and-dedicated-kernel-input).
 
 The multi-SKU entry retains both immutable platform and Live IDs in
 `build-run.json` under `artifacts[]`, with unique per-run/SKU tags.

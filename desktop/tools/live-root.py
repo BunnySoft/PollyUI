@@ -160,9 +160,9 @@ def root_file(root, path):
     return root.joinpath(*resolved)
 
 
-def module_closure(root, kernel):
+def module_closure(root, kernel, graphics=GRAPHICS_MODULES):
     paths = set()
-    for module in (*MODULES, *GRAPHICS_MODULES):
+    for module in (*MODULES, *graphics):
         output = subprocess.check_output(
             ["modprobe", "--config", "/dev/null", "--dirname", str(root),
              "--set-version", kernel, "--show-depends", "--ignore-install", module],
@@ -299,6 +299,18 @@ def copy_plymouth(root, bootstrap, copied):
 
 
 def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashfs, sku=None):
+    selected = hardware = kernel_input = None
+    graphics = GRAPHICS_MODULES
+    if sku is not None:
+        profiles = runpy.run_path(str(repo / "desktop/release/debian/live-profile.py"))
+        selected = profiles["verify"](root, sku)
+        profiles["verify_kernel"](config, selected)
+        graphics = tuple(selected["displayPolicy"]["bootstrapModules"])
+        hardware = {key: selected[key] for key in ("sku", "manifestSha256")}
+        if sku == "basic":
+            kernel_input = runpy.run_path(str(repo / "desktop/release/debian/basic-kernel.py"))["verify_root"](root)
+            if kernel != kernel_input["kernelRelease"] or hashlib.sha256(config.encode()).hexdigest() != kernel_input["configSha256"]:
+                raise ValueError("Actual boot kernel/config differs from dedicated kernel pack")
     for option in ("CONFIG_DEVTMPFS", "CONFIG_TMPFS", "CONFIG_PROC_FS", "CONFIG_SYSFS",
                    "CONFIG_EFI_PARTITION", "CONFIG_MSDOS_PARTITION", "CONFIG_VT",
                    "CONFIG_VT_CONSOLE", "CONFIG_FB_EFI", "CONFIG_FRAMEBUFFER_CONSOLE"):
@@ -327,7 +339,7 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
     copied = copy_root_elf(root, bootstrap, "/usr/sbin/blkid", "bin/blkid")
     plymouth_files = copy_plymouth(root, bootstrap, copied)
     blkid = {"path": "/usr/sbin/blkid", "sha256": digest(root_file(root, "/usr/sbin/blkid"))}
-    modules = module_closure(root, kernel)
+    modules = module_closure(root, kernel, graphics)
     for path in modules:
         relative = path.relative_to(root)
         # Debian merged-/usr source is normalized to BusyBox's /lib/modules.
@@ -365,13 +377,12 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
         f"POLLY_MEDIA_ID={identity}\nPOLLY_ROOT_SHA256={metadata['sha256']}\n"
         f"POLLY_ROOT_BYTES={metadata['size']}\n")
     (bootstrap / "etc/polly-live-modules").write_text("\n".join(MODULES) + "\n")
-    (bootstrap / "etc/polly-live-graphics-modules").write_text("\n".join(GRAPHICS_MODULES) + "\n")
-    hardware = None
+    (bootstrap / "etc/polly-live-graphics-modules").write_text("\n".join(graphics) + "\n")
     if sku is not None:
-        profiles = runpy.run_path(str(repo / "desktop/release/debian/live-profile.py"))
-        selected = profiles["verify"](root, sku)
-        hardware = {key: selected[key] for key in ("sku", "manifestSha256")}
         (bootstrap / "etc/polly-live-hardware").write_bytes(profiles["marker"](sku))
+        if kernel_input is not None:
+            (bootstrap / "etc/polly-live-kernel").write_bytes((root / "usr/share/polly-basic-kernel.json").read_bytes())
+            (bootstrap / "etc/polly-live-graphics-required").write_bytes(b"simpledrm\n")
     inventory = []
     for path in sorted(bootstrap.rglob("*")):
         info = path.lstat()
@@ -398,5 +409,9 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
     }
     if hardware is not None:
         result["hardwareProfile"] = hardware
+        result["displayPolicy"] = selected["displayPolicy"]
+        result["bootstrap"]["graphicsModules"] = list(graphics)
+    if kernel_input is not None:
+        result["kernelInput"] = kernel_input
     shutil.rmtree(bootstrap)
     return result
