@@ -1261,6 +1261,24 @@
       "evidence": "2026-10-19已交源码/组件范围：b9b2042b→365fdcf6552729f6315735c3a752a3815865bd77正常合40f760869925eaa7ad0b87758f6155ffd142ef94。六SKU/AMD固件amdgpu/full三GPU合集、顶层tools/build.sh --live、--sku单选/--skus互斥多选和无输入无输出help齐接，full默认。实际target6.12.111配置SHA7264f6c...的SIMPLEDRM/SYSFB_SIMPLEFB关闭，basic不能误用stock；显式source/config SHA→standard bindeb-pkg→单image.deb pack核实际架构/唯一release/modules/config/imagehash，固定copy后再核，身份入root/bootstrap/origin/media；其它五版原stock不变。basic无nomodeset/加速菜单，专属模块阻止接管且拒builtin冲突，无splash亦加载simpledrm，普通会话核唯一primaryDRM设备/driver/module/connectedmode后pixman/raster，不拿fb/Plymouth/headless当READY。审阅后补unsigneddev证书路径/模块统一签名策略，临时buildkey不入pack/日志，最终包拒绝亦保完整原始失败log。1553canonicalrawblobs实核；b9完整49Python/18Node+packagecontract，365改动关联17Python/18Node全过0skip（make/Podman/硬件节点边界明确替身，实际小deb/archive/tiny六ISOUSB非bootable），父Windows13/packagecontract及旧8e6实际216摘要RO通过，原aliasinode562949954769671/links2未变。当前config签名三路径实际null不捏造缺cert已证，通用用户config风险另修；所有FIRST/fixture错误保留。仅源码/组件闭合，未编真内核/native/APT平台/正式六ISO，basic真实GOP/KMS桌面/压缩节省/VM/物理未测；SDK/WM/账户READY不改，AMD CPU微码未新增，旧媒体不重标。"
     },
     {
+      "id": "live-sku-build-attempt",
+      "label": "Live 六种 SKU 实际构建",
+      "kind": "subtask",
+      "parent": "system-build",
+      "scope": "按用户实际尝试请求，从同一真实干净公共native Runtime串行构建vm/intel/nvidia/amd/full，并尝试可信明确source/config驱动的basic专用内核pack及其媒体。复用运行时不得改写原native源码身份，media/OS/tools/kernel身份各自真实保留；不以现有full Live层冒干净公共Runtime、不绕原Mesa/pin/source/package guard。每SKU分别记录FIRST真实命令/退出/错误、成功产物ISO与完整USB和实际尺寸/hash/包差异，失败保留且不伪造收据。有限官方签名APT及必要ownbuilder依赖必须有来源/版本/闭包，旧SDK/tools/卷/媒体/alias不覆；不运行VM/hostTTY/GPU或物理盘，不自动替换固定ISO。完成尝试时成功/失败与具体阻塞如实交付，不冒整机或basic图形资格。",
+      "priority": "P2",
+      "modes": [
+        "live",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [
+        "live-basic-amd-skus"
+      ],
+      "evidence": "2026-10-19用户明确“尝试构建这几个SKU”。源码固定0534b6490c98c6632b85388df2165d3cd6d6aa47（product40f76086/b9+365），单heavy lane交169；先核实际common runtime8e6 bundle/cleanimage、tools125f与Node/Podman/磁盘/签名源，优先五stock避免basic大内核阻塞。当前machine已running/rootless；旧8e6 ISO695502848B/33724ccf...保持原aliasinode562949954769671，六SKU脚本/fixture资格不当此次实际构建结果。07c仅源码修复待命不抢Linuxlane。"
+    },
+    {
       "id": "bug-native-fractional-layout",
       "label": "已交可选小数布局后端",
       "kind": "subtask",
