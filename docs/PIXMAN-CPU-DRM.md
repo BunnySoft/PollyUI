@@ -118,3 +118,16 @@ Running Wayland compositor on WAYLAND_DISPLAY=wayland-0
 - `/root/pixman-qemu`：kernel/initramfs/root + QEMU 启动
 
 脚本见 `desktop/tools/experiments/`。脚本是实验参考，不是 `tools/build.sh` 的生产入口。
+
+## 7. Micro 26 MB 原型结果
+
+在上述 QEMU/Pixman 路径上，最小的 Alpine/musl 原型已经实际构建并启动：
+
+- ISO：**26 MB**
+- SHA-256：`cfd9fc2d9edb5dbd77326dada0349f8af1f2d41bdc6ec75f0176301ee70c0495`
+- 1280x800 KMS modeset，`drm_dumb` + Pixman，可见 SHM 客户端
+- 构建入口：`desktop/release/micro/build.sh`
+- 测试入口：`desktop/release/micro/test-qemu.sh`
+- 说明：`desktop/release/micro/README.md`
+
+该原型不含 Rime/PAM/systemd/多应用，仍使用实验性的 DMABUF guard 移除和 `LIBSEAT_BACKEND=noop`，不是生产交付件。

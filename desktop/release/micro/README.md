@@ -7,6 +7,7 @@ Pixman kiosk used to validate the smallest size tier.
 
 - Built and booted in QEMU/KVM with `virtio-gpu-pci`
 - ISO: **26 MB** (measured `micro.iso`)
+- SHA-256: `cfd9fc2d9edb5dbd77326dada0349f8af1f2d41bdc6ec75f0176301ee70c0495`
 - 1280x800 KMS modeset, `drm_dumb` + Pixman, visible SHM client
 - No Rime, PAM, systemd, PollyUI shell, or multi-application desktop
 
