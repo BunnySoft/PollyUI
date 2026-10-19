@@ -1224,6 +1224,24 @@
       "evidence": "2026-10-19已交源码与正式候选范围：ca954→3e5→f6→11c正常合入并推送8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f/tree d23918a810f8d0186a4a40d133c8e2e54eb4fdd1。三个图形入口standard splash/GRUB静态图、early单一Plymouth24.004.60-5及label/一份字体/导出ELF闭包、跨根复用和handoff释放已接线；Esc仅Plymouth所有权阶段有效，WM/App及READY门不改。target SIGRTMIN34/caught54+55→execDFL、真实脚本/label477x23、samePIDnewrootIPC、有界cleanup与邻居/PID1保护通过；强杀FD释放不冒VT文字恢复。getty已知旧配置删除、zz有效合并及finalLive-marker限定payload qualifier齐接，11startup/early3/压缩根/privatehandoff/账户及真实payload检查通过，无WM/CMake/SDK新依赖。正式freshnative1539rawfiles/dirtyfalse，actualRuntime1bc7566e...，实际ISO/USB各405总路径其中18overlays；217bootstrapnodes/45modules/58ELF/regular33046498B低于64MiB，67early-root同字节资源与466expandedSquashFS路径另流核。工具125f新增9包、Live完整14包/12新label依赖，sqv离线签名Release→完整Packages→精确deb链通过、0existingupgrade，SDK40a/7b58/ABI4不变。Windows216摘要独立通过，ISO695502848B/sha33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb已标准原子hardlink发布PollyOS.iso，inode562949954769671/links2；旧179/97/fixture/FIRST保留。仅关闭可复验源码/候选交付，实际图形连续性/Esc/attach-TIOCCONS/HyperV/QEMU/强杀VT恢复/提速未资格，不借旧录像。"
     },
     {
+      "id": "live-hardware-skus",
+      "label": "Live 硬件精简与完整 SKU",
+      "kind": "subtask",
+      "parent": "system-build",
+      "scope": "同一构建入口从公共Runtime按声明式full/vm/intel/nvidia配置组装不同内容ISO/USB，full默认保当前兼容范围。先按包选择物理GPU/WiFi/SOF固件，CPU微码与显卡独立，物理版保网卡音频；不随意删共享Mesa/LLVM或内核包内部文件、不改中文IME/App/账户/早期启动。profile必须与实际包/根payload绑定，产物命名、manifest、size报告、verifier和publisher按SKU隔离并保旧无SKU媒体兼容；未知/重复/缺必需/有禁止包均明确拒绝。关闭源码与组件范围时准确列仍共享的内核/Mesa和实际验证层级，不能将展开字节冒压缩节省、厂商名冒全型号支持、Nouveau冒专有驱动或fixture冒正式新ISO。",
+      "priority": "P2",
+      "modes": [
+        "live",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [
+        "live-compressed-root-boot"
+      ],
+      "evidence": "2026-10-19用户明确希望最小硬件ISO和兼容更广的完整ISO，接受先full默认逐个建立精简版。当前正式8e6 root.tar只读SHA2a1a0f3b70269cb315ba64ebe9e73f65a6938f51503cf5f05c4f8500ca409ccc实审：regular1415935296B，其中固件267464310B、modules99658546B、原生库581792682B、fonts152535004B；IntelGPU29587061/NVIDIA65633076/iwlwifi116721656/SOF35505120为展开regularbytes，不是ISO节省测量。07c3500a独立源码owner正在接线与最小Linux测试；不重建SDK或运行VM，不改已发布8e6/历史ISO或stablealias。首轮不声称拆除monolithicMesa/kernel中所有他厂后端，后续实测压缩尺寸另记。"
+    },
+    {
       "id": "bug-native-fractional-layout",
       "label": "已交可选小数布局后端",
       "kind": "subtask",
