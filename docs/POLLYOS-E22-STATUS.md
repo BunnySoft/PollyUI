@@ -66,25 +66,25 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 **当前已交GUI集中手测ISO：已完成。**
 
-根据用户重新生成ISO请求，以已推送8433048源码重新编译并交付一次新候选；旧DDD版本及其证据保留。
+根据用户用包含诊断增强的代码build ISO请求，以已推送97eb6d6源码新编并交付；旧843/DDD版本及证据保留，用户自行Hyper-V手测。
 
-最新ISO冻结于clean8433048源码，使用已资格新配对SDK40a2/ABI4/pin7b58，实际新编GUI含Yoga与新pinWM；两实验startup开关均默认OFF、标准Start仍solid。源码/媒体来源、ISO SHA256及未启动限制以以下新回执为准，不重标旧介质。
+最新ISO冻结于clean97eb6d6源码，实际包含增强的polly-live-diagnostics和Monterey在内七主题，使用已资格SDK40a2/ABI4/pin7b58；两实验startup开关均默认OFF、标准Startsolid。源码/媒体身份和未启动限制以以下回执为准；不把诊断增强冒黑屏修复或挪用旧启动结果。
 
 只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。
 
 | 交付字段 | 实际值 |
 | --- | --- |
 | 稳定 ISO 路径 | `D:\temp\PollyOS\PollyOS.iso` |
-| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
-| 大小 | 711337984 bytes |
-| SHA256 | `db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315` |
-| 运行时源码 | `8433048a705f2f7b8501d4966ad669ddee7daa73` |
-| 媒体生产源码 | `8433048a705f2f7b8501d4966ad669ddee7daa73` |
-| 镜像内容核验 | 328 条实际 runtime/overlay 路径 |
+| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-97eb6d6-97eb6d6-0ce6d1690f93\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
+| 大小 | 715036672 bytes |
+| SHA256 | `0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906` |
+| 运行时源码 | `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` |
+| 媒体生产源码 | `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` |
+| 镜像内容核验 | 404 条实际 runtime/overlay 路径 |
 
-本次新843ISO的UEFI/QEMU、Hyper-V与物理启动均NOT RUN；已完成新编native/package及真实ISO内容核验，不借旧DDD启动证据。
+本次诊断增强97ISO的UEFI/QEMU、Hyper-V和物理启动均NOT RUN；真实新编native/package及actualISO诊断脚本/七主题/资源链已核，由用户自行Hyper-V检验，不借旧介质启动结果。
 
-**未覆盖：** 完整新架构Apps/default splash/物理与实时资格未验，无安装器/持久guestdisk。新配对SDK与FIR/Yoga开关已打包，两实验均默认OFF、标准Startsolid；原性能HOLD和E22剩余不改绿。
+**未覆盖：** 诊断增强不等已确定黑屏根因或已修启动停顿，启动策略/超时原样；完整Apps/default splash/物理实时资格未验，无安装器/持久guestdisk。SDK40a2/pin7b58，FIR/Yoga均defaultOFF、Startsolid；性能HOLD和E22剩余不改绿。
 
 稳定路径与版本文件为同一inode的硬链接；已打开的VM光盘句柄可能仍指向旧inode，需用户自行重新选择介质，未操作任何existingVM。
 

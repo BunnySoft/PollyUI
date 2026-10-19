@@ -5,8 +5,23 @@ source checkout, native SDK bootstrapping, runtime packaging and ISO generation.
 The delivery records below describe historical artifacts, not reusable build
 inputs or a requirement to obtain the maintainer's cached containers.
 
-**2026-10-18 regenerated current-source candidate:** the stable Windows path
-`D:\temp\PollyOS\PollyOS.iso` now points to a new versioned Alpha.8 ISO built from
+**2026-10-19 diagnostic-enhanced candidate:** `D:\temp\PollyOS\PollyOS.iso`
+now points to the clean `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681` Alpha.8 ISO:
+715036672 bytes, SHA-256
+`0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906`.
+The actual ISO includes the enhanced `polly-live-diagnostics` collector
+(SHA-256 `00b300c72b875aab942d62be91b15bca1bdc4f8a436152dc0d6f7238eaf863f9`),
+the seven-theme catalog including Monterey, and the matched native library;
+both experimental backends remain default OFF. All 404 runtime/overlay paths
+and 137 delivery checksums were verified. This is not an established black-screen
+root cause or boot-delay fix, and **this ISO has not been boot-tested in
+UEFI/QEMU, Hyper-V or on physical hardware**. Use Advanced startup → Verbose
+startup (no splash) for the user's next Hyper-V test, then collect the private
+diagnostics before shutdown. The detailed [current handoff](../docs/POLLYOS-HANDOFF.md)
+records the versioned path and unchanged previous media.
+
+**2026-10-18 previous 8433048 candidate (retained):** the stable Windows path
+`D:\temp\PollyOS\PollyOS.iso` formerly pointed to this versioned Alpha.8 ISO built from
 clean runtime/overlay/media source `8433048a705f2f7b8501d4966ad669ddee7daa73`.
 It is 711337984 bytes, SHA-256
 `db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315`.

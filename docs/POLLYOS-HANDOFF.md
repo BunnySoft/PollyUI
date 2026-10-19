@@ -1,9 +1,51 @@
 # PollyOS 当前批次交接
 
-## 2026-10-18 重新生成并发布的 8433048 ISO
+## 2026-10-19 诊断增强版 97eb6d6 ISO
 
-最新固定入口为 **`D:\temp\PollyOS\PollyOS.iso`**，已原子更新为以下新版本文件
-的硬链接；旧 DDD 版本文件与校验值保留，不覆盖其 inode：
+最新固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 已原子切换到以下诊断版。
+runtime、overlay、media producer 均为 clean
+`97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681`，tree
+`2a9c2b8f011de25b6c7a3e319ce83389299b6398`，版本 `0.1.0-alpha.8`：
+
+```text
+D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-97eb6d6-97eb6d6-0ce6d1690f93\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso
+```
+
+大小 **715,036,672 字节**，SHA256：
+
+```text
+0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906
+```
+
+实际 ISO 已包含增强后的 `/usr/bin/polly-live-diagnostics`，SHA256
+`00b300c72b875aab942d62be91b15bca1bdc4f8a436152dc0d6f7238eaf863f9`，
+模式 `0755`、所有者 `0:0`；流验和 overlay origin 均绑定此字节。
+它收集单调时间内核/服务/会话日志、systemd jobs、getty critical-chain 和实际
+服务超时。**这是诊断增强，不是已证明黑屏根因或修复启动停顿**；
+GRUB quiet、Plymouth handoff、启动依赖和 90 秒桌面期限没有改变。
+建议 Hyper-V 本轮选择 **Advanced startup → Verbose startup (no splash)**，
+进入后执行 `polly-live-diagnostics`，关机前保存并检查报告隐私。
+
+本轮实际新编 GUI/Yoga/WM 的构建身份为 97/sourceDirtyfalse，1532 个 canonical
+Git 文件/完整模式、诊断 7 项、普通 UID1000 打包 Shell/WM、布局选择及 ABI/pin
+负例均通过。实际 ISO **404 条** runtime/overlay 路径、17 overlays 和完整
+**137 条**交付校验通过；原生库仍为已配对 `40a2...` / ABI4 / pin `7b58...`，
+重定位后 `e3c228fa...`。七主题包含 Monterey，builtin=fallback；79 个图标文件
+与 5 条实际注册应用到图标的字节链已核，showcase 图标不冒已实现应用。
+两个实验开关默认关闭，标准 Start 实色；旧性能 HOLD 和 E22 资格未改写。
+
+**本次未执行 UEFI/QEMU、Hyper-V 或物理启动**，由用户自行 Hyper-V 检验，
+不借任何旧 ISO 的启动结果。仅在用户明确授权后启动既有
+`podman-machine-default` 构建环境，无重置/重配或测试 VM 操作；最初环境停止、
+未取得执行 marker 的预检拒绝记录保留。自有构建容器已退出，未停止共享 Podman。
+843/DDD 旧 ISO 的文件、原 inode 和 SHA 保留；固定入口使用新硬链接。
+已打开的 Hyper-V 光盘句柄可能仍指旧 inode，需用户重新选择介质。
+后续文档提交不改变本 ISO 的实际 97 源码身份。
+
+## 2026-10-18 上次 8433048 ISO（历史保留）
+
+当次固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 指向以下文件，现已切换为页首
+97 诊断版；此 843 文件及旧 DDD 文件的校验值保留，不覆盖其 inode：
 
 ```text
 D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso

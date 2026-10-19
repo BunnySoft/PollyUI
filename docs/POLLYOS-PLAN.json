@@ -5562,6 +5562,7 @@
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-19按用户明确要求交付诊断增强97 ISO：runtime=overlay=mediaProducer97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681/tree2a9c2b8f011de25b6c7a3e319ce83389299b6398/alpha8/dirtyfalse，新image877381d15948776a7467698bbe16ac96517894a903462f996c777a6e081b1162。1532canonicalGitHEAD/index/blob与完整0644/0755、新Release产品/普通UID1000 installedShellWM/actual97GUI/diagnostic7/布局selector/ABI-sourcepin负例FIRST0；沿只读既有40a2/ABI4/pin7b58SDK119files，仅ownPCrelocation，不重编/写原卷。actualISO全部404runtime-overlay路径/17overlays bytes/mode/owner/origin/unexpectednamespace核，增强/usr/bin/polly-live-diagnostics确切SHA00b300c72b875aab942d62be91b15bca1bdc4f8a436152dc0d6f7238eaf863f9/0755/0:0，七catalogbuiltin=fallback65443dac...、Monterey/moderndefault、79图标与5实际desktopicon链、EFI未变GRUB2fe1/font43PNG/cursors/SBOM/40a→e3RPATH链通过。715036672B/ISOsha0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906，新版本pollydesktop-alpha8-debian13-97eb6d6-97eb6d6-0ce6d1690f93；父标准verifyBundle独立137checksums及资源/来源/bootNOTRUN确认后，标准publisher原子hardlink更新D:\\temp\\PollyOS\\PollyOS.iso，新alias/version同inode13792273860149446/links2；旧843原inode1125899908171485/sha db95不变、DDD历史保。起初PodmanStopped+wrapper0无executionmarker拒绝保FIRST，用户明确启动podman-machine-default后父仅start既有环境，真实running/rootlesstrue/inputmarker才续，不reset/reconfig/service变更；own容器已0，不停止共享machine。UEFI/QEMU/HyperV/physical全NOTRUN，由用户自行HyperV测，无旧boot挪用；诊断增强不等黑屏根因或启动修复，quiet/udev/getty/handoff/90秒期限未改，两个实验defaultOFF/Startsolid/原性能HOLD/E22剩余保持。版本化一次hostcopy后原子发布，既有用户VM/光盘句柄/磁盘不改。",
     "- 2026-10-18按用户重新生成ISO请求交付clean8433048/treebae6140实际alpha.8 runtime/overlay/media：711337984B、SHAdb95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315，新imagea65e39e836a9d8edc9706c475a90a6353a851d727f335d81493a698f0db11a3b。1451canonicalGitHEAD/index/rawblob+完整0644/0755、新ReleaseGUI含Yoga/新pinWM、actual843dirtyfalse/普通UID1000 installedShellWM/布局unset0legacy-1coherent-invalid拒绝/ABI-sourcepin两负例均FIRST0。只读复制既有已资格SDK40a2/ABI4/pin7b58的119files，仅ownPCprefix变化、116headers与旧库同，非重编SDK或借04e冒843二进制；RPATH后e3c228fa56a703aa7c3783f57e12ab0a9800b5c98ce64fffc6e74d8c18dd2688，actualISO/SBOM/sourceInfo链一致。实际240pins与immutablebase同、Plymouth两包closure/polkit126-2过，真实ISO全328runtime-overlay路径/17overlays bytes/mode/owner/origin/无意外namespace、EFI/GRUB/font43PNG/cursor均FIRST0。新版本目录pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81一次hostcopy后原子rename；父标准verifyBundle独立125checksum核与完整来源/defaultOFF核后，标准publisher原子hardlink更新D:\\temp\\PollyOS\\PollyOS.iso，新version/alias同inode1125899908171485/links2，旧DDD文件仍原inode562949954748740且SHA不变。父首只读observer误用旧flatSDK/uefiBaseline字段停，按真实pairedSdk/uefiBoot读后通过，无bundle修改或产品重跑。两个实验startup-latched默认OFF、无新Settings/bootmenu，标准Startsolid与原性能HOLD不变；用户不可回复本次VM授权询问，严格没有运行任何QEMU/UEFI/HyperV/physical，boot全部NOTRUN，不借DDD旧KVM通过。ownhelpers全0，旧媒体/卷/证据不覆、不改用户VM光盘/磁盘/host设置。完整Apps/splash/E22/实时能力未关闭。",
     "- 2026-10-18按用户新裁决完成探索收敛：已盘点57直属子会话与另外30历史本地支线，已采纳历史修复不因SHA非祖先重复收养（安装期限b12147f、Luna兼容c49f409已在主线）。正常merge a6e2a4c保38b+a0/502的成套可选Yoga，1f2f99e保b49/Dacc/0ad历史并只支持生产baseline与最终fourphase两个FIR后端；两开关默认关闭、启动时固定，shared接口不绕权限/预算或扩Start默认。Yoga当前Win/Linux各4CTest+两mode原6组回归与真实paint/clip/startup拒绝通过，native主线代码逐path同冻结502；FIR新ABI4/pin7b58与SDK40a2独立完整exact/guard/双scene/selector/resources/negativepins通过，主线八paths同04e，父组合Node包/主题/配置12项通过、文档生成一致。旧2x是单轮工程目标，不是功能/行业/实验源码入库标准，原性能HOLD、首次observer/源挂载/harness失败全部保留不重标；被替代batch8/sliding不再维护为支持路径但不删历史，lroundf研究不变成未经证明替换。两单元按各自实际source/native资格说明，不冒一份combinedHEAD新整套binary或新benchmark/新ISO；原ddd/C6已发布ISO内容与SHA不变。R11实时/默认采用与全部E22仍未完成。",
     "- 2026-10-18用户明确允许按最新状态增删更新E22，已重建现行25条：C1–C7为已交限定能力，R01–R18为实际剩余，4条可先核独立功能缺口/14条依前置或资料决策阻塞。原35整条scope/status/requires/evidence与新映射无损保存在POLLYOS-E22-HISTORY.json，不把历史partial偷偷改done。明确依赖与每项关闭条件，原141需求覆盖不丢；旧完整task卡/依赖迁移前备份，非E22任务不清空。当前没有新功能/native试验，ShowDesktop暂停仅研究且0源码改动。此次清单重整不是完成六主题/原图/实时性能。",
@@ -5697,10 +5698,21 @@
     "inspectionCheckpoint": {
       "status": "done",
       "label": "当前已交GUI集中手测ISO",
-      "trigger": "根据用户重新生成ISO请求，以已推送8433048源码重新编译并交付一次新候选；旧DDD版本及其证据保留。",
-      "scope": "最新ISO冻结于clean8433048源码，使用已资格新配对SDK40a2/ABI4/pin7b58，实际新编GUI含Yoga与新pinWM；两实验startup开关均默认OFF、标准Start仍solid。源码/媒体来源、ISO SHA256及未启动限制以以下新回执为准，不重标旧介质。",
+      "trigger": "根据用户用包含诊断增强的代码build ISO请求，以已推送97eb6d6源码新编并交付；旧843/DDD版本及证据保留，用户自行Hyper-V手测。",
+      "scope": "最新ISO冻结于clean97eb6d6源码，实际包含增强的polly-live-diagnostics和Monterey在内七主题，使用已资格SDK40a2/ABI4/pin7b58；两实验startup开关均默认OFF、标准Startsolid。源码/媒体身份和未启动限制以以下回执为准；不把诊断增强冒黑屏修复或挪用旧启动结果。",
       "boundary": "只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。",
       "previousPublications": [
+        {
+          "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
+          "bytes": 711337984,
+          "sha256": "db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315",
+          "runtimeSourceRevision": "8433048a705f2f7b8501d4966ad669ddee7daa73",
+          "mediaProducerRevision": "8433048a705f2f7b8501d4966ad669ddee7daa73",
+          "runtimeImageID": "a65e39e836a9d8edc9706c475a90a6353a851d727f335d81493a698f0db11a3b",
+          "payloadPathsVerified": 328,
+          "baseline": "旧843介质UEFI/QEMU/Hyper-V/physical均NOT RUN；不含后续97启动诊断增强。",
+          "retained": true
+        },
         {
           "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-ddd0a5e-ddd0a5e-c6ff921eb996\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
           "bytes": 711297024,
@@ -5715,15 +5727,15 @@
       ],
       "publication": {
         "alias": "D:\\temp\\PollyOS\\PollyOS.iso",
-        "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
-        "bytes": 711337984,
-        "sha256": "db95f8596b818888a2790c142bed46c2c5b5906bb74ae52b7cea1d59581dd315",
-        "runtimeSourceRevision": "8433048a705f2f7b8501d4966ad669ddee7daa73",
-        "mediaProducerRevision": "8433048a705f2f7b8501d4966ad669ddee7daa73",
-        "runtimeImageID": "a65e39e836a9d8edc9706c475a90a6353a851d727f335d81493a698f0db11a3b",
-        "payloadPathsVerified": 328,
-        "baseline": "本次新843ISO的UEFI/QEMU、Hyper-V与物理启动均NOT RUN；已完成新编native/package及真实ISO内容核验，不借旧DDD启动证据。",
-        "limits": "完整新架构Apps/default splash/物理与实时资格未验，无安装器/持久guestdisk。新配对SDK与FIR/Yoga开关已打包，两实验均默认OFF、标准Startsolid；原性能HOLD和E22剩余不改绿。",
+        "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-97eb6d6-97eb6d6-0ce6d1690f93\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
+        "bytes": 715036672,
+        "sha256": "0ce6d1690f9308cc882d61163527af3cb3b3524326ecade07329d85d1a678906",
+        "runtimeSourceRevision": "97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681",
+        "mediaProducerRevision": "97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681",
+        "runtimeImageID": "877381d15948776a7467698bbe16ac96517894a903462f996c777a6e081b1162",
+        "payloadPathsVerified": 404,
+        "baseline": "本次诊断增强97ISO的UEFI/QEMU、Hyper-V和物理启动均NOT RUN；真实新编native/package及actualISO诊断脚本/七主题/资源链已核，由用户自行Hyper-V检验，不借旧介质启动结果。",
+        "limits": "诊断增强不等已确定黑屏根因或已修启动停顿，启动策略/超时原样；完整Apps/default splash/物理实时资格未验，无安装器/持久guestdisk。SDK40a2/pin7b58，FIR/Yoga均defaultOFF、Startsolid；性能HOLD和E22剩余不改绿。",
         "aliasNote": "稳定路径与版本文件为同一inode的硬链接；已打开的VM光盘句柄可能仍指向旧inode，需用户自行重新选择介质，未操作任何existingVM。"
       }
     }
