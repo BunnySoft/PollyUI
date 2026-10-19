@@ -20,10 +20,21 @@ test "$VERSION_CODENAME" = trixie
 set -- /lib/modules/*
 test "$#" -eq 1
 kernel=${1##*/}
+if [ "$hardware_sku" = basic ]; then
+    python3 -I -B /workspace/desktop/release/debian/live-profile.py kernel --sku basic --config "/boot/config-$kernel"
+fi
 modules=$(python3 -I -B /workspace/desktop/release/debian/live-profile.py modules --sku "$hardware_sku")
 for module in $modules; do
     modinfo -k "$kernel" -n "$module"
+    modprobe --set-version "$kernel" --show-depends --ignore-install "$module" >/dev/null
 done
+if [ -e /etc/polly-hardware-profile.json ]; then
+    for source in live-profile.py live-profiles.json basic-kernel.py live-display.py; do
+        cmp "/workspace/desktop/release/debian/$source" "/usr/lib/polly-hardware/$source"
+        test "$(stat -c '%a:%u:%g:%h' "/usr/lib/polly-hardware/$source")" = 644:0:0:1
+    done
+    cmp /workspace/desktop/tools/live-root.py /usr/lib/polly-hardware/live-root.py
+fi
 test -r /boot/intel-ucode.img
 test -r /lib/firmware/regulatory.db
 test -s /usr/share/polly-live-packages.tsv

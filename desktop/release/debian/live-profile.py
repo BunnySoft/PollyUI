@@ -11,7 +11,8 @@ import stat
 MANIFEST = Path(__file__).with_name("live-profiles.json")
 MARKER = "etc/polly-hardware-profile.json"
 PROFILE_COPY = "usr/share/polly-live-profiles.json"
-SKUS = {"full", "vm", "intel", "nvidia"}
+BASIC_MODPROBE = "etc/modprobe.d/polly-basic.conf"
+SKUS = {"basic", "vm", "intel", "nvidia", "amd", "full"}
 
 
 def keys(value, expected):
@@ -30,11 +31,11 @@ def strings(value, pattern=None):
 def load(path=MANIFEST):
     value = json.loads(path.read_bytes())
     keys(value, ("schemaVersion", "distribution", "architecture", "defaultSku",
-                 "packageGroups", "shared", "profiles"))
+                 "packageGroups", "shared", "displayPolicies", "profiles"))
     if (type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1 or value["distribution"] != "debian13" or
             value["architecture"] != "x86_64" or value["defaultSku"] != "full"):
         raise ValueError("Unsupported hardware profile manifest")
-    keys(value["packageGroups"], ("common", "intelGraphics", "nvidiaGraphics", "physicalNetworkAudio"))
+    keys(value["packageGroups"], ("common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics", "physicalNetworkAudio"))
     packages = []
     for group in value["packageGroups"].values():
         strings(group, r"[a-z0-9][a-z0-9+.-]*(?:=[A-Za-z0-9.+:~_-]+)?")
@@ -42,9 +43,31 @@ def load(path=MANIFEST):
     if len(set(packages)) != len(packages):
         raise ValueError("Duplicate package across hardware groups")
     strings(value["shared"])
+    keys(value["displayPolicies"], ("native", "vm", "basic"))
+    for name, policy in value["displayPolicies"].items():
+        keys(policy, ("kind", "bootstrapModules", "blockedModules", "kernelArguments"))
+        if policy["kind"] != {"native": "native-kms", "vm": "virtual-kms", "basic": "simpledrm-software"}[name]:
+            raise ValueError("Invalid hardware display policy")
+        strings(policy["bootstrapModules"], r"[a-z][a-z0-9_]*")
+        for key, pattern in (("blockedModules", r"[a-z][a-z0-9_]*"),
+                             ("kernelArguments", r"[a-z_.]+=[a-z0-9_,]+")):
+            if policy[key] != []:
+                strings(policy[key], pattern)
+        if name == "basic":
+            blocked = ",".join(policy["blockedModules"])
+            if (not blocked or policy["bootstrapModules"] != ["simpledrm"] or
+                    policy["kernelArguments"] != ["module_blacklist=" + blocked, "modprobe.blacklist=" + blocked]):
+                raise ValueError("Basic must retain simpledrm and block competing native drivers")
+        elif policy["blockedModules"] or policy["kernelArguments"]:
+            raise ValueError("Native/VM display policy cannot acquire basic restrictions")
     keys(value["profiles"], SKUS)
-    for profile in value["profiles"].values():
-        keys(profile, ("packageGroups", "requiredModules", "support"))
+    for name, profile in value["profiles"].items():
+        keys(profile, ("packageGroups", "displayPolicy", "kernelPolicy", "requiredModules", "support"))
+        if profile["displayPolicy"] != (name if name in ("basic", "vm") else "native"):
+            raise ValueError("Profile/display policy mismatch")
+        if (profile["kernelPolicy"] != ("basic-pack" if name == "basic" else "stock") or
+                ("stockKernel" in profile["packageGroups"]) != (name != "basic")):
+            raise ValueError("Profile/kernel package policy mismatch")
         strings(profile["packageGroups"])
         strings(profile["requiredModules"], r"[a-z][a-z0-9_]*")
         strings(profile["support"])
@@ -74,6 +97,8 @@ def profile(sku, path=MANIFEST):
     return {"sku": sku, "manifestSha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "requiredPackages": required, "forbiddenPackages": forbidden,
             "requiredModules": selected["requiredModules"],
+            "displayPolicy": value["displayPolicies"][selected["displayPolicy"]],
+            "kernelPolicy": selected["kernelPolicy"],
             "support": selected["support"], "shared": value["shared"]}
 
 
@@ -81,6 +106,12 @@ def marker(sku, path=MANIFEST):
     selected = profile(sku, path)
     return (json.dumps({"schemaVersion": 1, "sku": sku,
                         "manifestSha256": selected["manifestSha256"]}, indent=2) + "\n").encode()
+
+
+def modprobe_policy(sku, path=MANIFEST):
+    if sku != "basic":
+        return None
+    return ("".join("blacklist " + name + "\n" for name in profile(sku, path)["displayPolicy"]["blockedModules"])).encode()
 
 
 def regular(path, expected=None):
@@ -122,17 +153,76 @@ def verify_packages(installed, selected):
             raise ValueError("Forbidden hardware profile package: " + name)
     if any(name.startswith("firmware-") and name not in allowed for name in installed):
         raise ValueError("Undeclared hardware firmware package")
+    if selected["kernelPolicy"] == "basic-pack":
+        kernels = [name for name in installed if name.startswith("linux-image-")]
+        if len(kernels) != 1 or not kernels[0].endswith("-polly-basic"):
+            raise ValueError("basic requires exactly one verified dedicated kernel, not the stock kernel/meta")
 
 
 def verify(root, sku=None, path=MANIFEST):
     explicit = sku is not None
     selected = profile(sku if explicit else "full", path)
     target, copy = root / MARKER, root / PROFILE_COPY
-    if explicit or target.exists() or target.is_symlink() or copy.exists() or copy.is_symlink():
+    present = target.exists() or target.is_symlink() or copy.exists() or copy.is_symlink()
+    if explicit or present:
         regular(target, marker(selected["sku"], path))
         regular(copy, path.read_bytes())
-    verify_packages(packages(root), selected)
+        policy = modprobe_policy(selected["sku"], path)
+        if policy is not None:
+            regular(root / BASIC_MODPROBE, policy)
+        elif (root / BASIC_MODPROBE).exists() or (root / BASIC_MODPROBE).is_symlink():
+            raise ValueError("Basic modprobe policy cannot leak into another SKU")
+    checked = selected
+    if not explicit and not present:
+        checked = {**selected, "requiredPackages": [spec for spec in selected["requiredPackages"]
+                                                   if spec != "firmware-amd-graphics"]}
+    verify_packages(packages(root), checked)
+    if selected["kernelPolicy"] == "basic-pack":
+        runpy.run_path(str(Path(__file__).with_name("basic-kernel.py")))["verify_root"](root)
     return selected
+
+
+def verify_kernel(config, selected):
+    options = dict(line.split("=", 1) for line in config.splitlines() if line.startswith("CONFIG_") and "=" in line)
+    if selected["displayPolicy"]["kind"] == "simpledrm-software":
+        if options.get("CONFIG_DRM_SIMPLEDRM") not in ("y", "m") or options.get("CONFIG_SYSFB_SIMPLEFB") != "y":
+            raise ValueError("basic unsupported by target kernel: requires CONFIG_DRM_SIMPLEDRM=y/m and "
+                             "CONFIG_SYSFB_SIMPLEFB=y. EFI/simplefb/Plymouth is not a DRM/KMS desktop; "
+                             "use another SKU or a separately approved kernel route.")
+        if options.get("CONFIG_FB_SIMPLE") in ("y", "m"):
+            raise ValueError("basic dedicated kernel must disable CONFIG_FB_SIMPLE so simpledrm owns the GOP framebuffer")
+        if options.get("CONFIG_MODULE_COMPRESS_ZSTD") == "y":
+            raise ValueError("basic bootstrap supports uncompressed/XZ/gzip modules, not Zstd module compression")
+        for option in ("CONFIG_DRM_I915", "CONFIG_DRM_XE", "CONFIG_DRM_NOUVEAU", "CONFIG_DRM_AMDGPU",
+                       "CONFIG_DRM_RADEON", "CONFIG_DRM_VIRTIO_GPU", "CONFIG_DRM_HYPERV",
+                       "CONFIG_DRM_VMWGFX", "CONFIG_DRM_QXL", "CONFIG_DRM_BOCHS",
+                       "CONFIG_DRM_VBOXVIDEO", "CONFIG_DRM_AST", "CONFIG_DRM_MGAG200"):
+            if options.get(option) == "y":
+                raise ValueError("basic cannot blacklist a competing built-in KMS driver: " + option)
+    return selected["displayPolicy"]
+
+
+def grub_configuration(template, identity, sku=None):
+    configuration = template.replace("@POLLY_MEDIA_ID@", identity)
+    if sku is None:
+        return configuration
+    selected = profile(sku)
+    if sku == "basic":
+        configuration = re.sub(r'    menuentry "[^"]*" --class gpu --id polly-(?:gpu|intel) \{.*?\n    \}\n',
+                               "", configuration, flags=re.S)
+        configuration = configuration.replace("Start PollyDesktop Live (memory only)",
+                                              "Start basic Live (simpledrm, CPU software only)")
+        arguments = " ".join(selected["displayPolicy"]["kernelArguments"])
+        configuration = configuration.replace("polly_start console=tty0", "polly_start console=tty0 " + arguments)
+        if "polly.mode=gpu" in configuration or "nomodeset" in configuration:
+            raise ValueError("basic GRUB cannot expose acceleration or disable simpledrm KMS")
+    elif sku == "vm":
+        configuration = re.sub(r'    menuentry "[^"]*" --class gpu --id polly-intel \{.*?\n    \}\n',
+                               "", configuration, flags=re.S)
+    elif sku in ("amd", "nvidia"):
+        configuration = configuration.replace("Intel GPU (motherboard display)", sku.upper() + " GPU")
+        configuration = configuration.replace("polly.gpu=intel", "polly.gpu=" + sku).replace("--id polly-intel", "--id polly-" + sku)
+    return configuration
 
 
 def clean_runtime(root, path=MANIFEST):
@@ -143,7 +233,7 @@ def clean_runtime(root, path=MANIFEST):
     if (any(name in forbidden or name.startswith("firmware-") for name in installed) or
             any(not file.is_dir() for directory in payload if directory.exists() for file in directory.rglob("*")) or
             any((root / name).exists() or (root / name).is_symlink()
-                for name in (MARKER, PROFILE_COPY, "etc/polly-account-profile", "init")) or
+                for name in (MARKER, PROFILE_COPY, BASIC_MODPROBE, "etc/polly-account-profile", "init")) or
             any(name.startswith("linux-image-") for name in installed) or
             any((root / "boot").glob("vmlinuz*"))):
         raise ValueError("SKU assembly requires a clean common runtime, not a full/platform/Live base")
@@ -152,7 +242,9 @@ def clean_runtime(root, path=MANIFEST):
 def installed_input(root):
     target, copy = root / MARKER, root / PROFILE_COPY
     present = [path.exists() or path.is_symlink() for path in (target, copy)]
-    if any(present):
+    basic_artifacts = any((root / name).exists() or (root / name).is_symlink()
+                          for name in (BASIC_MODPROBE, "usr/share/polly-basic-kernel.json", "usr/share/polly-basic-kernel.config"))
+    if any(present) or basic_artifacts:
         if not all(present):
             raise ValueError("Incomplete hardware profile artifacts; refusing legacy Install downgrade")
         regular(target)
@@ -164,7 +256,8 @@ def installed_input(root):
 
 
 def verify_legacy_export(archive, members):
-    if any(name in members for name in (MARKER, PROFILE_COPY)):
+    if any(name in members for name in (MARKER, PROFILE_COPY, BASIC_MODPROBE,
+                                        "usr/share/polly-basic-kernel.json", "usr/share/polly-basic-kernel.config")):
         raise ValueError("Legacy initramfs accepts only historical unlabelled roots, not hardware profile artifacts")
     origin = members.get("usr/share/pollyui/runtime-origin.json")
     if origin is not None:
@@ -218,6 +311,21 @@ def validate_media(value):
     if (value.get("distribution") != "debian13" or value.get("hardwareProfile") != selected or
             not isinstance(value.get("root"), dict) or value["root"].get("hardwareProfile") != identity):
         raise ValueError("Root/boot hardware profile differs from source manifest")
+    if (value["root"].get("displayPolicy") != selected["displayPolicy"] or
+            value["root"].get("bootstrap", {}).get("graphicsModules") != selected["displayPolicy"]["bootstrapModules"] or
+            value.get("grub", {}).get("kernelArguments") != selected["displayPolicy"]["kernelArguments"]):
+        raise ValueError("Media/root/bootstrap/GRUB display policy differs from source")
+    if value["sku"] == "basic":
+        kernel = value.get("kernelInput")
+        if not isinstance(kernel, dict) or value["root"].get("kernelInput") != kernel:
+            raise ValueError("basic media/root missing exact dedicated kernel input")
+        tools = runpy.run_path(str(Path(__file__).with_name("basic-kernel.py")))
+        tools["check_manifest"]({key: item for key, item in kernel.items()
+                                 if key not in ("packManifestSha256", "imageSha256")})
+        if any(not re.fullmatch(r"[0-9a-f]{64}", kernel.get(key, "")) for key in ("packManifestSha256", "imageSha256")):
+            raise ValueError("basic media missing kernel pack manifest identity")
+    elif "kernelInput" in value or "kernelInput" in value["root"]:
+        raise ValueError("Stock SKU cannot acquire an unrequested dedicated kernel")
     native = value.get("nativeRuntime", {})
     if (not re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", native.get("imageID", "")) or
             not re.fullmatch(r"[0-9a-f]{40}", native.get("sourceRevision", "")) or
@@ -256,9 +364,10 @@ def validate_media(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["describe", "packages", "modules", "mark", "verify", "clean-runtime", "installed-input"])
+    parser.add_argument("command", choices=["describe", "packages", "modules", "mark", "verify", "kernel", "clean-runtime", "installed-input"])
     parser.add_argument("--sku")
     parser.add_argument("--root", type=Path, default=Path("/"))
+    parser.add_argument("--config", type=Path)
     args = parser.parse_args()
     if args.command == "clean-runtime":
         clean_runtime(args.root)
@@ -270,6 +379,10 @@ def main():
         print(" ".join(profile(args.sku)["requiredPackages"]))
     elif args.command == "modules":
         print(" ".join(profile(args.sku)["requiredModules"]))
+    elif args.command == "kernel":
+        if args.config is None:
+            parser.error("kernel requires --config")
+        verify_kernel(args.config.read_text(), profile(args.sku))
     elif args.command == "mark":
         if any((args.root / name).exists() or (args.root / name).is_symlink() for name in (MARKER, PROFILE_COPY)):
             raise ValueError("Refusing to replace a hardware profile")
@@ -277,6 +390,14 @@ def main():
             target = args.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
+            target.chmod(0o644)
+        policy = modprobe_policy(args.sku)
+        if policy is not None:
+            target = args.root / BASIC_MODPROBE
+            if target.exists() or target.is_symlink():
+                raise ValueError("Refusing to replace a basic modprobe policy")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(policy)
             target.chmod(0o644)
         verify(args.root, args.sku)
     else:

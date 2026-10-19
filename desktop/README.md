@@ -1888,14 +1888,22 @@ and PollyDesktop code uses the root `LICENSE` (MIT); dependencies, fonts and
 input-method data retain their separate licenses.
 ## Hardware-specific development media
 
-The Debian Live builder supports declarative `full` (default), `vm`, `intel` and
-`nvidia` hardware SKUs. Use the [multi-SKU build entry](../docs/BUILDING.md#hardware-sku-live-builds)
+The Debian Live builder supports declarative `basic`, `vm`, `intel`, `nvidia`,
+`amd` and `full` (default) hardware SKUs. `bash tools/build.sh --live --help`
+shows the shared entry; `--sku NAME` or `--skus NAME,...` selects profiles.
+Use the [multi-SKU build entry](../docs/BUILDING.md#hardware-sku-live-builds)
 to reuse one frozen native runtime/SDK pairing and tools image, then assemble
 profiles sequentially from that **clean common runtime**, not by deleting metadata
 from a firmware-heavy full base. Only firmware package selection changes this round.
-The full Debian kernel, corrected Mesa/Gallium/Vulkan/LLVM, software rendering,
+The five stock profiles share the complete Debian kernel; basic requires an
+explicit dedicated simpledrm kernel pack and cannot use the current stock
+kernel (simpledrm is disabled). It is not a boot-qualified generic fallback.
+The corrected Mesa/Gallium/Vulkan/LLVM, software rendering,
 Chinese IME/fonts, Apps, account/PAM policy and diagnostics remain shared.
 NVIDIA means the existing open-source Nouveau/Mesa route, not a proprietary driver.
+AMD means the amdgpu/AMD graphics-firmware route, not all-model qualification.
+GPU selection is independent of CPU microcode: Intel microcode remains, while
+AMD CPU microcode is not added here.
 These names describe package support scope, not new boot or hardware certification.
 
 LiveCD and Install remain separate media. Live does not bundle a new installer.

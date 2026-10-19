@@ -168,7 +168,7 @@ def main():
         cfg = staging / "grub.cfg"
         configuration = cfg_source.read_text()
         if debian:
-            configuration = configuration.replace("@POLLY_MEDIA_ID@", media_id)
+            configuration = profiles["grub_configuration"](configuration, media_id, args.sku)
             if not compressed_root:
                 configuration = configuration.replace(
                     "polly_prepare_media", "polly_legacy_media")
@@ -184,6 +184,8 @@ def main():
         if debian:
             run("grub-script-check", str(cfg))
         grub_receipt = {"templateSha256": digest(cfg_source), "embeddedSha256": digest(cfg)}
+        if selected:
+            grub_receipt["kernelArguments"] = selected["displayPolicy"]["kernelArguments"]
 
         efi = staging / "BOOTX64.EFI"
         resources = []
@@ -266,6 +268,7 @@ def main():
                     *(repo / "desktop/release/live").iterdir(),
                     repo / "desktop/tools/build-live-image.py", repo / "desktop/tools/build-live.sh",
                     repo / "desktop/tools/live-root.py",
+                    repo / "tools/build.sh",
                     *([repo / ("desktop/tools/" + name) for name in (
                         "build-live-skus.mjs", "live-profiles.mjs", "retain-live-inputs.py",
                         "verify-live-runtime.py", "offline-live-overlay.py")] if debian else []),
@@ -289,6 +292,12 @@ def main():
             manifest.update({"sku": args.sku, "hardwareProfile": selected,
                              "nativeRuntime": origin["nativeRuntime"], "imageToolsID": origin["imageToolsID"],
                              "sizeReport": hardware_sizes, "hardwareTarget": selected["support"]})
+            if args.sku == "basic":
+                if origin.get("kernelInput") != root_layout.get("kernelInput"):
+                    raise ValueError("basic root/boot kernel input differs from actual origin")
+                if digest(boot / "vmlinuz") != origin["kernelInput"]["imageSha256"]:
+                    raise ValueError("Actual media kernel bytes differ from verified input .deb")
+                manifest["kernelInput"] = origin["kernelInput"]
             profiles["validate_media"](manifest)
         (staging / "live-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         with (staging / "boot-layout.txt").open("w") as report:

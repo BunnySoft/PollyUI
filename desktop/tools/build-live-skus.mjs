@@ -11,24 +11,36 @@ import { verifyBundle } from './publish-live-iso.mjs';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const imageID = value => /^(?:sha256:)?[0-9a-f]{64}$/.test(value);
-const usage = 'Usage: node desktop/tools/build-live-skus.mjs OUTPUT --runtime-bundle DIRECTORY ' +
-  '--runtime-image IMAGE --tools-image IMAGE [--skus full,vm,intel,nvidia]';
+export const usage = 'Usage: sh desktop/tools/build-live.sh --debian OUTPUT --runtime-bundle DIRECTORY ' +
+  '--runtime-image IMAGE --tools-image IMAGE [--sku NAME | --skus NAME,...] [--basic-kernel-pack DIR]\n' +
+  'SKUs: basic,vm,intel,nvidia,amd,full (default: full)\n' +
+  'One frozen runtime; sequential independent Live media. No native rebuild or stable publication.\n' +
+  'basic requires an explicit verified dedicated simpledrm kernel pack; stock kernel is unsupported.\n' +
+  'Use --help alone for this help without runtime inputs or output creation.';
 
 export function parseArguments(args) {
+  if (args.length === 1 && args[0] === '--help') return { help: true };
   if (!args.length || !args[0] || args[0].startsWith('--')) throw new Error(usage);
   const options = { output: path.resolve(args[0]), skus: parseSkus() };
   const fields = new Map([['--runtime-bundle', 'runtimeBundle'], ['--runtime-image', 'runtimeImage'],
-    ['--tools-image', 'toolsImage'], ['--skus', 'skus']]);
+    ['--tools-image', 'toolsImage'], ['--skus', 'skus'], ['--sku', 'skus'], ['--basic-kernel-pack', 'basicKernelPack']]);
   const seen = new Set();
   for (let i = 1; i < args.length; i += 2) {
     const name = args[i], value = args[i + 1];
     if (!fields.has(name) || seen.has(name) || !value || value.startsWith('--')) throw new Error(usage);
     seen.add(name);
-    options[fields.get(name)] = name === '--skus' ? parseSkus(value) : value;
+    if (name === '--sku' || name === '--skus') {
+      if (seen.has(name === '--sku' ? '--skus' : '--sku')) throw new Error('Use --sku or --skus, not both');
+      options.skus = parseSkus(value);
+      if (name === '--sku' && options.skus.length !== 1) throw new Error('--sku requires exactly one SKU');
+    } else options[fields.get(name)] = value;
   }
   for (const name of ['runtimeBundle', 'runtimeImage', 'toolsImage'])
     if (!options[name]) throw new Error(usage);
   options.runtimeBundle = path.resolve(options.runtimeBundle);
+  if (options.skus.includes('basic') !== Boolean(options.basicKernelPack))
+    throw new Error('basic requires --basic-kernel-pack; that option is only valid when basic is selected');
+  if (options.basicKernelPack) options.basicKernelPack = path.resolve(options.basicKernelPack);
   return options;
 }
 
@@ -103,6 +115,25 @@ export async function buildSkus(options) {
     const mounts = ['-v', source + ':/workspace:ro', '-v', bundle + ':/runtime:ro'];
     const tool = (extra, command) => podman(['run', '--rm', '--pull=never', '--network=none',
       ...mounts, ...extra, '--entrypoint', 'python3', toolsID, '-I', '-B', ...command]);
+    const kernelNone = path.join(common, 'kernel-none');
+    fs.mkdirSync(kernelNone);
+    let kernelDirectory = kernelNone;
+    if (options.basicKernelPack) {
+      const retained = path.join(common, 'basic-kernel');
+      fs.mkdirSync(retained);
+      for (const name of ['kernel-pack.json', 'kernel.config', 'kernel-image.deb']) {
+        const input = path.join(options.basicKernelPack, name);
+        if (!fs.lstatSync(input).isFile()) throw new Error('Basic kernel pack requires regular files');
+        fs.copyFileSync(input, path.join(retained, name), fs.constants.COPYFILE_EXCL);
+      }
+      kernelDirectory = retained;
+      state.basicKernelInput = JSON.parse(tool(['-v', retained + ':/kernel-pack:ro'],
+        ['/workspace/desktop/release/debian/basic-kernel.py', 'verify', '/kernel-pack']));
+      const sourceInputsFile = path.join(common, 'source-inputs.json');
+      const sourceInputs = JSON.parse(fs.readFileSync(sourceInputsFile, 'utf8'));
+      fs.writeFileSync(sourceInputsFile, JSON.stringify({ ...sourceInputs, kernelInput: state.basicKernelInput }, null, 2) + '\n');
+      save();
+    }
     tool([], ['/workspace/desktop/tests/package-modes.py', '/runtime']);
     podman(['run', '--rm', '--pull=never', '--network=none', ...mounts, '--entrypoint', 'python3',
       runtimeID, '-I', '-B', '/workspace/desktop/release/debian/live-profile.py', 'clean-runtime']);
@@ -110,6 +141,11 @@ export async function buildSkus(options) {
       if (!isSame(sourceInventory(source), sourceFiles) ||
           state.nativeRuntime.manifestSha256 !== hash(fs.readFileSync(path.join(bundle, 'manifest.json'))))
         throw new Error('Shared frozen SKU inputs changed');
+      if (state.basicKernelInput &&
+          (hash(fs.readFileSync(path.join(kernelDirectory, 'kernel-pack.json'))) !== state.basicKernelInput.packManifestSha256 ||
+           hash(fs.readFileSync(path.join(kernelDirectory, 'kernel.config'))) !== state.basicKernelInput.configSha256 ||
+           hash(fs.readFileSync(path.join(kernelDirectory, 'kernel-image.deb'))) !== state.basicKernelInput.package.sha256))
+        throw new Error('Shared dedicated basic kernel inputs changed');
     };
     state.status = 'assembling';
     save();
@@ -122,6 +158,7 @@ export async function buildSkus(options) {
       const build = target => {
         const tag = target === 'platform-base' ? tags.platform : tags.live;
         podman(['build', '--quiet', '--pull=never', '--target', target,
+          '--build-context', 'basic-kernel-pack=' + (sku === 'basic' ? kernelDirectory : kernelNone),
           '--build-arg', 'RUNTIME_IMAGE=' + runtimeID, '--build-arg', 'HARDWARE_SKU=' + sku,
           '-t', tag, '-f', path.join(source, 'desktop/release/debian/Containerfile.live'), path.join(source, 'desktop')]);
         return inspect(tag);
@@ -171,7 +208,8 @@ export async function buildSkus(options) {
 const isSame = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    console.log(JSON.stringify(await buildSkus(parseArguments(process.argv.slice(2))), null, 2));
+    const options = parseArguments(process.argv.slice(2));
+    console.log(options.help ? usage : JSON.stringify(await buildSkus(options), null, 2));
   } catch (error) {
     console.error('[build-live-skus] ' + String(error));
     process.exitCode = 1;

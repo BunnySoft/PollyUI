@@ -31,7 +31,7 @@ def digest(path):
 
 class MediaProfiles(unittest.TestCase):
     def test_actual_iso_usb_root_boot_profile_and_receipt_for_every_sku(self):
-        for sku in ("full", "vm", "intel", "nvidia"):
+        for sku in fixtures["SKUS"]:
             with self.subTest(sku=sku), tempfile.TemporaryDirectory(prefix="polly-sku-media-") as temp:
                 directory = Path(temp)
                 root, bundle, inputs, media = [directory / name for name in ("root", "runtime", "inputs", "media")]
@@ -51,7 +51,10 @@ class MediaProfiles(unittest.TestCase):
                       "".join(f"{name}\t{item['version']}\tfixture\n" for name, item in packages.items()).encode())
                 overlays = [{"path": name, "mode": "0644", "sha256": digest(root / name)}
                             for name in (profiles["MARKER"], profiles["PROFILE_COPY"],
-                                         "var/lib/dpkg/status", "usr/share/polly-live-packages.tsv")]
+                                         "var/lib/dpkg/status", "usr/share/polly-live-packages.tsv",
+                                         *(("usr/share/polly-basic-kernel.json", "usr/share/polly-basic-kernel.config",
+                                            profiles["BASIC_MODPROBE"])
+                                           if sku == "basic" else ()))]
                 origin = {"schemaVersion": 1, "fixtureOnly": True, "sku": sku, "hardwareProfile": selected,
                           "nativeRuntime": native, "imageToolsID": "c" * 64,
                           "runtimeSourceRevision": runtime["revision"], "runtimeSourceDirty": False,
@@ -59,6 +62,8 @@ class MediaProfiles(unittest.TestCase):
                           "runtimeBuildInputsSha256": digest(bundle / "build-inputs.json"),
                           "mediaProducerRevision": "d" * 40, "baseImageID": native["imageID"],
                           "overlayRecipeSha256": "e" * 64, "overlays": overlays}
+                if sku == "basic":
+                    origin["kernelInput"] = fixtures["basic_receipt"]()
                 write(root / "usr/share/pollyui/runtime-origin.json", origin)
                 with tarfile.open(inputs / "root.tar", "w") as archive:
                     archive.add(root, arcname=".")
@@ -76,6 +81,11 @@ class MediaProfiles(unittest.TestCase):
                 write(bootstrap / "etc/polly-live-root",
                       f"POLLY_MEDIA_ID={identity}\nPOLLY_ROOT_SHA256={sha}\nPOLLY_ROOT_BYTES={size}\n".encode())
                 write(bootstrap / "etc/polly-live-hardware", profiles["marker"](sku))
+                write(bootstrap / "etc/polly-live-graphics-modules",
+                      ("\n".join(selected["displayPolicy"]["bootstrapModules"]) + "\n").encode())
+                if sku == "basic":
+                    write(bootstrap / "etc/polly-live-kernel", origin["kernelInput"])
+                    write(bootstrap / "etc/polly-live-graphics-required", b"simpledrm\n")
                 write(bootstrap / "init", b"not a bootable init")
                 write(bootstrap / "bin/busybox", b"not an executable")
                 total = roots["write_cpio"](bootstrap, boot / "initramfs.gz")
@@ -88,11 +98,16 @@ class MediaProfiles(unittest.TestCase):
                           "sha256": sha, "size": size, "mediaIdentity": identity,
                           "copyToRam": True, "writable": "tmpfs-overlay",
                           "hardwareProfile": {key: selected[key] for key in ("sku", "manifestSha256")},
+                          "displayPolicy": selected["displayPolicy"],
                           "bootstrap": {"path": "boot/initramfs.gz", "sha256": digest(boot / "initramfs.gz"),
                                         "size": (boot / "initramfs.gz").stat().st_size,
-                                        "uncompressedBytes": total, "files": files}}
+                                        "uncompressedBytes": total, "files": files,
+                                        "graphicsModules": selected["displayPolicy"]["bootstrapModules"]}}
+                if sku == "basic":
+                    layout["kernelInput"] = origin["kernelInput"]
                 write(image / f"polly/{identity}.marker", (sha + "\n").encode())
-                config = b"# synthetic unique embedded config for SKU fixture: " + sku.encode() + b"\n"
+                config = profiles["grub_configuration"](
+                    (REPO / "desktop/release/debian/live-grub.cfg").read_text(), identity, sku).encode()
                 write(media / "grub.cfg", config)
                 write(image / "EFI/BOOT/BOOTX64.EFI", b"NOT-BOOTABLE-EFI\n" + config + b"end")
                 write(boot / "vmlinuz", b"not-a-kernel")
@@ -126,13 +141,16 @@ class MediaProfiles(unittest.TestCase):
                 manifest = {"schemaVersion": 2, "distribution": "debian13", "version": "0.1.0-alpha.8",
                             "sourceRevision": "d" * 40, "runtimeImage": native["imageID"], "sku": sku,
                             "hardwareProfile": selected, "nativeRuntime": native, "imageToolsID": "c" * 64,
-                            "root": layout, "grub": {"templateSha256": "e" * 64, "embeddedSha256": digest(media / "grub.cfg")},
+                            "root": layout, "grub": {"templateSha256": "e" * 64, "embeddedSha256": digest(media / "grub.cfg"),
+                                                    "kernelArguments": selected["displayPolicy"]["kernelArguments"]},
                             "uncompressedPayloadBytes": uncompressed, "sizeReport": sizes,
                             "packages": [{"name": name, "version": item["version"]} for name, item in packages.items()],
                             "iso": {"name": iso.name, "size": iso.stat().st_size, "sha256": digest(iso)},
                             "usb": {"name": usb.name, "size": usb.stat().st_size, "sha256": digest(usb)},
                             "bootFiles": [{"path": "boot/" + file.name, "size": file.stat().st_size, "sha256": digest(file)}
                                           for file in boot.iterdir() if file.name != "efiboot.img"]}
+                if sku == "basic":
+                    manifest["kernelInput"] = origin["kernelInput"]
                 profiles["validate_media"](manifest)
                 duplicate = copy.deepcopy(manifest)
                 duplicate["packages"][0] = dict(duplicate["packages"][1])

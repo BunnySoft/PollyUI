@@ -11,7 +11,8 @@ if [ "${1:-}" = --debian ]; then
     tools_image=localhost/polly-debian-live-tools
     shift
 fi
-if [ "$distribution" = debian13 ] && [ "$#" -gt 1 ]; then
+if { [ "$#" -eq 1 ] && [ "$1" = --help ]; } ||
+    { [ "$distribution" = debian13 ] && [ "$#" -gt 1 ]; }; then
     exec node "$(dirname -- "$0")/build-live-skus.mjs" "$@"
 fi
 if [ "$#" -ne 1 ]; then echo "Usage: build-live.sh [--debian] OUTPUT_DIRECTORY" >&2; exit 2; fi
@@ -36,19 +37,27 @@ else
 fi
 runtime_id=$(podman image inspect --format '{{.Id}}' "$runtime")
 temporary=$(mktemp -d)
+mkdir "$temporary/kernel-none"
 container=
 cleanup() {
     if [ -n "$container" ]; then podman rm -f "$container" >/dev/null; fi
     rm -f "$temporary/root.tar"
+    rmdir "$temporary/kernel-none"
     rmdir "$temporary"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime_id" \
-    -t "$base_image" -f "$recipe" desktop
+if [ "$distribution" = debian13 ]; then
+    podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime_id" \
+        --build-context "basic-kernel-pack=$temporary/kernel-none" -t "$base_image" -f "$recipe" desktop
+else
+    podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime_id" \
+        -t "$base_image" -f "$recipe" desktop
+fi
 if [ "$distribution" = debian13 ]; then
     podman build --quiet --target platform-base --build-arg "RUNTIME_IMAGE=$runtime_id" \
+        --build-context "basic-kernel-pack=$temporary/kernel-none" \
         -t localhost/polly-debian-platform-base -f "$recipe" desktop
 fi
 if [ "$(podman image inspect --format '{{.Id}}' "$runtime")" != "$runtime_id" ]; then

@@ -71,7 +71,7 @@ export function sourceInventory(repo) {
       files.push({ path: name, sha256: hashFile(file) });
     }
   }
-  for (const name of ['CMakeLists.txt', 'desktop', 'gui', 'shared', 'sysrt',
+  for (const name of ['CMakeLists.txt', 'tools/build.sh', 'desktop', 'gui', 'shared', 'sysrt',
     'third_party/quickjs', 'third_party/yoga']) visit(name);
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }

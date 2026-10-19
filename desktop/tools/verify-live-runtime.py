@@ -165,6 +165,19 @@ def check_bootstrap(path, layout):
                 found.get("etc/polly-live-hardware", (0, b""))[:2] !=
                 (stat.S_IFREG | 0o644, PROFILES["marker"](hardware["sku"]))):
             raise ValueError("Bootstrap hardware profile does not match root/media SKU")
+        selected = PROFILES["profile"](hardware["sku"])
+        if (layout.get("displayPolicy") != selected["displayPolicy"] or
+                bootstrap.get("graphicsModules") != selected["displayPolicy"]["bootstrapModules"] or
+                found.get("etc/polly-live-graphics-modules", (0, b""))[1] !=
+                ("\n".join(selected["displayPolicy"]["bootstrapModules"]) + "\n").encode()):
+            raise ValueError("Bootstrap graphics modules differ from hardware display policy")
+        if hardware["sku"] == "basic":
+            kernel_record = found.get("etc/polly-live-kernel", (0, b"{}"))
+            if (kernel_record[0] != stat.S_IFREG | 0o644 or
+                    json.loads(kernel_record[1]) != layout.get("kernelInput")):
+                raise ValueError("Bootstrap dedicated kernel input differs from root")
+            if found.get("etc/polly-live-graphics-required", (0, b""))[:2] != (stat.S_IFREG | 0o644, b"simpledrm\n"):
+                raise ValueError("basic bootstrap must load simpledrm even without Plymouth")
     records = {record["path"]: record for record in bootstrap["files"]}
     if len(records) != len(bootstrap["files"]) or set(records) != set(found) - {"."}:
         raise ValueError("Bootstrap file inventory differs")
@@ -268,6 +281,12 @@ def main():
                 origin["nativeRuntime"].get("manifestSha256") != digest(args.runtime / "manifest.json") or
                 origin.get("imageToolsID") != media_manifest["imageToolsID"]):
             raise ValueError("Actual root origin hardware/native runtime does not match media")
+        if media_manifest["sku"] == "basic":
+            actual_kernel = runpy.run_path(str(Path(__file__).resolve().parents[1] /
+                                               "release/debian/basic-kernel.py"))["verify_root"](
+                                                   args.inputs / "frozen-overlays")
+            if origin.get("kernelInput") != media_manifest["kernelInput"] or actual_kernel != origin["kernelInput"]:
+                raise ValueError("Actual basic kernel source/config/package input differs")
         frozen = args.inputs / "frozen-overlays"
         PROFILES["verify"](frozen, selected["sku"])
         actual_packages = PROFILES["packages"](frozen)
@@ -317,6 +336,11 @@ def main():
             configuration = (args.media / "grub.cfg").read_bytes()
             if hashlib.sha256(configuration).hexdigest() != media_manifest["grub"]["embeddedSha256"]:
                 raise ValueError("Retained generated GRUB config differs")
+            if "sku" in media_manifest:
+                template = Path(__file__).resolve().parents[1] / "release/debian/live-grub.cfg"
+                if configuration.decode() != PROFILES["grub_configuration"](
+                        template.read_text(), layout["mediaIdentity"], media_manifest["sku"]):
+                    raise ValueError("Actual embedded GRUB differs from SKU kernel/display policy")
             efi = Path(temporary) / "BOOTX64.EFI"
             efiboot = Path(temporary) / "efiboot.img"
             for source, target in (("EFI/BOOT/BOOTX64.EFI", efi), ("boot/efiboot.img", efiboot)):
@@ -375,6 +399,9 @@ def main():
                 if (reference.stat().st_size != record["size"] or digest(reference) != record["sha256"] or
                         digest(actual) != record["sha256"]):
                     raise ValueError("Actual media kernel/microcode differs: " + record["path"])
+                if (media_manifest.get("sku") == "basic" and record["path"] == "boot/vmlinuz" and
+                        record["sha256"] != media_manifest["kernelInput"]["imageSha256"]):
+                    raise ValueError("Actual basic media kernel differs from verified Debian package")
                 actual.unlink()
                 reference.unlink()
         else:
@@ -399,6 +426,8 @@ def main():
     if "sku" in media_manifest:
         receipt.update({key: media_manifest[key] for key in
                         ("sku", "hardwareProfile", "nativeRuntime", "imageToolsID", "sizeReport")})
+        if media_manifest["sku"] == "basic":
+            receipt["kernelInput"] = media_manifest["kernelInput"]
     if origin.get("fixtureOnly") is True:
         receipt.update({"fixtureOnly": True, "stage": "verified-structure-fixture-not-publishable"})
     target = args.media / "candidate-origin.json"

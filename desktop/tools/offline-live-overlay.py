@@ -166,10 +166,26 @@ def main():
             raise ValueError("Live boot overlay differs from frozen source: " + target)
         boot_targets.add(target)
         overlays.append({"path": target, "source": original, "sha256": digest(file), "mode": f"{mode:04o}"})
+    kernel_input = None
     selected = None
     if args.command == "assembled":
         profiles = runpy.run_path(str(source / "desktop/release/debian/live-profile.py"))
         selected = profiles["verify"](root, args.sku)
+        for name, original in [
+                *[("usr/lib/polly-hardware/" + name, "desktop/release/debian/" + name)
+                  for name in ("live-profile.py", "live-profiles.json", "basic-kernel.py", "live-display.py")],
+                ("usr/lib/polly-hardware/live-root.py", "desktop/tools/live-root.py")]:
+            info = regular(root / name)
+            if (info.st_uid or info.st_gid or stat.S_IMODE(info.st_mode) != 0o644 or
+                    (root / name).read_bytes() != (source / original).read_bytes()):
+                raise ValueError("Live hardware helper differs from frozen source: " + name)
+            overlays.append({"path": name, "source": original, "sha256": digest(root / name), "mode": "0644"})
+        if args.sku == "basic":
+            kernel_tools = runpy.run_path(str(source / "desktop/release/debian/basic-kernel.py"))
+            kernel_input = kernel_tools["verify_root"](root)
+            for name in (kernel_tools["RECEIPT"], kernel_tools["CONFIG"], profiles["BASIC_MODPROBE"]):
+                overlays.append({"path": name, "source": "generated:basic-kernel-input",
+                                 "sha256": digest(root / name), "mode": "0644"})
         if not re.fullmatch(r"(?:sha256:)?[0-9a-f]{64}", args.tools_image):
             raise ValueError("Expected immutable image tools ID")
         for name in (profiles["MARKER"], profiles["PROFILE_COPY"]):
@@ -204,6 +220,8 @@ def main():
         receipt.update({"sku": args.sku, "hardwareProfile": selected, "imageToolsID": args.tools_image,
                         "nativeRuntime": {"imageID": args.base_image, "sourceRevision": args.runtime_revision,
                                           "manifestSha256": digest(bundle / "manifest.json")}})
+        if kernel_input is not None:
+            receipt["kernelInput"] = kernel_input
     else:
         receipt["offlineInputs"] = offline
     target = root / origin_path

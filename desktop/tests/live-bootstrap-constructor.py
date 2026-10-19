@@ -34,7 +34,7 @@ class BootstrapConstructor(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0)
             return real_run(command, **kwargs)
 
-        for sku in ("full", "vm", "intel", "nvidia"):
+        for sku in fixtures["SKUS"]:
             with self.subTest(sku=sku), tempfile.TemporaryDirectory(prefix="polly-real-constructor-") as temp:
                 directory = Path(temp)
                 root, stage, boot = [directory / name for name in ("root", "stage", "boot")]
@@ -43,7 +43,9 @@ class BootstrapConstructor(unittest.TestCase):
                 fixtures["seed"](root, sku)
                 (root / "usr/sbin").mkdir(parents=True)
                 (root / "usr/sbin/blkid").write_bytes(b"external blkid ELF-copy boundary fixture")
-                module_dir = root / "usr/lib/modules/fixture-kernel"
+                kernel = "6.12.111-polly-basic" if sku == "basic" else "fixture-kernel"
+                config = fixtures["BASIC_CONFIG"] if sku == "basic" else configuration
+                module_dir = root / "usr/lib/modules" / kernel
                 module_dir.mkdir(parents=True)
                 module = module_dir / "fixture.ko"
                 module.write_bytes(b"external module-copy boundary fixture, not a loadable module")
@@ -52,21 +54,24 @@ class BootstrapConstructor(unittest.TestCase):
                 squashfs = boot / "root.squashfs"
                 squashfs.write_bytes(b"external compressed-root input fixture; never booted")
                 depmod_calls.clear()
+                closure = mock.Mock(return_value=[module])
                 with mock.patch.dict(constructor.__globals__, {
                         "copy_root_elf": mock.Mock(return_value={}),
                         "copy_plymouth": mock.Mock(return_value=[]),
-                        "module_closure": mock.Mock(return_value=[module])}), \
+                        "module_closure": closure}), \
                         mock.patch.object(subprocess, "check_output", side_effect=output), \
                         mock.patch.object(subprocess, "run", side_effect=run):
-                    result = constructor(root, stage, boot, REPO, "fixture-kernel", configuration,
+                    result = constructor(root, stage, boot, REPO, kernel, config,
                                          "a" * 32, squashfs, sku)
                     self.assertEqual(len(depmod_calls), 1)
+                    closure.assert_called_once_with(root, kernel,
+                                                    tuple(profiles["profile"](sku)["displayPolicy"]["bootstrapModules"]))
                     bad_stage, bad_boot = directory / "bad-stage", directory / "bad-boot"
                     bad_stage.mkdir()
                     bad_boot.mkdir()
                     (root / profiles["MARKER"]).write_bytes(b"{}\n")
                     with self.assertRaisesRegex(ValueError, "Hardware profile metadata/source mismatch"):
-                        constructor(root, bad_stage, bad_boot, REPO, "fixture-kernel", configuration,
+                        constructor(root, bad_stage, bad_boot, REPO, kernel, config,
                                     "a" * 32, squashfs, sku)
                     self.assertFalse((bad_boot / "initramfs.gz").exists())
                 selected = profiles["profile"](sku)

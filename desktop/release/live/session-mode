@@ -6,24 +6,43 @@ for argument in $(cat /proc/cmdline); do
         polly.mode=baseline) live_mode=baseline ;;
         polly.mode=gpu) live_mode=gpu ;;
         polly.mode=console) live_mode=console ;;
-        polly.gpu=intel) live_gpu=intel ;;
+        polly.gpu=*) live_gpu=${argument#*=} ;;
     esac
 done
 export WLR_RENDERER=pixman PU_RENDERER=raster SDL_RENDER_DRIVER=software
 unset WLR_DRM_DEVICES
+if [ -e /etc/polly-hardware-profile.json ] || [ -L /etc/polly-hardware-profile.json ] ||
+    [ -e /usr/share/polly-live-profiles.json ] || [ -L /usr/share/polly-live-profiles.json ]; then
+    if selected=$(python3 -I -B /usr/lib/polly-hardware/live-display.py --mode "$live_mode" --gpu "$live_gpu"); then
+        if [ "$selected" != native ]; then
+            export WLR_DRM_DEVICES="$selected"
+            export WLR_DRM_NO_MODIFIERS=1
+        fi
+    else
+        echo "Hardware display policy failed; keeping the diagnostic console, not a headless desktop." >&2
+        live_mode=console
+    fi
+fi
 if [ "$live_mode" = gpu ]; then
     export WLR_RENDERER=gles2 PU_RENDERER=gl
 fi
-if [ "$live_gpu" = intel ]; then
+case "$live_gpu" in
+    auto) vendor= ;;
+    intel) vendor=0x8086 ;;
+    nvidia) vendor=0x10de ;;
+    amd) vendor=0x1002 ;;
+    *) echo "Unknown GPU selection; keeping the diagnostic console." >&2; live_mode=console; vendor= ;;
+esac
+if [ -n "$vendor" ] && [ "$live_mode" != console ]; then
     selected=
     for card in /sys/class/drm/card[0-9]*; do
         case "${card##*/}" in *-*) continue ;; esac
         [ -f "$card/device/vendor" ] || continue
-        [ "$(cat "$card/device/vendor")" = 0x8086 ] || continue
+        [ "$(cat "$card/device/vendor")" = "$vendor" ] || continue
         device="/dev/dri/${card##*/}"
         [ -c "$device" ] || continue
         if [ -n "$selected" ]; then
-            echo "More than one Intel DRM device; use the automatic entry and inspect diagnostics." >&2
+            echo "More than one $live_gpu DRM device; use automatic selection and inspect diagnostics." >&2
             live_mode=console
             break
         fi
@@ -32,7 +51,7 @@ if [ "$live_gpu" = intel ]; then
     if [ -n "$selected" ] && [ "$live_mode" != console ]; then
         export WLR_DRM_DEVICES="$selected"
     else
-        echo "Intel-only mode has no unique usable DRM card; keeping the diagnostic console." >&2
+        echo "$live_gpu-only mode has no unique usable DRM card; keeping the diagnostic console." >&2
         live_mode=console
     fi
 fi
