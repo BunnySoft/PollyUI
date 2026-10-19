@@ -1,8 +1,9 @@
 # 用 YAML 配置生成 Live SKU
 
 本分支新增**配置、计划和执行通路**，不把配置文件当作已构建的产品。
-本轮只运行 Windows 上的 Node.js 测试、Git Bash 入口和模拟后端，
-没有运行编译器、APT、Podman、内核或 ISO 构建。
+实现会话只运行 Windows 上的 Node.js 测试、Git Bash 入口和模拟后端；
+复核会话另复用已有 WSL 主机的 Python 解释器运行纯 mock 单测。
+没有运行编译器、真实 APT/gpgv、Podman、内核或 ISO 构建，也没有新装解释器。
 极简版原生依赖变体尚不可用，因此其构建明确阻断；没有新的 minimal ISO、
 中文字库实画、启动或物理硬件资格。
 
@@ -200,7 +201,8 @@ stock 证据并与导出 keyring 字节相符；容器 keyring 更新后也会�
 **下面是后续获得构建授权后的命令，不是本轮已经执行。**
 Windows 可安装纯 JS 工具、检查配置和发布产物，
 但真正 Debian/Live 组装必须在自己的 Linux x86_64 或 WSL2 Linux 内运行。
-本轮没有进入 WSL，也没有启动共享构建机上的容器或抢用内核编译资源。
+实现会话没有进入 WSL；复核会话仅在已有 WSL 主机执行短时纯 Python mock 单测，
+没有启动共享构建机上的容器、执行真实 APT/签名检查或抢用内核编译资源。
 基础 SDK/native/runtime 制作仍见 [常规构建指南](BUILDING.md)；
 不要用 Windows GUI 二进制、未配对 wlroots 或旧完整 runtime 冒充 minimal。
 
@@ -301,6 +303,13 @@ python3 -I -B desktop/tests/live-config.py
 该测试 mock 所有 gpgv/APT/dpkg 外部调用，未识别的 subprocess 调用直接失败；
 覆盖身份/hash、信任根、来源/时间、包架构/清单、阶段解算及失败路径。
 模拟 gpgv 的输出不是验证真实签名，也不执行真实 APT、容器或编译。
+
+本分支固定实现版本 `18c11c85` 的非编译复核结果：
+Windows Node 联合测试共 30 项，**26 项通过、0 项失败、4 项既有 Linux-only 测试跳过**；
+原 package-contract 和 release-report 纯 JS 测试通过。
+复核会话使用已有 WSL `/usr/bin/python3 -I -B` 运行上述 Python 单测，
+**15/15 通过**。这仅验证 mock adapter 逻辑，不是实际签名认证、APT 解算/安装、
+容器组装、启动或中文实画通过；旧 Linux-only 集成测试仍未因该 Python 结果获得资格。
 
 | 错误/状态 | 排查 |
 | --- | --- |
