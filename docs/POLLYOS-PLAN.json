@@ -608,7 +608,7 @@
         "candidate"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -1188,6 +1188,22 @@
         "e22-remaining-17"
       ],
       "evidence": "已完成的限定控件/样式/输入证明保留在C记录及历史原编号；不得把历史RED/未证原因或 unsupported后端重标全绿。"
+    },
+    {
+      "id": "live-compressed-root-boot",
+      "label": "Live 压缩内存根启动",
+      "kind": "subtask",
+      "parent": "system-build",
+      "scope": "修正GRUB至首个系统画面前的整根预展开和静默空窗：小bootstrap initramfs启动后读取独立SquashFS，将压缩根复制到RAM并核对介质身份/hash，以readonly RAM loop下层和tmpfs上层运行，保不写内部磁盘及进入桌面后可脱离介质。加载前显示真实阶段，不伪造进度或以画面隐藏当性能收益；ISO/USB、bootstrap模块工具闭包、实际payload verifier/manifest/publisher与旧介质读取兼容必须一起接线。关闭条件：结构/错误拒绝/内存挂载/actualmedia内容核验齐，实际启动与计时按真实授权和结果单列；未boot不能冒完整功能或十秒已减少。",
+      "priority": "P2",
+      "modes": [
+        "live",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "2026-10-19用户描述GRUB后静默约10秒再出现Starting system及图片且正常登录；现交付97ISO715036672B，整根普通文件1513529164B在gzipnewc中。全根加载/解压与quiet/Plymouth后置是源码事实，实际耗时占比尚未测。用户明确要求修正并准许直接执行Podman，已仅启动既有rootless构建环境，不reset/reconfig。保守保持原纯RAM/可移除介质合同，不自动改media-backed运行；新source owner75d在独立分支实施。旧ISO及原证据保，不重跑旧性能实验。当前没有取得本轮QEMU/HyperV启动授权，不操作用户VM，不把结构改变或单元测试冒真实boot性能通过。"
     },
     {
       "id": "bug-native-fractional-layout",
