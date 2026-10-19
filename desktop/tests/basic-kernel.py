@@ -114,7 +114,8 @@ class BasicKernel(unittest.TestCase):
             directory = Path(temporary)
             inputs = directory / "pack-input"
             inputs.mkdir()
-            pack(inputs, config=fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\n')
+            final_config = fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\nCONFIG_KERNEL_ZSTD=y\n'
+            pack(inputs, config=final_config)
             config = directory / "base.config"
             config.write_text('CONFIG_DRM=m\n# CONFIG_DRM_SIMPLEDRM is not set\n'
                               'CONFIG_SYSTEM_TRUSTED_KEYS="debian/missing-certs.pem"\n'
@@ -133,6 +134,10 @@ class BasicKernel(unittest.TestCase):
             calls = []
             release_prefix = b""
             sync_enabled = True
+            zstd_available = True
+            final_config_hashes = []
+            compressor = self.enterContext(mock.patch.object(
+                shutil, "which", side_effect=lambda name: "/fixture/zstd" if zstd_available else None))
 
             def make(command, **kwargs):
                 if command[0] == "make":
@@ -144,6 +149,7 @@ class BasicKernel(unittest.TestCase):
                         auto.write_text("CONFIG_LOCALVERSION=\n")
                     if "syncconfig" in command and sync_enabled:
                         self.assertIn('CONFIG_LOCALVERSION="-polly-basic"', (obj / ".config").read_text())
+                        final_config_hashes.append(tools["digest"](obj / ".config"))
                         auto.write_text("\n".join(key + "=" + value.strip('"')
                                                 for line in (obj / ".config").read_text().splitlines()
                                                 if line.startswith("CONFIG_") and "=" in line
@@ -157,8 +163,7 @@ class BasicKernel(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 0)
                 if command[0].endswith("/scripts/config"):
                     calls.append(command)
-                    Path(command[command.index("--file") + 1]).write_text(
-                        fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\n')
+                    Path(command[command.index("--file") + 1]).write_text(final_config)
                     return subprocess.CompletedProcess(command, 0)
                 return real_run(command, **kwargs)
 
@@ -180,12 +185,28 @@ class BasicKernel(unittest.TestCase):
                 self.assertEqual(configure[index - 1], "--set-str")
                 self.assertEqual(configure[index + 1], expected)
             self.assertEqual(configure[configure.index("MODULE_SIG_ALL") - 1], "--enable")
-            self.assertEqual((output / "kernel.config").read_text(), fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\n')
+            self.assertEqual((output / "kernel.config").read_text(), final_config)
             self.assertEqual(receipt["configSha256"], tools["digest"](output / "kernel.config"))
             self.assertFalse(list(output.rglob("signing_key.pem")))
             self.assertEqual(len(list(output.glob("*.deb"))), 1)
             self.assertTrue((output / "kernel-build.log").is_file())
             self.assertIn(b"6.12.111-polly-basic\n", (output / "kernel-build.log").read_bytes())
+            compressor.assert_called_with("zstd")
+            zstd_available = False
+            missing_tool = directory / "missing-zstd"
+            original_config_sha = tools["digest"](config)
+            calls.clear()
+            with mock.patch.object(subprocess, "run", side_effect=make):
+                with self.assertRaisesRegex(ValueError, "Missing kernel image compression tool: zstd"):
+                    tools["build"](source, tools["digest"](source), config, original_config_sha, missing_tool, 2)
+            self.assertFalse(missing_tool.exists())
+            self.assertFalse(any("bindeb-pkg" in command for command in calls))
+            self.assertEqual(tools["digest"](config), original_config_sha)
+            self.assertEqual(final_config_hashes[-1], receipt["configSha256"])
+            failure = next(directory.glob("missing-zstd.failed-*.log"))
+            self.assertIn("CONFIG_KERNEL_ZSTD=y", failure.read_text())
+            self.assertIn("syncconfig", failure.read_text())
+            zstd_available = True
             sync_enabled = False
             stale = directory / "stale-auto-config"
             calls.clear()

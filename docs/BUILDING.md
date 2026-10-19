@@ -476,6 +476,12 @@ virtio/Hyper-V KMS 策略不同，不能只是“不带 GPU 固件”的重命�
 SHA256。在具有标准 Linux kernel/Debian `bindeb-pkg` 所需本地工具的 Linux
 构建环境执行；缺工具直接失败，不会联网补装，也不重建现有 native SDK：
 
+内核 **image 压缩**与 **module 压缩**是独立配置。当前基线选择
+`CONFIG_KERNEL_ZSTD=y`，builder 必须预先提供 `zstd`；producer 在最终配置同步/
+校验后、进入 `bindeb-pkg` 前检查，缺失会立即报错并保留失败日志，不自动安装
+工具或切换压缩配置。模块使用 XZ、禁用 `MODULE_COMPRESS_ZSTD` 并不消除
+内核 image 对 `zstd` 的依赖。
+
 ```sh
 # LINUX_SOURCE_TAR / LINUX_SOURCE_SHA256 / BASE_KERNEL_CONFIG / BASE_CONFIG_SHA256
 # 必须由本次选择的本地可信输入提供，不能用下载失败后的空值或可变 URL 代替。
