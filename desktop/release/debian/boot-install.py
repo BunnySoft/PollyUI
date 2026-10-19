@@ -33,6 +33,42 @@ def check_packages(root):
             raise ValueError("Missing Plymouth runtime plugin: " + plugin)
 
 
+def remove_old_getty(root, source):
+    directory = root / "etc/systemd/system/getty@tty1.service.d"
+    for name, original in (("polly.conf", "getty.conf"), ("live-boot.conf", "live-boot-getty.conf")):
+        path = directory / name
+        if path.exists() or path.is_symlink():
+            if path.is_symlink() or path.read_bytes() != (source / "desktop/release/debian" / original).read_bytes():
+                raise ValueError("Refusing to remove an unrecognized Live getty override: " + name)
+            path.unlink()
+
+
+def effective_getty(root):
+    """Inspect the real template and lexically merged instance drop-ins."""
+    unit = root / "usr/lib/systemd/system/getty@.service"
+    dropins = {}
+    for prefix in ("usr/lib", "run", "etc"):
+        for name in ("getty@.service.d", "getty@tty1.service.d"):
+            for path in (root / prefix / "systemd/system" / name).glob("*.conf"):
+                dropins[path.name] = path
+    values = {}
+    for path in (unit, *(dropins[name] for name in sorted(dropins))):
+        section = ""
+        for line in path.read_text().splitlines():
+            if line.startswith("[") and line.endswith("]"):
+                section = line[1:-1]
+            elif section == "Service" and "=" in line and not line.startswith(("#", ";")):
+                key, value = line.split("=", 1)
+                if key in ("ExecStart", "TTYVTDisallocate"):
+                    if key == "ExecStart" and value and values.get(key):
+                        raise ValueError("Multiple effective getty ExecStart commands")
+                    values[key] = value
+    expected = "-/sbin/agetty --autologin polly --noclear --noissue --skip-login %I linux"
+    if values.get("ExecStart") != expected or values.get("TTYVTDisallocate") != "no":
+        raise ValueError("Effective Live getty lost its quiet autologin contract: " + repr(values))
+    return values
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=["install", "verify"])
@@ -43,6 +79,7 @@ def main():
         # The caller is building the final Live stage, not platform-base.
         if (root / "etc/polly-account-profile").read_text().strip() != "live":
             raise ValueError("Boot display installation requires the final Live profile")
+        remove_old_getty(root, args.source)
         for target, _, data, mode in files(args.source):
             file = root / target
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +93,10 @@ def main():
         subprocess.run(["systemctl", "enable", "polly-live-splash.service", "polly-live-handoff.service"],
                        check=True, timeout=20)
     check_packages(root)
+    effective_getty(root)
+    for name in ("polly.conf", "live-boot.conf"):
+        if (root / "etc/systemd/system/getty@tty1.service.d" / name).exists():
+            raise ValueError("Obsolete Live getty override retained: " + name)
     for target, _, data, mode in files(args.source):
         file = root / target
         info = file.lstat()

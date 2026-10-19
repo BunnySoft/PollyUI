@@ -16,7 +16,9 @@ mount -t devtmpfs devtmpfs /dev
 mount -t tmpfs -o mode=0755 tmpfs /run
 fi
 mkdir -p /dev/pts /dev/shm
-mount -t devpts devpts /dev/pts
+if ! grep -q ' /dev/pts devpts ' /proc/mounts; then
+    mount -t devpts devpts /dev/pts
+fi
 mount -t tmpfs -o mode=1777 tmpfs /dev/shm
 mount -t tmpfs -o mode=1777 tmpfs /tmp
 case " $(cat /proc/cmdline) " in

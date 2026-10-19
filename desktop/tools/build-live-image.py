@@ -172,7 +172,7 @@ def main():
             resources.append("boot/grub/themes/polly/theme.txt=" + str(repo / "desktop/release/live/grub-theme.txt"))
         run("grub-mkstandalone", "-O", "x86_64-efi", "--locales=", "--fonts=unicode" if debian else "--fonts=",
             "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal probe halt" +
-            (" all_video efi_gop gfxterm gfxmenu png font" if debian else ""),
+            (" all_video efi_gop gfxterm gfxmenu gfxterm_background png font" if debian else ""),
             "-o", str(efi), "boot/grub/grub.cfg=" + str(cfg), *resources)
         fat = boot / "efiboot.img"
         with fat.open("wb") as target:
@@ -230,7 +230,7 @@ def main():
                           for file in boot_files],
             "imageToolPackages": subprocess.check_output(
                 ["dpkg-query", "-W", "-f=${binary:Package}=${Version}\\n",
-                 "busybox-static", "squashfs-tools", "kmod", "xz-utils", "util-linux"],
+                 "busybox-static", "squashfs-tools", "kmod", "xz-utils", "util-linux", "binutils"],
                 text=True, timeout=10).splitlines() if compressed_root else [],
             "automaticLogin": "temporary uid 1000 polly",
             "minimumGuestMemoryMiB": 4096, "files": files, "uncompressedPayloadBytes": total,

@@ -232,7 +232,8 @@ def mount_handoff():
             'printf HANDOFF_OK > /run/polly-live/upper/handoff-result\n'
             'printf "HANDOFF_OK\\n" > /dev/console\n')
         (directory / "transfer").write_text(
-            functions + 'set -eu\nserial=0\nconsole=/dev/console\nuptime_file=/proc/uptime\n'
+            functions + 'set -eu\nserial=0\nsplash_active=0\nsplash_runtime=/run/plymouth\n'
+            'proc_directory=/proc\nconsole=/dev/console\nuptime_file=/proc/uptime\n'
             'log_directory=/run/polly-live\nexec 3>/dev/console\n'
             'trap \'fail "handoff fixture failure"\' EXIT\n'
             'for name in dev proc sys; do\n' + transfer)

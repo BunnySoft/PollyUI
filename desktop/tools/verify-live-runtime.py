@@ -113,6 +113,11 @@ def check_bootstrap(path, layout):
         raise ValueError("Actual bootstrap differs from media manifest")
     found = {}
     total = 0
+    plymouth = {*ROOT["PLYMOUTH_DATA"], "etc/fonts/fonts.conf", "etc/initrd-release",
+                "etc/nsswitch.conf", "etc/passwd", "usr/libexec/plymouth/plymouthd-fd-escrow",
+                *("usr/lib/x86_64-linux-gnu/plymouth/" + name for name in ROOT["PLYMOUTH_PLUGINS"])}
+    for name in list(plymouth):
+        plymouth.update(str(parent) for parent in Path(name).parents)
     with gzip.open(path, "rb") as source:
         while True:
             header = source.read(110)
@@ -135,7 +140,7 @@ def check_bootstrap(path, layout):
             if (name.endswith(".squashfs") or
                     not (name in {".", "init", "bin", "etc", "lib", "lib64", "dev", "proc", "sys",
                                   "run", "tmp", "media", "newroot", "dev/console", "dev/null"} or
-                         name.startswith(("bin/", "etc/polly-live-", "lib/", "lib64/")))):
+                         name in plymouth or name.startswith(("bin/", "etc/polly-live-", "lib/", "lib64/")))):
                 raise ValueError("Full runtime/unexpected path in bootstrap: " + name)
             data = source.read(size)
             if len(data) != size:
