@@ -22,6 +22,7 @@ printf 'Mode=%s GPU-selection=%s\n' "${POLLY_LIVE_MODE:-unknown}" "${POLLY_LIVE_
 capture uname -a
 capture cat /proc/cmdline
 capture cat /proc/uptime
+capture cat /sys/class/tty/tty0/active
 capture cat /usr/share/pollyui/runtime-origin.json
 capture cat /proc/meminfo
 capture lspci -nnk
@@ -60,13 +61,17 @@ else
     capture journalctl -b -o short-monotonic --no-pager \
         -u systemd-udev-settle.service -u polly-hardware-log.service \
         -u polly-live-splash.service -u polly-live-handoff.service \
-        -u getty@tty1.service -u systemd-logind.service -u systemd-user-sessions.service
+        -u getty@tty1.service -u getty@tty2.service -u serial-getty@ttyS0.service \
+        -u systemd-logind.service -u systemd-user-sessions.service
     capture journalctl -b -o short-monotonic --no-pager \
         -t polly-live -t polly-login -t polly-session
     capture journalctl -b -n 3000 --no-pager
 fi
 capture iw dev
+capture loginctl list-sessions --no-pager
+capture loginctl seat-status seat0 --no-pager
 capture loginctl show-session "${XDG_SESSION_ID:-}" --property=Active --property=User --property=Seat --property=Type
+capture ps -eo pid,ppid,uid,tty,stat,comm
 capture findmnt -rn -o TARGET,SOURCE,FSTYPE,OPTIONS
 capture dmesg
 capture sh -c 'for log in /run/polly-live/boot-hardware.log /var/log/messages /run/plymouth/plymouth-debug.log /var/log/boot.log; do

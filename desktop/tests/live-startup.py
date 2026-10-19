@@ -152,7 +152,7 @@ class Startup(unittest.TestCase):
             stub.chmod(0o755)
             for name in ("id", "uname", "cat", "lspci", "lsusb", "lsmod", "aplay",
                          "arecord", "ip", "rfkill", "systemctl", "systemd-analyze",
-                         "journalctl", "iw", "loginctl", "findmnt", "dmesg", "sh"):
+                         "journalctl", "iw", "loginctl", "ps", "findmnt", "dmesg", "sh"):
                 (tools / name).symlink_to(stub.name)
             (tools / "mktemp").symlink_to(shutil.which("mktemp"))
             # Restrict utility discovery so no host journal/device command can run.
@@ -173,12 +173,47 @@ class Startup(unittest.TestCase):
             self.assertIn("InactiveExitTimestampMonotonic", text)
             self.assertIn("systemd-udev-settle.service", text)
             self.assertIn("polly-live-handoff.service", text)
+            self.assertIn("getty@tty2.service", text)
+            self.assertIn("cat /sys/class/tty/tty0/active", text)
+            self.assertIn("loginctl list-sessions --no-pager", text)
+            self.assertIn("loginctl seat-status seat0 --no-pager", text)
+            self.assertIn("ps -eo pid,ppid,uid,tty,stat,comm", text)
             self.assertIn("[unavailable or failed: exit 1]", text)
             self.assertIn("fixture journalctl -b -k -o short-monotonic", text)
             self.assertEqual(text.count("Boot timing unavailable while startup is still in progress"), 3)
             self.assertIn("Saved local diagnostics:", result.stdout)
             self.assertEqual(report.stat().st_mode & 0o777, 0o600)
             self.assertEqual(report.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_secondary_live_login_keeps_a_console_instead_of_starting_another_desktop(self):
+        source = (REPO / "desktop/release/live/session").read_text()
+        route = source.split('if [ "$live_mode" = console ]; then exec /bin/sh; fi\n', 1)[1]
+        route = route.split("for capability in ", 1)[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            tools = Path(temporary)
+            tty = tools / "tty"
+            tty.write_text('#!/bin/sh\n'
+                           'if [ "$TEST_TTY" = unavailable ]; then exit 1; fi\n'
+                           'printf "%s\\n" "$TEST_TTY"\n')
+            tty.chmod(0o755)
+            for terminal in ("/dev/tty1", "/dev/tty2", "/dev/ttyS0", "unavailable"):
+                with self.subTest(terminal=terminal):
+                    result = subprocess.run(
+                        ["/bin/sh", "-c", route + "\nprintf 'DESKTOP_START_ALLOWED\\n'\n"],
+                        input="printf 'DIAGNOSTIC_SHELL_READY\\n'\nexit 0\n",
+                        text=True, capture_output=True, timeout=5,
+                        env={**os.environ, "PATH": str(tools), "TEST_TTY": terminal})
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if terminal == "/dev/tty1":
+                        self.assertIn("DESKTOP_START_ALLOWED", result.stdout)
+                        self.assertNotIn("DIAGNOSTIC_SHELL_READY", result.stdout)
+                    else:
+                        self.assertIn("DIAGNOSTIC_SHELL_READY", result.stdout)
+                        self.assertNotIn("DESKTOP_START_ALLOWED", result.stdout)
+                        if terminal == "unavailable":
+                            self.assertIn("Cannot identify the Live login terminal", result.stderr)
+                        else:
+                            self.assertIn("desktop remains on tty1", result.stdout)
 
 
 if __name__ == "__main__":

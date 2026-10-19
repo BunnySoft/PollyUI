@@ -282,8 +282,9 @@ console** (no automatic desktop) and **serial VM baseline** entries; the serial
 entry remains last in Advanced. The existing Live boot harness opens this
 submenu before selecting its last entry and still accepts historical flat menus.
 In the unlocked active Live DRM session,
-Ctrl+Alt+F1..F12 requests standard logind/libseat VT switching; F2 offers a
-separate console and F1 returns to the desktop. An unsupported backend or denied
+Ctrl+Alt+F1..F12 requests standard logind/libseat VT switching; current-source
+secondary logins retain an ordinary diagnostic shell rather than launching
+another desktop. F1 requests the original desktop VT. An unsupported backend or denied
 seat request is logged explicitly. No lock-state bypass or new installed-system
 VT policy is added. Use `polly-live-diagnostics`, `journalctl -b`, and the private
 session logs before shutdown; all remain in RAM and should be reviewed before
@@ -406,6 +407,45 @@ The report is private/local under `~/polly-diagnostics.*/report.txt`, and both
 journal and HOME disappear at shutdown in this memory-only system. Review for
 device identifiers, network addresses, filenames and other private data before
 exporting. Do not upload a whole report without review.
+
+### Existing 97eb6d6 ISO: collect from the root terminal without a second login
+
+The delivered 97 ISO predates the secondary-login correction: `polly`'s login
+shell is `/usr/bin/polly-live-session`, so logging in again on tty2/serial can
+start another desktop rather than a shell. Do not use `su - polly`, rerun
+`polly-live-session`, `polly-desktop`, `startx`, or `footclient` to collect a
+report. `footclient` requires an existing foot server socket and is not the
+diagnostics command. Current source reserves automatic desktop launch for
+`/dev/tty1`; secondary logins keep a shell after the existing profile/PAM checks.
+This source correction does not update the already-generated ISO.
+
+At an existing `root@polly-live` terminal, first check the actual UID:
+
+```sh
+id -u
+```
+
+If it prints `0`, use the already-authorized guest root session only to execute
+the collector as the existing ordinary user, without invoking their login shell:
+
+```sh
+runuser -u polly -- env HOME=/home/polly XDG_RUNTIME_DIR=/run/user/1000 /usr/bin/polly-live-diagnostics
+```
+
+If `id -u` prints `1000`, run `polly-live-diagnostics` directly. No new compositor
+or GPU test is needed. The result ends with
+`Saved local diagnostics: /home/polly/polly-diagnostics.XXXXXX`; inspect that
+directory's `report.txt`, not just terminal startup warnings. Do not reboot
+before saving it. Do not weaken the collector's UID guard to run the full report
+as root; missing kernel-log permission remains explicitly reported.
+
+Compositor log timestamps such as `00:00:00.567 ... DESKTOP_READY` are relative
+to that compositor's start, not to GRUB selection or kernel boot. An atomic DRM
+commit `Permission denied`, followed by seat disable and broken Wayland pipes,
+establishes an output failure and later teardown, but not why display authority
+was lost; use the logind/getty timeline to distinguish VT switches, multiple
+sessions or a driver failure. Seat-disable messages can also be cleanup after
+the fatal commit, so their order alone does not prove they triggered the fault.
 
 **Interpretation:** a long gap before the first kernel message is not a Shell
 problem. A long/failed udev-settle unit that holds getty identifies a system-unit

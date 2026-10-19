@@ -38,6 +38,14 @@ if [ "$quiet_boot" -eq 0 ]; then
     fi
 fi
 if [ "$live_mode" = console ]; then exec /bin/sh; fi
+if ! live_tty=$(tty); then
+    echo "Cannot identify the Live login terminal; retaining a diagnostic console instead of starting another desktop." >&2
+    exec /bin/sh
+fi
+if [ "$live_tty" != /dev/tty1 ]; then
+    echo "Live diagnostic console on $live_tty; desktop remains on tty1."
+    exec /bin/sh
+fi
 for capability in CanPowerOff CanReboot; do
     if value=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager "$capability"); then
         logger -t polly-live "POLLY_POWER_CAPABILITY $capability=$value"
