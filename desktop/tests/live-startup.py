@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import re
 import shutil
 import subprocess
 import sys
@@ -125,10 +126,12 @@ class Startup(unittest.TestCase):
     def test_grub_load_stages_do_not_claim_a_failed_kernel_is_starting(self):
         cfg = (REPO / "desktop/release/debian/live-grub.cfg").read_text()
         function = cfg.split("function polly_start {", 1)[1].split("function polly_prepare_media", 1)[0]
+        function = re.sub(r"set (polly_\w+=\S+)", r"\1", function)
         # Shell command stubs exercise the shared branches, not a GRUB boot.
         script = ('linux() { return "$KERNEL_RESULT"; }\n'
                   'initrd() { return "$BOOTSTRAP_RESULT"; }\n'
-                  'halt() { exit 27; }\npolly_start() {' + function + "\npolly_start test=1\n")
+                  'halt() { exit 27; }\nterminal_output() { :; }\n'
+                  'polly_start() {' + function + "\npolly_start test=1\n")
         for kernel, bootstrap in ((0, 0), (1, 0), (0, 1)):
             with self.subTest(kernel=kernel, bootstrap=bootstrap):
                 result = subprocess.run(["sh", "-c", script], text=True, capture_output=True, timeout=5,
@@ -137,6 +140,27 @@ class Startup(unittest.TestCase):
                 self.assertEqual(result.returncode, 27 if kernel or bootstrap else 0, result.stderr)
                 self.assertEqual("Starting kernel..." in result.stdout, not (kernel or bootstrap))
                 self.assertEqual("Polly ERROR:" in result.stdout, bool(kernel or bootstrap))
+
+    def test_live_getty_effective_merge_removes_the_overriding_platform_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            template = root / "usr/lib/systemd/system/getty@.service"
+            template.parent.mkdir(parents=True)
+            template.write_text("[Service]\nExecStart=-/sbin/agetty %I\nTTYVTDisallocate=yes\n")
+            dropins = root / "etc/systemd/system/getty@tty1.service.d"
+            dropins.mkdir(parents=True)
+            (dropins / "polly.conf").write_bytes((REPO / "desktop/release/debian/getty.conf").read_bytes())
+            (dropins / "live-boot.conf").write_bytes((REPO / "desktop/release/debian/live-boot-getty.conf").read_bytes())
+            with self.assertRaisesRegex(ValueError, "quiet autologin"):
+                install["effective_getty"](root)
+            install["remove_old_getty"](root, REPO)
+            (dropins / "zz-polly-live.conf").write_bytes(
+                (REPO / "desktop/release/debian/live-boot-getty.conf").read_bytes())
+            self.assertIn("--noissue --skip-login", install["effective_getty"](root)["ExecStart"])
+            self.assertFalse((dropins / "polly.conf").exists())
+            (dropins / "polly.conf").write_text("unknown override")
+            with self.assertRaisesRegex(ValueError, "unrecognized"):
+                install["remove_old_getty"](root, REPO)
 
     def test_original_logo_size_colors_and_repeatability(self):
         data = assets["logo"]()

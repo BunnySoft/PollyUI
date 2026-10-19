@@ -1,9 +1,9 @@
 {
   "distribution": "Debian 13 trixie amd64",
-  "packages": { "plymouth": "24.004.60-5", "libplymouth5": "24.004.60-5" },
+  "packages": { "plymouth": "24.004.60-5", "libplymouth5": "24.004.60-5", "plymouth-label": "24.004.60-5" },
   "source": "https://deb.debian.org/debian/pool/main/p/plymouth/",
   "upstream": "https://sources.debian.org/src/plymouth/24.004.60-5/",
-  "runtime": ["script.so", "renderers/drm.so", "renderers/frame-buffer.so"],
+  "runtime": ["script.so", "label-pango.so", "details.so", "renderers/drm.so", "renderers/frame-buffer.so"],
   "scope": "Final Live layer only; not the installed platform or existing published media",
   "limits": "Exact package closure is recorded by dpkg-query in each new image. Source/compliance retention and real boot qualification remain separate gates."
 }

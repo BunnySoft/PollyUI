@@ -386,7 +386,7 @@ cd "$REPO"
 当前 Debian 默认是 schema 2：小 bootstrap `initramfs.gz` 与独立
 `boot/root.squashfs`，不是把整个 root 或大 SquashFS 再塞回 initrd。
 工具镜像直接依赖 `busybox-static`、`squashfs-tools`、`kmod`、`xz-utils`、
-`util-linux`，模块和声明的固件闭包取自导出 root 中**同一个内核版本**，
+`util-linux`、`binutils`，模块和声明的固件闭包取自导出 root 中**同一个内核版本**，
 不使用宿主模块。归档路径、重复项、父 symlink、硬链接和 xattr 编码在构建时
 显式校验；不支持的编码停止，不能静默丢 capabilities。
 
@@ -399,6 +399,17 @@ GRUB 只按每 build 唯一 marker 查找本次根媒体，再传该文件系统
 日志为 `/run/polly-live/early-boot.log`。详见 [Live 格式](../desktop/LIVE.md#compressed-ram-root-new-debian-builds-boot-qualification-pending)。
 这改变前置全根展开结构，不是 Hyper-V 实测耗时或“黑屏已消失”的证明；
 实际 ISO/USB 引导、介质脱离和显示接管仍须独立授权并资格验证。
+
+新默认启动还在 bootstrap 的 RAM copy/hash 前启动同一个 Plymouth，
+从导出 root 收集真实 ELF/plugin/font 闭包，保留 64 MiB 硬上限。
+final Live 需要精确 `plymouth-label=24.004.60-5` 及实际依赖，不能仅因
+`plymouth --ping` 成功就认为脚本文字已显示；旧 base 没有这个插件时必须用
+明确新派生层安装并保包版本/SHA/来源，不删除校验或冒称旧 pins 全等。
+GRUB 三个图形入口包含标准 `splash`，加载内核时只保静态图，
+early userspace 才动画；Esc 在 Plymouth 持有 display/input 时可切同屏 details。
+daemon 通过 `update-root-fs` 跨根并由 systemd 复用，handoff 后释放 DRM，
+原 WM 图承接至实际 READY，此后 Esc 不再切已退出的 Plymouth。
+Live-only getty 修正按有效合并验证，安装版账号/PAM、UID1000 和其它 VT 不变。
 
 它要联网，并使用/更新固定标签 `localhost/polly-debian-live-base`、
 `localhost/polly-debian-platform-base`、`localhost/polly-debian-live-tools`；

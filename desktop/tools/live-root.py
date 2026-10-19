@@ -22,9 +22,22 @@ MODULES = (
     "hv_vmbus", "hv_storvsc", "xhci_pci", "ehci_pci", "ohci_pci", "uhci_hcd",
     "usb_storage", "uas", "usbhid", "hid_generic", "hid_hyperv", "hyperv_keyboard",
 )
+GRAPHICS_MODULES = ("hyperv_drm", "virtio_gpu")
+PLYMOUTH_PLUGINS = (
+    "script.so", "label-pango.so", "details.so", "text.so",
+    "renderers/drm.so", "renderers/frame-buffer.so",
+)
+PLYMOUTH_DATA = (
+    "usr/lib/polly-live-splash-control",
+    "etc/plymouth/plymouthd.conf", "usr/share/plymouth/plymouthd.defaults",
+    "usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    *(f"usr/share/plymouth/themes/{name}" for name in
+      ("polly/polly.plymouth", "polly/polly.script", "polly/polly.png",
+       "details/details.plymouth", "text/text.plymouth")),
+)
 APPLETS = (
     "sh", "cat", "chmod", "cp", "mkdir", "mount", "umount", "modprobe", "mdev",
-    "sleep", "stat", "sha256sum", "losetup", "switch_root", "sync", "readlink", "tr",
+    "sleep", "stat", "sha256sum", "losetup", "switch_root", "sync", "readlink", "tr", "timeout", "id", "rm",
 )
 
 
@@ -148,7 +161,7 @@ def root_file(root, path):
 
 def module_closure(root, kernel):
     paths = set()
-    for module in MODULES:
+    for module in (*MODULES, *GRAPHICS_MODULES):
         output = subprocess.check_output(
             ["modprobe", "--config", "/dev/null", "--dirname", str(root),
              "--set-version", kernel, "--show-depends", "--ignore-install", module],
@@ -217,6 +230,73 @@ def copy_elf(program, bootstrap, destination):
     return {"path": executable.as_posix(), "sha256": digest(executable), "libraries": libraries}
 
 
+def copy_root_elf(root, bootstrap, path, destination=None, copied=None):
+    """Resolve DT_NEEDED from the exported root, never the build host's loader."""
+    copied = {} if copied is None else copied
+    source = root_file(root, path)
+    destination = destination or path.lstrip("/")
+    safe_name(destination)
+    target = bootstrap / destination
+    fingerprint = digest(source)
+    if destination in copied:
+        if copied[destination] != fingerprint:
+            raise ValueError("Conflicting bootstrap ELF dependency: " + destination)
+        return copied
+    data = source.read_bytes()
+    if data[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", data, 18)[0] != 62:
+        raise ValueError("Expected exported x86-64 ELF: " + path)
+    copied[destination] = fingerprint
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    target.chmod(stat.S_IMODE(source.stat().st_mode))
+    headers = subprocess.check_output(["readelf", "-lW", str(source)], text=True, timeout=10)
+    dynamic = subprocess.check_output(["readelf", "-dW", str(source)], text=True, timeout=10)
+    if re.search(r"\((?:RPATH|RUNPATH)\)", dynamic):
+        raise ValueError("Unexpected bootstrap ELF search path: " + path)
+    interpreter = re.search(r"Requesting program interpreter: (/\S+)\]", headers)
+    if interpreter:
+        copy_root_elf(root, bootstrap, interpreter[1], copied=copied)
+    for soname in re.findall(r"\(NEEDED\).*Shared library: \[([^]]+)\]", dynamic):
+        if not re.fullmatch(r"[A-Za-z0-9+_.-]+", soname):
+            raise ValueError("Invalid ELF dependency: " + soname)
+        candidates = ["/usr/lib/x86_64-linux-gnu/" + soname, "/lib/x86_64-linux-gnu/" + soname]
+        selected = next((candidate for candidate in candidates if root_file(root, candidate).is_file()), None)
+        if selected is None:
+            raise ValueError("Missing exported ELF dependency: " + soname)
+        copy_root_elf(root, bootstrap, selected, "lib/x86_64-linux-gnu/" + soname, copied)
+    return copied
+
+
+def copy_plymouth(root, bootstrap, copied):
+    for source, destination in (("/usr/bin/plymouth", "bin/plymouth"),
+                                ("/usr/sbin/plymouthd", "bin/plymouthd"),
+                                ("/usr/libexec/plymouth/plymouthd-fd-escrow",
+                                 "usr/libexec/plymouth/plymouthd-fd-escrow")):
+        copy_root_elf(root, bootstrap, source, destination, copied)
+    for name in PLYMOUTH_PLUGINS:
+        copy_root_elf(root, bootstrap, "/usr/lib/x86_64-linux-gnu/plymouth/" + name, copied=copied)
+    for path in PLYMOUTH_DATA:
+        target = bootstrap / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root_file(root, path), target)
+    (bootstrap / "etc/fonts").mkdir()
+    (bootstrap / "etc/fonts/fonts.conf").write_text(
+        '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">\n'
+        '<fontconfig><dir>/usr/share/fonts/truetype/dejavu</dir>'
+        '<cachedir>/run/plymouth/fontconfig</cachedir></fontconfig>\n')
+    (bootstrap / "etc/passwd").write_text("root:x:0:0:root:/root:/bin/sh\n")
+    (bootstrap / "etc/nsswitch.conf").write_text("passwd: files\ngroup: files\n")
+    (bootstrap / "etc/initrd-release").write_text("ID=polly-live-bootstrap\n")
+    minimum = int(subprocess.check_output(
+        ["chroot", str(root), "/usr/bin/python3", "-I", "-c",
+         "import signal; print(int(signal.SIGRTMIN))"], text=True, timeout=10))
+    if not 32 <= minimum <= 40:
+        raise ValueError("Unexpected target libc SIGRTMIN")
+    (bootstrap / "etc/polly-live-signals").write_text(
+        f"POLLY_PLYMOUTH_PRINT_SIGNAL={minimum + 20}\nPOLLY_PLYMOUTH_STOP_SIGNAL={minimum + 21}\n")
+    return sorted(copied)
+
+
 def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashfs):
     for option in ("CONFIG_DEVTMPFS", "CONFIG_TMPFS", "CONFIG_PROC_FS", "CONFIG_SYSFS",
                    "CONFIG_EFI_PARTITION", "CONFIG_MSDOS_PARTITION", "CONFIG_VT",
@@ -243,7 +323,9 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
     (bootstrap / "bin/busybox").chmod(0o755)
     for applet in APPLETS:
         (bootstrap / "bin" / applet).symlink_to("busybox")
-    blkid = copy_elf("blkid", bootstrap, "bin/blkid")
+    copied = copy_root_elf(root, bootstrap, "/usr/sbin/blkid", "bin/blkid")
+    plymouth_files = copy_plymouth(root, bootstrap, copied)
+    blkid = {"path": "/usr/sbin/blkid", "sha256": digest(root_file(root, "/usr/sbin/blkid"))}
     modules = module_closure(root, kernel)
     for path in modules:
         relative = path.relative_to(root)
@@ -282,6 +364,7 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
         f"POLLY_MEDIA_ID={identity}\nPOLLY_ROOT_SHA256={metadata['sha256']}\n"
         f"POLLY_ROOT_BYTES={metadata['size']}\n")
     (bootstrap / "etc/polly-live-modules").write_text("\n".join(MODULES) + "\n")
+    (bootstrap / "etc/polly-live-graphics-modules").write_text("\n".join(GRAPHICS_MODULES) + "\n")
     inventory = []
     for path in sorted(bootstrap.rglob("*")):
         info = path.lstat()
@@ -302,6 +385,7 @@ def build_bootstrap(root, staging, boot, repo, kernel, config, identity, squashf
             "size": (boot / "initramfs.gz").stat().st_size, "uncompressedBytes": total,
             "kernelRelease": kernel, "modules": [path.relative_to(root).as_posix() for path in modules],
             "busyboxSha256": digest(busybox), "blkid": blkid,
+            "plymouthFiles": plymouth_files, "plymouthMode": "early-single-daemon-legacy-vt-input",
             "files": inventory,
         },
     }

@@ -200,9 +200,12 @@ matching media, and checks the root hash and size baked into its own archive.
 The fixed `POLLYLIVE` label is not an identity or a discovery fallback.
 This is local integrity/binding, **not** a signed or authenticated boot chain.
 
-Every entry prints `Loading kernel`, `Loading bootstrap` and `Starting kernel`
-only as the preceding command succeeds; kernel/bootstrap load failure prints
-an explicit GRUB error and halts rather than booting a partial payload.
+The default/GPU entries retain a static Polly monogram while GRUB loads the
+kernel/bootstrap; GRUB cannot animate while blocked on media I/O. Verbose,
+console, serial and graphics-unavailable routes print `Loading kernel`,
+`Loading bootstrap` and `Starting kernel` only as preceding commands succeed.
+Any kernel/bootstrap load failure prints an explicit GRUB error and halts
+rather than booting a partial payload.
 Early init prints real copy/hash/mount stages with `/proc/uptime` timestamps
 before the large copy, also to serial in the serial entry. The retained log is
 `/run/polly-live/early-boot.log` and is included by `polly-live-diagnostics`.
@@ -213,7 +216,7 @@ The bootstrap uses static BusyBox plus `blkid` with its exact ELF loader/library
 closure, and only the selected kernel's storage/filesystem module dependency
 closure and declared firmware. The builder requires built-in EFI framebuffer,
 VT and framebuffer console support; it does not start a second graphics daemon.
-Plymouth still starts in the systemd stage. **Actual Hyper-V screen visibility,
+Plymouth now starts in early userspace before RAM copy. **Actual Hyper-V screen visibility,
 media-detach survival, memory behavior and startup time require fresh boot
 qualification.** Smaller structure and earlier source-wired output do not
 prove that the user's black interval disappeared or that boot is faster.
@@ -231,7 +234,8 @@ as compressed-root verification. Exact legacy schema-1/root-string artifacts
 remain readable. The low-level builder's explicit `--legacy-initramfs` is only
 for historical comparison, never automatic fallback.
 
-Focused Linux checks are `python3 -I -B desktop/tests/live-compressed-root.py`
+Focused Linux checks include `python3 -I -B desktop/tests/live-early-splash.py`,
+`python3 -I -B desktop/tests/live-compressed-root.py`
 and the existing `live-startup.py`, `verify-live-runtime.py` and
 `account-profiles.py`. The same test script's explicit `--mount-handoff`
 requires a private container mount/PID namespace (`SYS_ADMIN` in that container)
@@ -331,9 +335,11 @@ icons and nine-slice frames. The Debian media builder embeds all these resources
 the unchanged monogram, theme and existing Unicode font in `BOOTX64.EFI`;
 Plymouth's `logo()` bytes remain unchanged.
 
-Only the **final Debian Live layer** installs `plymouth` and `libplymouth5`
-**24.004.60-5** from Debian trixie. Its built-in script plugin is sufficient;
-no desktop environment, `plymouth-themes`, new account or authentication service
+Only the **final Debian Live layer** installs `plymouth`, `libplymouth5` and `plymouth-label`
+**24.004.60-5** from Debian trixie. Its built-in script plugin renders the theme;
+`Image.Text` also requires the separately packaged `label-pango.so`; a successful
+daemon ping alone never proves that text or the graphical theme rendered.
+No desktop environment, `plymouth-themes`, new account or authentication service
 is added. `release/debian/boot-dependencies.json` and `boot-files.json` declare
 the pins and overlay. `boot-install.py` installs/verifies the exact source bytes,
 owners, modes and plugins. The platform/installed layers do not inherit this
@@ -344,10 +350,94 @@ using `--noissue --skip-login`, `--noclear` and `.hushlogin` to avoid repainting
 login banners over the retained image; PAM and login session registration remain
 unchanged.
 
+### Early animation and Esc details
+
+New source starts the same pinned Plymouth daemon inside the bounded bootstrap,
+after the required storage/input and Hyper-V/virtio graphics modules load but
+**before** copying or hashing the compressed RAM root. The three splash entries
+now include the standard `splash` argument: upstream selects the details theme
+when only the private `polly.splash=1` argument is present. Verbose, diagnostics
+console and serial entries still start without a graphical daemon.
+
+The bootstrap includes only the exported daemon/client, exact recursive ELF
+dependencies, script/details/text/label plugins, DRM/framebuffer renderers, theme
+assets and one DejaVu Sans font with a minimal fontconfig configuration. It
+does not include Python, a whole font directory, a desktop or the compressed
+root. All files remain in the exact bootstrap inventory and the **64 MiB
+unpacked regular-file limit remains unchanged**. `readelf` in image-tools
+resolves these objects from the exported Live root, not from host `/usr`.
+The new label package's actual dependencies belong to the final Live inventory;
+they must not be disguised as an unchanged old base or old runtime package set.
+
+Before systemd/udev exists, Plymouth uses its supported direct renderer
+discovery (`plymouth.ignore-udev`) and legacy kernel-VT keyboard input, not a
+second udev/input daemon. The exported kernel includes Hyper-V/virtio DRM module
+closures and built-in EFI framebuffer/VT support. No early device/renderer or
+failed startup yields an explicit text fallback, not a successful graphical
+qualification. Default early stages are logged without painting text over
+GRUB's retained image while the graphical display is being prepared.
+
+Plymouth's own **Esc** toggles the graphical theme and console details on the
+same boot display, with no login or VT switch. Kernel/console output is captured
+using `--attach-to-session`; every large-work stage is both retained in
+`/run/polly-live/early-boot.log` and sent as the current graphical status.
+Dots mean activity, never measured percentage. `update-root-fs --new-root-dir`
+changes the existing daemon's root before `switch_root`; `/run`, PTYs, PID and
+resources survive. The systemd helper pings/reuses that daemon without starting
+a second one or resetting the selected details view. Unexpected daemon exit
+stays visible instead of silently restarting. IPC has finite bounds, and
+failed/expired display work is stopped before exposing diagnostics. The 15-second
+system service and 90-second desktop gates are not enlarged.
+
+The common Live-only control helper records the root-owned daemon PID and
+kernel start time, validates `/proc/exe` (including the old bootstrap's deleted
+mapping), and refuses PID0/1 or a mismatched identity. Normal retain-splash quit
+remains untouched. Unresponsive IPC gets a one-second client bound, followed by
+short exit checks, TERM and, only if still confirmed, KILL. Cleanup confirms
+absence or a zombie that has released its file descriptors; otherwise it
+reports unconfirmed DRM/input release rather than claiming a console fallback.
+The bounded cleanup leaves margin within the existing five-second stop limit.
+Forced process exit/file-descriptor release does **not** establish that Linux
+VT `KD_GRAPHICS` or termios has recovered. Normal Plymouth quit/TERM has its
+upstream hide/terminal cleanup; the forced-KILL path is logged separately.
+The unresponsive-process fixture proves exit and PID isolation only, not visible
+text recovery. Actual fault-display/VT restoration remains a boot qualification
+boundary; ANSI escape sequences or a successful process-exit check are not used
+as substitutes.
+Hyper-V and virtio GPU modules are alternatives: an unavailable candidate is
+logged while other candidates and an existing EFI framebuffer are still tried.
+
+Plymouth's console attachment sends two realtime signals to PID1. The builder
+obtains the target libc's real `SIGRTMIN`; bootstrap catches the two signals
+with no-op handlers, **not `SIG_IGN`**. Caught handlers reset to default on exec,
+so no ignored-signal state is inherited by systemd.
+
+At handoff Plymouth quits with `--retain-splash` and releases DRM/input before
+the ordinary user's compositor starts. The existing native Polly image then
+bridges to the actual presentation-based desktop-ready gate. **After Plymouth
+has exited, Esc belongs to the compositor/apps and no longer toggles Plymouth
+details.** There is no new compositor log viewer, privileged relay or alternate
+terminal. Plymouth must not retain DRM master while the desktop tries to acquire it.
+
+The final Live layer removes only the two recognized old `polly.conf` and
+`live-boot.conf` tty1 overrides, installs `zz-polly-live.conf`, and validates the
+effective merged template/drop-ins. This prevents the platform's later-sorting
+`ExecStart` from restoring an issue/autologin banner. `--autologin polly`,
+`--noclear --noissue --skip-login` and `TTYVTDisallocate=no` remain effective;
+PAM, UID1000, installed/template policy and secondary diagnostic consoles do not change.
+
+Component tests distinguish real exported script parsing/font shaping and
+same-PID root-switch IPC from control stubs. The isolated IPC test uses only its
+own PTY and **does not** attach to the kernel console, use a GPU or prove pixels,
+animation or Esc. Fresh authorized ISO/USB/Hyper-V observation is still required
+for those properties; the earlier user video describes the preceding image,
+not validation of this new feature.
+
 | Stage | Actual trigger / completion |
 |---|---|
 | UEFI | GRUB loads its embedded font, menu theme and monogram; it falls back to text if graphics are unavailable |
-| System | `polly-live-splash.service` runs after udev starts; activity dots mean waiting, never a measured percentage |
+| Bootstrap | Early Plymouth renders the monogram/activity dots and actual RAM copy/hash/root-setup stages; Esc selects details |
+| System | `polly-live-splash.service` reuses the early daemon after udev starts; activity dots mean waiting, never a measured percentage |
 | Session | `polly-live-handoff.service` runs after logind/user-session startup, tells Plymouth to retain its last image and release display ownership before the existing tty1 autologin |
 | Desktop | The ordinary-user compositor temporarily draws the matching startup scene while the private Shell initializes |
 | Usable desktop | Private Shell wallpaper and panel buffers are mapped on every enabled output, a workspace and input device exist, the Live IME is bound, the real seat is active, and each desktop frame has an actual matching output-present event |

@@ -47,6 +47,15 @@ def png(width, height, pixel):
 
 def theme_assets():
     assets = {"polly.png": logo()}
+    source = Path(__file__).with_name("boot-brand.h").read_text()
+    rectangles = [tuple(map(int, match)) for match in
+                  re.findall(r"POLLY_BOOT_RECT\((\d+), (\d+), (\d+), (\d+)\)", source)]
+    def boot_pixel(x, y):
+        x, y = x - 576, y - 272
+        inside = any(rx * 2 <= x < (rx + w) * 2 and ry * 2 <= y < (ry + h) * 2
+                     for rx, ry, w, h in rectangles)
+        return (*(FOREGROUND if inside else BACKGROUND), 255)
+    assets["boot-background.png"] = png(1280, 800, boot_pixel)
     icons = {
         "polly": ((8, 5, 5, 22), (13, 5, 10, 5), (21, 10, 5, 8),
                   (13, 16, 8, 5), (22, 23, 4, 4)),

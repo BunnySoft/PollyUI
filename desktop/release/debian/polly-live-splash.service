@@ -8,6 +8,7 @@ ConditionKernelCommandLine=polly.splash=1
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/polly-live-splash start
+ExecStopPost=/usr/lib/polly-live-splash stop
 RemainAfterExit=yes
 TimeoutStartSec=15
 TimeoutStopSec=5

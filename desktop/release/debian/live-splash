@@ -5,24 +5,54 @@ case " $(cat /proc/cmdline) " in
     *" polly.splash=1 "*) ;;
     *) exit 0 ;;
 esac
+splash_runtime=/run/plymouth
+proc_directory=/proc
+log_directory=/run/polly-live
+. /usr/lib/polly-live-splash-control
 case "${1:-}" in
     start)
         mkdir -p /run/plymouth
-        if plymouthd --mode=boot --tty=/dev/tty1 --pid-file=/run/plymouth/pid &&
-            plymouth show-splash; then
-            plymouth display-message --text="Starting Live system"
+        if [ -f /run/polly-live/splash-unavailable ]; then
+            echo "Polly Live: early graphical display failed; retaining console diagnostics." >&2
+            exit 0
+        fi
+        if timeout 1 plymouth --ping; then
+            if control_load && timeout 2 plymouth update-root-fs --read-write &&
+                    timeout 2 plymouth display-message --text="Starting Live system"; then
+                exit 0
+            fi
+            echo "Polly Live ERROR: cannot reuse the owned early boot display." >&2
+            control_release
+            exit 1
+        elif [ -f /run/polly-live/splash-started ]; then
+            echo "Polly Live: early boot display exited unexpectedly; retaining console diagnostics." >&2
+            control_release
+            exit 1
+        elif timeout 3 plymouthd --mode=boot --attach-to-session --tty=/dev/tty1 --pid-file=/run/plymouth/pid &&
+            control_record && timeout 2 plymouth show-splash &&
+            timeout 2 plymouth display-message --text="Starting Live system"; then
+            exit 0
         else
             echo "Polly Live: graphical boot display unavailable; continuing with console diagnostics." >&2
-            if plymouth --ping; then plymouth quit; fi
+            control_release
         fi
         ;;
     handoff)
-        if plymouth --ping; then
-            plymouth display-message --text="Opening your Live desktop"
-            plymouth quit --retain-splash
+        if timeout 1 plymouth --ping; then
+            if timeout 2 plymouth display-message --text="Opening your Live desktop"; then
+                control_release --retain-splash
+            else
+                echo "Polly Live ERROR: boot-display handoff update failed." >&2
+                control_release
+                exit 1
+            fi
         else
+            control_release
             echo "Polly Live: no boot display to hand off; starting the ordinary-user session." >&2
         fi
         ;;
-    *) echo "Expected start or handoff" >&2; exit 2 ;;
+    stop)
+        control_release
+        ;;
+    *) echo "Expected start, handoff or stop" >&2; exit 2 ;;
 esac

@@ -93,7 +93,7 @@ RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
 COPY release/live /tmp/polly-boot/desktop/release/live
 COPY release/debian /tmp/polly-boot/desktop/release/debian
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-        plymouth=24.004.60-5 libplymouth5=24.004.60-5 && \
+        plymouth=24.004.60-5 libplymouth5=24.004.60-5 plymouth-label=24.004.60-5 && \
     python3 -I -B /tmp/polly-boot/desktop/release/debian/boot-install.py install /tmp/polly-boot && \
     dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-live-packages.tsv && \
     rm -rf /tmp/polly-boot && apt-get clean && \
@@ -104,7 +104,7 @@ FROM docker.io/library/debian:trixie-slim AS image-tools
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     python3 cpio gzip grub-efi-amd64-bin xorriso mtools dosfstools fdisk e2fsprogs \
-    busybox-static squashfs-tools kmod xz-utils util-linux \
+    busybox-static squashfs-tools kmod xz-utils util-linux binutils \
     qemu-system-x86 qemu-utils ovmf
 WORKDIR /work
 ENTRYPOINT []

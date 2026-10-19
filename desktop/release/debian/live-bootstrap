@@ -1,6 +1,7 @@
 #!/bin/sh
 export PATH=/bin
 umask 022
+splash_pending=0
 
 stage() {
     stamp="untimed: /proc/uptime unavailable"
@@ -11,17 +12,74 @@ stage() {
             stamp="untimed: /proc/uptime read failed"
         fi
     fi
-    printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&3
+    if [ "$splash_pending" = 0 ]; then
+        printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&3
+    fi
     if [ "$serial" = 1 ]; then
         printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&4
     fi
     if [ -d "$log_directory" ]; then
         printf '[%s] Polly Live: %s\n' "$stamp" "$*" >>"$log_directory/early-boot.log"
     fi
+    if [ "$splash_active" = 1 ]; then
+        if ! timeout 2 plymouth display-message --text="$*"; then
+            if stop_splash; then
+                printf 'Polly Live: graphical status update failed; using console.\n' >&3
+            else
+                fail "Cannot confirm boot-display DRM/input release"
+            fi
+        fi
+    fi
+}
+
+stop_splash() {
+    splash_active=0
+    splash_pending=0
+    control_release || return 1
+    if [ -d "$log_directory" ]; then
+        printf 'Graphical boot display unavailable\n' >"$log_directory/splash-unavailable"
+    fi
+}
+
+start_splash() {
+    case " $(cat /proc/cmdline) " in *" polly.splash=1 "*) ;; *) return ;; esac
+    # Kernel VT input and the renderer's direct DRM/fb path avoid a second udev daemon.
+    while read -r module; do
+        if ! modprobe "$module" 2>>"$log_directory/early-boot.log"; then
+            stage "Graphical boot driver $module unavailable; trying other graphics paths"
+        fi
+    done </etc/polly-live-graphics-modules
+    mdev -s
+    if [ ! -c /dev/fb0 ] && [ ! -c /dev/dri/card0 ]; then
+        if ! stop_splash; then fail "Cannot confirm boot-display cleanup"; fi
+        stage "No early framebuffer/DRM device; using console"
+        return
+    fi
+    mkdir -p /dev/pts /run/plymouth
+    mount -t devpts devpts /dev/pts
+    . /etc/polly-live-signals
+    # Caught (not ignored) handlers reset to SIG_DFL on exec of switch_root/systemd.
+    trap ':' "$POLLY_PLYMOUTH_PRINT_SIGNAL" "$POLLY_PLYMOUTH_STOP_SIGNAL"
+    if timeout 3 plymouthd --mode=boot --attach-to-session --tty=/dev/tty1 \
+            --pid-file=/run/plymouth/pid \
+            --kernel-command-line="$(cat /proc/cmdline) plymouth.ignore-udev plymouth.use-legacy-input" &&
+            control_record &&
+            timeout 2 plymouth show-splash; then
+        splash_active=1
+        splash_pending=0
+        printf 'early Plymouth daemon started\n' >/run/polly-live/splash-started
+        stage "Preparing compressed RAM root"
+    else
+        if ! stop_splash; then fail "Cannot confirm boot-display cleanup"; fi
+        stage "Graphical boot display failed; using console diagnostics"
+    fi
 }
 
 fail() {
     trap - EXIT
+    if ! stop_splash; then
+        printf 'Polly Live ERROR: boot-display release remains unconfirmed; boot will not continue.\n' >&3
+    fi
     stage "ERROR: $*. No disk writes or alternate root attempted."
     printf 'Boot stopped. Diagnostic shell only; exit does not continue boot.\n' >&3
     while :; do /bin/sh <"$console" >&3 2>&1; done
@@ -29,17 +87,24 @@ fail() {
 
 set -eu
 serial=0
+splash_active=0
 console=/dev/console
 uptime_file=/proc/uptime
 log_directory=/tmp
+proc_directory=/proc
+splash_runtime=/run/plymouth
 exec 3>/dev/console
 trap 'fail "Bootstrap command failed (status $?)"' EXIT
+. /usr/lib/polly-live-splash-control
 chmod 0755 /
 mount -t devtmpfs devtmpfs /dev
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 for arg in $(cat /proc/cmdline); do
-    case "$arg" in polly.serial=1) serial=1 ;; esac
+    case "$arg" in
+        polly.serial=1) serial=1 ;;
+        polly.splash=1) splash_pending=1 ;;
+    esac
 done
 if [ "$serial" = 1 ]; then exec 4>/dev/ttyS0; fi
 stage "Bootstrap running; preparing memory-only root"
@@ -65,6 +130,7 @@ uuid=$(printf '%s' "$uuid" | tr '[:upper:]' '[:lower:]')
 while read -r module; do
     modprobe "$module" || fail "Cannot load driver $module"
 done </etc/polly-live-modules
+start_splash
 
 stage "Finding the exact boot filesystem (read-only)"
 attempt=0
@@ -131,10 +197,16 @@ for name in dev proc sys; do
     mount --move "/$name" "/newroot/$name" || fail "Cannot transfer /$name"
     case "$name" in
         dev) console=/newroot/dev/console ;;
-        proc) uptime_file=/newroot/proc/uptime ;;
+        proc) uptime_file=/newroot/proc/uptime; proc_directory=/newroot/proc ;;
     esac
 done
 mount --move /run /newroot/run || fail "Cannot retain RAM root and boot log"
 log_directory=/newroot/run/polly-live
+splash_runtime=/newroot/run/plymouth
 stage "RAM mounts transferred; switching root"
+if [ "$splash_active" = 1 ]; then
+    if ! timeout 2 plymouth update-root-fs --new-root-dir=/newroot; then
+        fail "Cannot transfer boot display to the RAM root"
+    fi
+fi
 exec switch_root -c /dev/console /newroot /init
