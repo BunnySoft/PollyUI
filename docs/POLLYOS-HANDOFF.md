@@ -1,11 +1,71 @@
 # PollyOS 当前批次交接
 
-## 2026-10-19 压缩内存根启动候选 179f20e
+## 2026-10-19 早期图形启动候选 8e6ca02
 
-**固定入口 `D:\temp\PollyOS\PollyOS.iso` 已切换到本候选。**
-`D:\temp\PollyOS\PollyOS-179f20e.iso` 也保留，两个入口与以下版本文件同 inode。
+**固定入口 `D:\temp\PollyOS\PollyOS.iso` 已通过标准发布器原子更新到本候选。**
+它与以下版本文件同 inode `562949954769671`、links2；没有关闭用户 VM 或光盘句柄。
+已打开的光盘句柄可能仍指旧 inode，需要用户重新选择介质。
+
+```text
+D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-8e6ca02-8e6ca02-33724ccfbef6\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso
+```
+
+ISO **695,502,848 字节**，SHA256：
+
+```text
+33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb
+```
+
+同目录完整 USB `.img` 为 **747,634,688 字节**，SHA256
+`e8046e6f17564dfa9995e832514cdcdef57456be5514169263328c68aaa29177`；
+本次仅交付普通文件，没有写入任何 USB 或主机块设备。
+
+runtime、overlay、media producer 均为 clean
+`8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f`，tree
+`d23918a810f8d0186a4a40d133c8e2e54eb4fdd1`，实际 GUI 自报相同 alpha.8 身份。
+1539 个 canonical 源文件/模式、新 native/普通 UID1000 Shell/WM、11 startup、
+3 early 控制检查及配对 SDK 负例已过；实际 runtime image 为
+`1bc7566e1929ec10ac058ebe2c7353e5e2b9ca33032806d1cf359ec7f590029b`。
+这是 fresh 正式产物，不是 f6 dirty/fixtureOnly 样件或 2cd 旧 native 的重标。
+
+新图形入口在 GRUB 加载时保留静态图，在小 bootstrap 的 RAM 复制/校验之前启动
+同一个 Plymouth，跨根切换及 systemd 复用。原生 Esc 在其持有同一 VT/键盘期间
+切换图形与 details；`quit --retain-splash` 后释放显示/输入，既有原生启动图承接
+至实际 READY，此后 Esc 归 WM/App。本轮没有新增 WM 文字层或 SDK 依赖。
+正常退出保留画面；超时清理限定已记录 PID/starttime/exe 的本 daemon，确认退出或
+zombie 后才认定 FD 释放，**强杀后的 VT 文字模式恢复仍未建立**。
+详见 [Live 启动说明](../desktop/LIVE.md#early-animation-and-esc-details)。
+
+| 实际结构 | 本轮正式测量 |
+| --- | --- |
+| 小 bootstrap | gzip 12,498,088 字节 / SHA `cdbce49c78add3dff6b57a0347028e1e3448fb6d2a24d5ce58ae0dad415e9fc9`；regular 展开 33,046,498 字节，保留 64 MiB 上限 |
+| 早期闭包 | 217 清单节点、45 个 `6.12.111+deb13-amd64` 模块、58 ELF、一份 DejaVu Sans；无完整 root 或 `.squashfs` entry |
+| 独立 RAM 根 | SquashFS 632,582,144 字节 / SHA `b5fbdfbbfcf431f4f40a2cc99baa0413e3df26cca35485abaaa7f56edee47d8d`；copyToRam + readonly 下层 + tmpfs 上层 |
+| 媒体内容 | 实际 ISO/USB 各 **405 总 runtime/overlay 路径，其中 18 overlays**；另流验 466 个扩展根路径，含 67 个 early/root 同字节资源 |
+| 发布复验 | Windows 独立核验 **216 摘要**、当前源/生成 GRUB、早期闭包及 root receipt；standard hardlink alias 成功 |
+
+实际 SquashFS 与 bootstrap 的 ELF/loader/插件/主题/字体/控制 helper 已逐字节、
+模式及所有者核对；helper 两处均 `0644/0:0`。实际 EFI 内配置与保留 `grub.cfg`
+一致，含 44 个 PNG（包括新静态背景）、字体和三个标准 splash/三个 details 入口。
+七主题、79 图标及五个注册应用映射保持；SDK 仍 40a2/7b58/ABI4，实验默认 OFF、
+标准 Start 实色。新工具层只增九个 binutils 闭包包；Live 十四个精确输入包含原
+Plymouth 两包与十二个新增 label/Pango/fontconfig OS 依赖，现有包无升级。
+官方 keyring/sqv 的离线 InRelease → 完整 Packages → 精确 deb 链已核；
+OS daemon 所需 Cairo 不混作 WM 新链接。自有最终 recipe 的 apt 缓存/索引清理在
+`owned-recipe-derivation.json` 独立保留源/派生 SHA，不声称修改了冻结产品配方。
+
+**本轮未执行 UEFI/QEMU、Hyper-V、物理启动、真实 console attachment/TIOCCONS、
+画面连续性、Esc 来回切换、强杀后 VT 恢复或介质脱离；启动时长未测。**
+真实脚本/字体成形、私有 IPC/根切换及进程清理组件不等于这些图形属性通过。
+下面的 179 录像是旧候选的用户观察，不能认证本候选。旧版和全部 FIRST/失败记录
+保留，自有构建 helper/容器已退出，共享 Podman 未停止；后续文档不改变镜像身份。
+
+## 2026-10-19 压缩内存根启动候选 179f20e（历史保留）
+
+该次发布时固定 `PollyOS.iso` 已切到 179，现指页首 8e6 候选。
+`D:\temp\PollyOS\PollyOS-179f20e.iso` 与以下旧版本文件继续保留。
 最初标准发布器被 Windows `EPERM` 拒绝时保留了旧入口及失败回执；
-用户明确告知已修复占用后，新的标准发布尝试成功，校验同 inode/links3/SHA。
+用户明确告知已修复占用后，当次标准发布成功，校验同 inode/links3/SHA。
 没有覆盖旧版本 inode、关闭光盘句柄或操作用户 VM，原失败记录不改写：
 
 ```text
@@ -51,8 +111,8 @@ Windows 独立复验 **145 条**交付摘要。两实验仍 default OFF、Start 
 
 旧 97/843/DDD ISO 和全部 FIRST/结构样件不覆盖。之前 dirty/fixtureOnly 的结构
 样件没有作为本候选复用或重标。自有构建进程已退出，共享 Podman 未停止；
-本次不操作用户 Hyper-V、宿主服务、权限或物理设备。需要用户测试时选择页首
-新文件；固定入口本次已在用户修复占用后成功切换，旧版本目录仍保留。
+该次不操作用户 Hyper-V、宿主服务、权限或物理设备。当前新文件见页首；
+179 在用户修复占用后曾成功切换固定入口，其版本目录和专用硬链仍保留。
 
 ### 用户 Hyper-V 启动录像观察（2026-10-19）
 
@@ -84,7 +144,7 @@ SHA256 `9bf8414726c004b23031e386c6ee81ca144dc2b9baf286e8b3e25fad1ccd8000`，
 ## 2026-10-19 旧 97eb6d6 诊断 ISO（历史保留）
 
 该诊断版发布时固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 切换到以下文件，
-最初受占用影响的替换尝试未改它；用户修复后固定入口已更新为页首候选，
+最初受占用影响的替换尝试未改它；用户修复后固定入口先更新为 179，目前再更新为页首 8e6 候选，
 以下 97 版本文件和原始回执不变。
 runtime、overlay、media producer 均为 clean
 `97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681`，tree
@@ -127,8 +187,8 @@ Git 文件/完整模式、诊断 7 项、普通 UID1000 打包 Shell/WM、布局
 
 ## 2026-10-18 上次 8433048 ISO（历史保留）
 
-当次固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 指向以下文件，现已切换为页首
-97 诊断版；此 843 文件及旧 DDD 文件的校验值保留，不覆盖其 inode：
+当次固定入口 **`D:\temp\PollyOS\PollyOS.iso`** 指向以下文件，当前入口见页首；
+此 843 文件及旧 DDD 文件的校验值保留，不覆盖其 inode：
 
 ```text
 D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-8433048-8433048-db95f8596b81\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso

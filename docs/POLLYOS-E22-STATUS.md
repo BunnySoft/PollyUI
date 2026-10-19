@@ -66,30 +66,30 @@ R01 → R02 → R03 → R04 → R07 → R05 → R06 → R09 → R08 → R12 → 
 
 **当前已交GUI集中手测ISO：已完成。**
 
-根据用户修正早期启动等待/反馈问题请求，以已推送179f20e源码新编独立SquashFS+小bootstrap正式候选；旧97/843/DDD与证据保留。
+用户针对录像10–17秒文字阶段要求默认自定义启动图/动画及Esc细节；以已推送8e6ca02源码freshnative重新构建正式完整ISO/USB，旧179/97/843/DDD与所有失败证据保留。
 
-最新候选为clean179f20e/schema2压缩RAMroot，bootstrap约4.3MB压缩/13.1MB普通文件展开，独立SquashFS654405632B，后续复制RAM再按需解压；早期真实阶段可见设计不伪造百分比。保持SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题。真实启动/脱介质/实际提速未测，不挪用旧资格；用户修复占用后固定入口已通过新一次标准发布切换，原失败及旧版本保留。
+最新clean8e6/schema2压缩RAMroot候选已交。GRUB保静态图，early单一Plymouth在copy/hash前启动并跨根复用，Esc仅其display/input所有权阶段切同屏details；handoff后归WM/App，原生图承接READY。实际bootstrap12498088B压缩/33046498B展开、217nodes/45modules/58ELF、root632582144B，ISOUSB各405总路径/18overlay及扩展466根资源核；216摘要与标准原子hardlink发布通过。SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题不变；实际图形/Esc/VT恢复/提速不冒已测。
 
 只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。
 
 | 交付字段 | 实际值 |
 | --- | --- |
 | 本次 ISO 入口 | `D:\temp\PollyOS\PollyOS.iso` |
-| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
-| 大小 | 709148672 bytes |
-| SHA256 | `88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89` |
-| 运行时源码 | `179f20e0d28a49071edfae6d0eb57f0cc9b625ac` |
-| 媒体生产源码 | `179f20e0d28a49071edfae6d0eb57f0cc9b625ac` |
-| 镜像内容核验 | 404 条实际 runtime/overlay 路径 |
+| 版本化 ISO | `D:\temp\PollyOS\pollydesktop-0.1.0-alpha.8-debian13-8e6ca02-8e6ca02-33724ccfbef6\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso` |
+| 大小 | 695502848 bytes |
+| SHA256 | `33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb` |
+| 运行时源码 | `8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f` |
+| 媒体生产源码 | `8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f` |
+| 镜像内容核验 | 405 条实际 runtime/overlay 路径 |
 | 根布局 | `squashfs-ram-overlay`；压缩根复制到 RAM：True；可写层：`tmpfs-overlay` |
-| 压缩根 | `boot/root.squashfs`；654405632 bytes；SHA256 `0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549` |
-| 小型 bootstrap | 4332358 bytes 压缩；13120270 bytes 普通文件展开量 |
+| 压缩根 | `boot/root.squashfs`；632582144 bytes；SHA256 `b5fbdfbbfcf431f4f40a2cc99baa0413e3df26cca35485abaaa7f56edee47d8d` |
+| 小型 bootstrap | 12498088 bytes 压缩；33046498 bytes 普通文件展开量 |
 
-构建发布时Agent未执行真实boot，原冻结回执NOT RUN不改；后续用户Hyper-V录像已见新RAM复制/校验OK/根挂载切换及桌面（日志uptime复制1.39→3.03s、切根3.81s，录像约20.5s桌面含8sGRUB倒计时）。录像未显示ISOhash/应用源码，属用户观察，不冒自动验收或旧新版同条件加速比；物理/拔介质/完整Apps未测。
+正式8e6 freshnative及实际ISOUSB内容通过，不是f6 dirty结构样件或2cd旧runtime重标。原179用户录像仅历史观察，不认证新动画/Esc；本轮未执行UEFI/QEMU/HyperV/physical/真实attach-TIOCCONS/介质移除/时长测试。
 
-**未覆盖：** 代码已消除整根提前展开并增加真实阶段提示，但仍读取整份压缩根到RAM；实际启动/图形反馈/速度和完整Apps/splash/E22/物理资格未完成。SDK40a2/pin7b58，两实验OFF、Startsolid；旧性能HOLD不改。
+**未覆盖：** 源码、真实脚本/font/IPC/进程故障组件与当前媒体资源通过不等于实际像素或按键通过；Esc仅Plymouth持有同VT/input时有效，handoff后归WM/App；forcedKILL确认FD退出不代表VT文字恢复。完整Apps/E22/物理与实时资格未关闭，SDK40a2/7b58/ABI4、两实验OFF/Startsolid及旧性能HOLD不变。
 
-PollyOS.iso、PollyOS-179f20e.iso和新版本文件同inode硬链（links3）；用户修复占用后新一次标准发布成功，首次EPERM及旧97原文件保留，没有关闭/卸载用户VM。
+PollyOS.iso与8e6版本文件同inode562949954769671/links2硬链，旧PollyOS-179f20e.iso和各历史版本保留。已打开的光盘句柄可能仍指旧inode；没有关闭/卸载用户VM。
 
 ## 原 35 项去向
 

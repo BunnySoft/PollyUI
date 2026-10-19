@@ -3,26 +3,38 @@
 更新时间：2026-10-19。唯一任务源为 [POLLYOS-PLAN.json](POLLYOS-PLAN.json)；
 本页解释版本范围，不另维护一套完成状态。执行清单从该 JSON 生成。
 
-**最新候选：** 压缩内存根 Live ISO 已交付为
-`D:\temp\PollyOS\PollyOS.iso`（版本入口 `PollyOS-179f20e.iso` 同内容），实际 runtime/overlay/media producer 均为
-clean `179f20e0d28a49071edfae6d0eb57f0cc9b625ac`，版本 `0.1.0-alpha.8`。
-709,148,672 字节，SHA256
-`88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89`。
-最初 Windows 拒绝替换的失败记录保留；用户修复占用后固定入口已通过标准发布器切换到新候选，旧 97 文件不变。
-新格式实际 ISO/USB 的 404 + 404 条 runtime/overlay 路径及 145 条交付摘要通过；
-小型 bootstrap 4,332,358 字节压缩/13,120,270 字节普通文件展开，
-独立 SquashFS 654,405,632 字节；压缩根复制 RAM、只读下层加 tmpfs 上层。
-已包含启动时间线诊断增强和 Monterey 在内七主题，诊断并非黑屏修复声明。
+**最新候选：** 含早期图形启动的压缩内存根 Live ISO 已交付为
+`D:\temp\PollyOS\PollyOS.iso`，实际 runtime/overlay/media producer 均为 clean
+`8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f`，版本 `0.1.0-alpha.8`。
+695,502,848 字节，SHA256
+`33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb`。
+版本文件保存在 `pollydesktop-0.1.0-alpha.8-debian13-8e6ca02-8e6ca02-33724ccfbef6`
+目录；固定入口与它同 inode/links2 原子硬链，旧 179/97 版本和 EPERM 失败回执保留。
+实际 ISO/完整 USB 各 405 总 runtime/overlay 路径（其中 18 overlays），
+扩展 466 个 SquashFS 资源路径及 Windows 216 条交付摘要通过。
+bootstrap 12,498,088 字节压缩/33,046,498 字节普通文件展开，217 清单节点、
+45 模块/58 ELF，仍低于 64 MiB；独立 SquashFS 632,582,144 字节。
+RAM 根及 tmpfs 上层不改；bootstrap 前置图形闭包不等于提速测量。
+已包含启动时间线诊断和 Monterey 在内七主题，不冒黑屏已实测修复。
 新编运行时配套 `40a2...` / ABI4 / pin `7b58...` 原生库，FIR/Yoga 可选后端
 均已包含且默认关闭。**本次 UEFI/QEMU、Hyper-V 和物理启动均未执行**，
-不借旧 DDD 的 KVM 结果；实际启动提速、介质移除、完整 Apps、默认 splash 和实时资格未完成。
+不借旧 DDD 的 KVM 或 179 录像结果；实际启动提速、介质移除、完整 Apps、
+新动画/Esc/console attachment/强杀后 VT 文字恢复及实时资格未完成。
 镜像包含已交原生窗口菜单、半屏/拖动恢复/拖边、基础 Max 悬停、层叠/平铺等当前源码，
 不包含暂停的显示桌面；最终 FIR 和成套 Yoga 修正可启动时显式选择，
-不默认采用实验路径，标准 Start 仍默认实色。旧 843/DDD ISO 及其证据保留。
+不默认采用实验路径，标准 Start 仍默认实色。旧 179/97/843/DDD ISO 及其证据保留。
 安装版 VHDX 仍是下述历史 `4e6b004`，未随 Live 更新，完整 Alpha 门槛仍未关闭。
 下文 2026-10-09 的旧媒体、“未推送”和短测结果是原批次快照，不覆盖本段或
 [最新交接](POLLYOS-HANDOFF.md)。E22 当前任务及 ISO 记录见
 [当前状态列表](POLLYOS-E22-STATUS.md)，不是全部六主题已完成声明。
+
+**本候选启动画面：** `8e6ca02` 把同一 Plymouth 提前到小 bootstrap，
+在 RAM copy/hash 前显示自定义图形与活动点；GRUB 加载阶段仅保静态图。
+原生 Esc 只在 Plymouth 拥有同一 VT/键盘时切换 details，跨根保持；
+handoff 退出后归 WM/App，原生启动图继续承接至 READY。
+所需精确 label/font/plugin 闭包属于 Live OS，不是新的 WM/SDK 依赖。
+旧 179 镜像不含这项功能；当前正式媒体已经独立复验并发布，但组件/结构结果和
+旧录像均不代替新动画、真实按键、console attachment 或强杀后 VT 恢复的实屏资格。
 
 ## Alpha 的范围
 
@@ -47,7 +59,7 @@ Alpha **不等于**空白磁盘安装器、受保护生产桌面、完整 XP 1:1
 | 原生打开保存 | 真实本地文件选择/读取、新建保存、已有文本文件强观察覆盖/变化重问、Keep/Cancel、焦点和关闭回收已具；不是完整编辑器或第三方 Portal |
 | 图形账户入口 | 新默认 UEFI guest 已真实双密码首设、PAM 错误密码拒绝/正确重试、普通登录及重启后再登录；旧 Hyper-V 首启历史日志未知，不回填归因或替代新介质现场测试 |
 | 注销与电源流程 | 正常注销回 greetd/可再登录，普通 App close-veto/Cancel/实际保存、标准 Reboot 与文档/偏好持久性已实测；Shutdown GUI 最终提交仍未资格通过 |
-| 媒体历史与当前入口 | 历史 VHDX 与 97/843/DDD ISO 保留；固定 `PollyOS.iso` 和版本入口均指页首 `179f20e`，完整 Alpha 未冻结 |
+| 媒体历史与当前入口 | 历史 VHDX 与 179/97/843/DDD ISO 保留；固定 `PollyOS.iso` 指页首 `8e6ca02` 版本目录内 ISO，完整 Alpha 未冻结 |
 
 本地主分支的新功能组合基线为 `1dac93d`，保留 `ce73a3c` 的第四批功能、
 控制台 user-sessions 服务依赖与闲置窗口交互修复，包含注销/保存、Power 流程和标准电源授权配方。

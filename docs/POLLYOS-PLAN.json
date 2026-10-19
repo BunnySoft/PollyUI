@@ -1203,7 +1203,7 @@
       "sources": [],
       "status": "done",
       "requires": [],
-      "evidence": "已限定交付源码结构与正式候选：85105eeb+e18e24ae正常合179f20e，smallbootstrap gzip4332358B/regular展开13120270B、116nodes/39exactkernelmodules，无完整系统或SquashFS文件在cpio内；独立RAMroot654405632B/sha0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549，设计为UUID+unique marker识别只读介质、hash后复制RAM、roloop+tmpfsupper/work、挂载迁移和switch_root，保不写内部盘。早期console/null合成节点和未有proc时错误输出、GRUB加载失败guard已修且source6/startup9/account6/legacy/实际privatePID1handoff通过；main包/发布器9、release1、startup9过。正式新编179runtime与actualISO/USB各404runtime-overlay路径/17overlays、bootstrap设备/身份/所有者、根完整字节/模式/来源和EFI/config/kernel/microcode一致性及145摘要已核，非dirtyfixture重标。新候选709148672B/sha88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89交D:\\temp\\PollyOS\\PollyOS-179f20e.iso；旧PollyOS.iso原子rename被Windows EPERM拒绝仍97，未关VM或覆旧inode。实际SquashFS loop挂载/目标boot/脱介质/HyperV画面和提速均NOTRUN或NOTMEASURED，不把约1.41GiB前置载荷缩至13.1MB的结构事实冒已测十秒消失；仅关闭可复验源码/候选范围，不冒完整启动/物理性能资格。"
+      "evidence": "已限定交付源码结构与正式候选：85105eeb+e18e24ae正常合179f20e，原正式smallbootstrap gzip4332358B/regular13120270B、116nodes/39modules，独立RAMroot654405632B；UUID+unique marker识别只读介质、hash后复制RAM、roloop+tmpfsupper/work、挂载迁移和switch_root，不写内部盘。console/null节点、未有proc时错误输出和GRUB失败guard已修，source6/startup9/account6/legacy/privatePID1handoff通过；179实际ISO/USB各404总runtime-overlay路径/17overlays、145摘要通过，非fixture重标。179候选709148672B/sha88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89及PollyOS-179f20e.iso保留；首次stable替换EPERM失败原样保，用户修复占用后新尝试成功，未关VM或覆旧inode。其后用户录像见RAM复制/校验/根切换和桌面，缺ISOhash/版本身份，仅作用户观察、不回写构建NOTRUN或冒同条件提速。当前入口后续已切8e6早期图形候选，原179证据和版本不覆。仅关闭可复验源码/候选范围，实际物理/脱介质/严格计时未资格；详交接与inspectionCheckpoint。"
     },
     {
       "id": "live-early-graphical-boot",
@@ -1217,11 +1217,11 @@
         "candidate"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "live-compressed-root-boot"
       ],
-      "evidence": "2026-10-19用户明确“增加这个”。源75d调查固定Plymouth24.004.60-5：原生update-root-fs/attach-to-session及Esc default/details可用，缺标准splash/rhgb会走details；原polly.splash=1不是该原生参数。root缺Image.Text需要的label-pango.so，应加精确plymouth-label24.004.60-5包（SHA9698da6e8893293b863afc21ef2bd9526cef0ed6ee5bcf25b008315327b1d349）及限定字体/fontconfig/ELF闭包，SIGRTMIN20/21要在privatePIDns按targetlibc验证。getty live-boot.conf早于polly.conf导致ExecStart被覆盖已源核；最终仅Live改正，不改WM/Cairo/native依赖。当前实施中，所有图形帧/Esc实测与source/IPC/mocks分开，不凭ping冒PASS。Podman可直接执行；本轮隔离QEMU画面授权未得具体答复，不操作用户HyperV或宿主显示设备，不挪用旧录像认证新动画。"
+      "evidence": "2026-10-19已交源码与正式候选范围：ca954→3e5→f6→11c正常合入并推送8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f/tree d23918a810f8d0186a4a40d133c8e2e54eb4fdd1。三个图形入口standard splash/GRUB静态图、early单一Plymouth24.004.60-5及label/一份字体/导出ELF闭包、跨根复用和handoff释放已接线；Esc仅Plymouth所有权阶段有效，WM/App及READY门不改。target SIGRTMIN34/caught54+55→execDFL、真实脚本/label477x23、samePIDnewrootIPC、有界cleanup与邻居/PID1保护通过；强杀FD释放不冒VT文字恢复。getty已知旧配置删除、zz有效合并及finalLive-marker限定payload qualifier齐接，11startup/early3/压缩根/privatehandoff/账户及真实payload检查通过，无WM/CMake/SDK新依赖。正式freshnative1539rawfiles/dirtyfalse，actualRuntime1bc7566e...，实际ISO/USB各405总路径其中18overlays；217bootstrapnodes/45modules/58ELF/regular33046498B低于64MiB，67early-root同字节资源与466expandedSquashFS路径另流核。工具125f新增9包、Live完整14包/12新label依赖，sqv离线签名Release→完整Packages→精确deb链通过、0existingupgrade，SDK40a/7b58/ABI4不变。Windows216摘要独立通过，ISO695502848B/sha33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb已标准原子hardlink发布PollyOS.iso，inode562949954769671/links2；旧179/97/fixture/FIRST保留。仅关闭可复验源码/候选交付，实际图形连续性/Esc/attach-TIOCCONS/HyperV/QEMU/强杀VT恢复/提速未资格，不借旧录像。"
     },
     {
       "id": "bug-native-fractional-layout",
@@ -5735,10 +5735,21 @@
     "inspectionCheckpoint": {
       "status": "done",
       "label": "当前已交GUI集中手测ISO",
-      "trigger": "根据用户修正早期启动等待/反馈问题请求，以已推送179f20e源码新编独立SquashFS+小bootstrap正式候选；旧97/843/DDD与证据保留。",
-      "scope": "最新候选为clean179f20e/schema2压缩RAMroot，bootstrap约4.3MB压缩/13.1MB普通文件展开，独立SquashFS654405632B，后续复制RAM再按需解压；早期真实阶段可见设计不伪造百分比。保持SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题。真实启动/脱介质/实际提速未测，不挪用旧资格；用户修复占用后固定入口已通过新一次标准发布切换，原失败及旧版本保留。",
+      "trigger": "用户针对录像10–17秒文字阶段要求默认自定义启动图/动画及Esc细节；以已推送8e6ca02源码freshnative重新构建正式完整ISO/USB，旧179/97/843/DDD与所有失败证据保留。",
+      "scope": "最新clean8e6/schema2压缩RAMroot候选已交。GRUB保静态图，early单一Plymouth在copy/hash前启动并跨根复用，Esc仅其display/input所有权阶段切同屏details；handoff后归WM/App，原生图承接READY。实际bootstrap12498088B压缩/33046498B展开、217nodes/45modules/58ELF、root632582144B，ISOUSB各405总路径/18overlay及扩展466根资源核；216摘要与标准原子hardlink发布通过。SDK40a2/ABI4/pin7b58、两实验OFF/Startsolid/七主题不变；实际图形/Esc/VT恢复/提速不冒已测。",
       "boundary": "只生成并交付ISO文件，不写入用户磁盘或安装系统；介质手测不替代E22原图、物理或实时性能资格。",
       "previousPublications": [
+        {
+          "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
+          "bytes": 709148672,
+          "sha256": "88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89",
+          "runtimeSourceRevision": "179f20e0d28a49071edfae6d0eb57f0cc9b625ac",
+          "mediaProducerRevision": "179f20e0d28a49071edfae6d0eb57f0cc9b625ac",
+          "runtimeImageID": "3110916d9df60494cb0f182e4acac0d4dfdc95614ef82c3a938994aa7261c975",
+          "payloadPathsVerified": 404,
+          "baseline": "原压缩RAMroot179保留；发布时bootNOTRUN，后用户录像见copy/hash/root切换/桌面但未显示ISOhash/源码身份，不挪给新8e6动画或Esc资格。初次EPERM及用户修复后成功发布回执均保；PollyOS-179f20e.iso仍指此旧版本。",
+          "retained": true
+        },
         {
           "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-97eb6d6-97eb6d6-0ce6d1690f93\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
           "bytes": 715036672,
@@ -5747,7 +5758,7 @@
           "mediaProducerRevision": "97eb6d6fbb11cfb8b55bef5a3ed9cb7734491681",
           "runtimeImageID": "877381d15948776a7467698bbe16ac96517894a903462f996c777a6e081b1162",
           "payloadPathsVerified": 404,
-          "baseline": "97诊断版未启动验收；此旧initramfs版仍由PollyOS.iso固定入口指向，本次rename失败不覆旧。",
+          "baseline": "97诊断版未启动验收；179初次rename失败时入口保此旧initramfs版，后续用户修复后切179、当前再切页首8e6，97原文件不覆。",
           "retained": true
         },
         {
@@ -5775,36 +5786,36 @@
       ],
       "publication": {
         "alias": "D:\\temp\\PollyOS\\PollyOS.iso",
-        "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-179f20e-179f20e-88867bf1a50d\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
-        "bytes": 709148672,
-        "sha256": "88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89",
-        "runtimeSourceRevision": "179f20e0d28a49071edfae6d0eb57f0cc9b625ac",
-        "mediaProducerRevision": "179f20e0d28a49071edfae6d0eb57f0cc9b625ac",
-        "runtimeImageID": "3110916d9df60494cb0f182e4acac0d4dfdc95614ef82c3a938994aa7261c975",
-        "payloadPathsVerified": 404,
+        "iso": "D:\\temp\\PollyOS\\pollydesktop-0.1.0-alpha.8-debian13-8e6ca02-8e6ca02-33724ccfbef6\\pollydesktop-0.1.0-alpha.8-debian13-x86_64-uefi-live.iso",
+        "bytes": 695502848,
+        "sha256": "33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb",
+        "runtimeSourceRevision": "8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f",
+        "mediaProducerRevision": "8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f",
+        "runtimeImageID": "1bc7566e1929ec10ac058ebe2c7353e5e2b9ca33032806d1cf359ec7f590029b",
+        "payloadPathsVerified": 405,
         "rootLayout": {
           "kind": "squashfs-ram-overlay",
           "path": "boot/root.squashfs",
-          "size": 654405632,
-          "sha256": "0afcae8321fba692e91424794d0d83473c2cd16ed960a4d4a2fa20ee3e5c4549",
+          "size": 632582144,
+          "sha256": "b5fbdfbbfcf431f4f40a2cc99baa0413e3df26cca35485abaaa7f56edee47d8d",
           "copyToRam": true,
           "writable": "tmpfs-overlay",
           "bootstrap": {
             "path": "boot/initramfs.gz",
-            "size": 4332358,
-            "sha256": "46c3a0cdc9afd75943a4fedd6df204f7b490f021b0eb4de218a1e97275b10a4a",
-            "uncompressedBytes": 13120270
+            "size": 12498088,
+            "sha256": "cdbce49c78add3dff6b57a0347028e1e3448fb6d2a24d5ce58ae0dad415e9fc9",
+            "uncompressedBytes": 33046498
           }
         },
         "stableAlias": {
           "path": "D:\\temp\\PollyOS\\PollyOS.iso",
           "updated": true,
-          "runtimeSourceRevision": "179f20e0d28a49071edfae6d0eb57f0cc9b625ac",
-          "reason": "首次EPERM回执保留；用户修复占用后新一次标准publisher原子替换成功，旧97文件原inode和SHA不变；没有由Agent关闭VM或光盘句柄。"
+          "runtimeSourceRevision": "8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f",
+          "reason": "当前新一次标准publisher原子hardlink替换成功，alias与版本ISO inode562949954769671/links2；原179/97文件与首次EPERM回执保留，没有关闭VM或光盘句柄。"
         },
-        "baseline": "构建发布时Agent未执行真实boot，原冻结回执NOT RUN不改；后续用户Hyper-V录像已见新RAM复制/校验OK/根挂载切换及桌面（日志uptime复制1.39→3.03s、切根3.81s，录像约20.5s桌面含8sGRUB倒计时）。录像未显示ISOhash/应用源码，属用户观察，不冒自动验收或旧新版同条件加速比；物理/拔介质/完整Apps未测。",
-        "limits": "代码已消除整根提前展开并增加真实阶段提示，但仍读取整份压缩根到RAM；实际启动/图形反馈/速度和完整Apps/splash/E22/物理资格未完成。SDK40a2/pin7b58，两实验OFF、Startsolid；旧性能HOLD不改。",
-        "aliasNote": "PollyOS.iso、PollyOS-179f20e.iso和新版本文件同inode硬链（links3）；用户修复占用后新一次标准发布成功，首次EPERM及旧97原文件保留，没有关闭/卸载用户VM。"
+        "baseline": "正式8e6 freshnative及实际ISOUSB内容通过，不是f6 dirty结构样件或2cd旧runtime重标。原179用户录像仅历史观察，不认证新动画/Esc；本轮未执行UEFI/QEMU/HyperV/physical/真实attach-TIOCCONS/介质移除/时长测试。",
+        "limits": "源码、真实脚本/font/IPC/进程故障组件与当前媒体资源通过不等于实际像素或按键通过；Esc仅Plymouth持有同VT/input时有效，handoff后归WM/App；forcedKILL确认FD退出不代表VT文字恢复。完整Apps/E22/物理与实时资格未关闭，SDK40a2/7b58/ABI4、两实验OFF/Startsolid及旧性能HOLD不变。",
+        "aliasNote": "PollyOS.iso与8e6版本文件同inode562949954769671/links2硬链，旧PollyOS-179f20e.iso和各历史版本保留。已打开的光盘句柄可能仍指旧inode；没有关闭/卸载用户VM。"
       }
     }
   }

@@ -4,20 +4,30 @@
 > `b68faa6566043c791b36f8b244323b08378156aa`。本文用于技术介绍、设计约束说明和开发交接；
 > 后续文档提交不改变已经生成的镜像及其源码版本。
 
-**2026-10-19 当前状态补充：** 最新 memory-only Live 候选为 clean `179f20e` 的
-`0.1.0-alpha.8`，固定 `D:\temp\PollyOS\PollyOS.iso` 与版本入口 `PollyOS-179f20e.iso` 同内容，
-709,148,672 字节，SHA256
-`88867bf1a50d326fec2e7251cc7c1372b6d215e2a07bb03f5c270b645194fe89`。
-最初固定入口替换被 Windows 拒绝；用户修复占用后新一次标准发布已成功，原失败和旧 97 文件保留，未由 Agent 关闭用户 VM。
-新结构为约 4.3 MB bootstrap + 独立 SquashFS 压缩根，后者复制到 RAM 再按需解压，
+**2026-10-19 当前状态补充：** 最新 memory-only Live 候选为 clean `8e6ca02` 的
+`0.1.0-alpha.8`，固定 `D:\temp\PollyOS\PollyOS.iso` 已原子硬链切到新版本目录内 ISO，
+695,502,848 字节，SHA256
+`33724ccfbef68fd666700aaac70a280ac5b0708b6f8f1bed0405baf96106e3bb`。
+新入口与版本文件同 inode/links2，旧 179/97/843/DDD、专用旧入口及原失败保留，
+未由 Agent 关闭 VM/光盘句柄。结构为约 12.5 MB bootstrap
+（regular 展开 33,046,498 字节，仍低于 64 MiB）+ 独立 SquashFS 压缩根，
+后者复制到 RAM 再按需解压，
 可写层仍为 tmpfs；不再在最早阶段展开整个系统。
 实际镜像内容及配对原生库核验通过，包含启动时间线诊断增强、当前七主题，
 以及默认关闭的 FIR/Yoga 可选后端；诊断增强不冒黑屏根因已确定或停顿已修复。
-本次没有执行 UEFI/QEMU、Hyper-V 或物理启动，实际提速和介质移除均未测；完整 Apps、
-默认 splash 和实时资格未完成。安装版 VHDX、旧 ISO 和历史证据不重标。
+本次实际 ISO/USB 各 405 总 runtime/overlay 路径、扩展 466 个根资源路径与
+216 条交付摘要通过；没有执行 UEFI/QEMU、Hyper-V 或物理启动。
+实际提速、介质移除、新动画/Esc/console attachment/强杀 VT 恢复及完整 Apps、
+实时资格未完成。安装版 VHDX、旧 ISO 和历史证据不重标。
 最新介质、已知限制及重整后的 E22 任务见
 [当前交接](POLLYOS-HANDOFF.md)、[状态列表](POLLYOS-E22-STATUS.md)和
 [唯一计划数据](POLLYOS-PLAN.json)。
+
+当前候选源码 `8e6ca02` 已接入 bootstrap 阶段的单一 Plymouth、标准 `splash`、
+精确 label/font/plugin 闭包和有效 Live getty 配置。Esc 在 Plymouth 持有显示/键盘时
+切换同屏 details，handoff 后恢复 WM/App 用途；未添加 WM 日志渲染器或 SDK 依赖。
+新正式媒体已复验发布，旧 179 不含此功能；源码/字体/IPC/进程退出测试不冒实际
+动画、Esc、VT 恢复或 Hyper-V 启动通过。
 
 本轮新增 **D1 持久安装虚拟盘候选**：用户确认 GPT/EFI、ext4 A/B 系统槽和独立
 `/home` 布局，已实现镜像构建及 A/A/B/A 四次冷启动的数据连续性。
