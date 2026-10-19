@@ -161,6 +161,8 @@ def build(source, source_sha, config, config_sha, output, jobs):
                 target.write(("\n$ " + repr(command) + "\n").encode())
                 result = subprocess.run(command, check=False, stdout=subprocess.PIPE if capture else target,
                                         stderr=target, timeout=21600)
+                if capture and result.stdout is not None:
+                    target.write(result.stdout)
                 if result.returncode:
                     raise subprocess.CalledProcessError(result.returncode, command)
                 return result.stdout.decode().strip() if capture else None
@@ -181,6 +183,19 @@ def build(source, source_sha, config, config_sha, output, jobs):
                 "--set-str", "SYSTEM_TRUSTED_KEYS", "", "--set-str", "SYSTEM_REVOCATION_KEYS", "",
                 *signing)
             run(*make, "olddefconfig")
+            run(*make, "syncconfig")
+            config_values = []
+            for path in (obj / ".config", obj / "include/config/auto.conf"):
+                config_values.append({key: value.strip('"') for line in path.read_text().splitlines()
+                                      if line.startswith("CONFIG_") and "=" in line
+                                      for key, value in [line.split("=", 1)]})
+            policy_names = {name for values in config_values for name in values
+                            if name.startswith(("CONFIG_LOCALVERSION", "CONFIG_DRM_", "CONFIG_SYSFB_",
+                                                "CONFIG_MODULE_COMPRESS", "CONFIG_MODULE_SIG",
+                                                "CONFIG_SYSTEM_TRUSTED_KEYS", "CONFIG_SYSTEM_REVOCATION_KEYS"))}
+            policy_names.add("CONFIG_FB_SIMPLE")
+            if any(config_values[0].get(name, "n") != config_values[1].get(name, "n") for name in policy_names):
+                raise ValueError("Kernel .config and generated auto.conf disagree on basic kernel policy")
             PROFILES["verify_kernel"]((obj / ".config").read_text(), PROFILES["profile"]("basic"))
             release = run(*make, "-s", "kernelrelease", capture=True)
             if not re.fullmatch(r"[a-zA-Z0-9.+_-]+-polly-basic", release):

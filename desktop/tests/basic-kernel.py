@@ -114,7 +114,7 @@ class BasicKernel(unittest.TestCase):
             directory = Path(temporary)
             inputs = directory / "pack-input"
             inputs.mkdir()
-            pack(inputs)
+            pack(inputs, config=fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\n')
             config = directory / "base.config"
             config.write_text('CONFIG_DRM=m\n# CONFIG_DRM_SIMPLEDRM is not set\n'
                               'CONFIG_SYSTEM_TRUSTED_KEYS="debian/missing-certs.pem"\n'
@@ -131,19 +131,34 @@ class BasicKernel(unittest.TestCase):
                 archive.add(source_dir, arcname="linux-fixture")
             real_run = subprocess.run
             calls = []
+            release_prefix = b""
+            sync_enabled = True
 
             def make(command, **kwargs):
                 if command[0] == "make":
                     calls.append(command)
                     obj = Path(next(arg[2:] for arg in command if arg.startswith("O=")))
+                    auto = obj / "include/config/auto.conf"
+                    if "olddefconfig" in command and not auto.exists():
+                        auto.parent.mkdir(parents=True)
+                        auto.write_text("CONFIG_LOCALVERSION=\n")
+                    if "syncconfig" in command and sync_enabled:
+                        self.assertIn('CONFIG_LOCALVERSION="-polly-basic"', (obj / ".config").read_text())
+                        auto.write_text("\n".join(key + "=" + value.strip('"')
+                                                for line in (obj / ".config").read_text().splitlines()
+                                                if line.startswith("CONFIG_") and "=" in line
+                                                for key, value in [line.split("=", 1)]) + "\n")
                     if "kernelrelease" in command:
-                        return subprocess.CompletedProcess(command, 0, stdout=b"6.12.111-polly-basic\n")
+                        values = dict(line.split("=", 1) for line in auto.read_text().splitlines())
+                        actual = release_prefix + b"6.12.111" + values.get("CONFIG_LOCALVERSION", "").encode() + b"\n"
+                        return subprocess.CompletedProcess(command, 0, stdout=actual)
                     if "bindeb-pkg" in command:
                         shutil.copyfile(inputs / "kernel-image.deb", obj.parent / "linux-image-fixture.deb")
                     return subprocess.CompletedProcess(command, 0)
                 if command[0].endswith("/scripts/config"):
                     calls.append(command)
-                    Path(command[command.index("--file") + 1]).write_text(fixtures["BASIC_CONFIG"])
+                    Path(command[command.index("--file") + 1]).write_text(
+                        fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\n')
                     return subprocess.CompletedProcess(command, 0)
                 return real_run(command, **kwargs)
 
@@ -155,6 +170,9 @@ class BasicKernel(unittest.TestCase):
             self.assertEqual([command[-1] for command in calls if command[0] == "make" and "olddefconfig" in command],
                              ["olddefconfig", "olddefconfig"])
             self.assertTrue(any("bindeb-pkg" in command for command in calls))
+            targets = [command[-1] for command in calls if command[0] == "make"]
+            self.assertLess(targets.index("syncconfig"), targets.index("kernelrelease"))
+            self.assertEqual(targets[targets.index("syncconfig") - 1], "olddefconfig")
             configure = next(command for command in calls if command[0].endswith("/scripts/config"))
             for symbol, expected in (("SYSTEM_TRUSTED_KEYS", ""), ("SYSTEM_REVOCATION_KEYS", ""),
                                      ("MODULE_SIG_KEY", "certs/signing_key.pem")):
@@ -162,11 +180,33 @@ class BasicKernel(unittest.TestCase):
                 self.assertEqual(configure[index - 1], "--set-str")
                 self.assertEqual(configure[index + 1], expected)
             self.assertEqual(configure[configure.index("MODULE_SIG_ALL") - 1], "--enable")
-            self.assertEqual((output / "kernel.config").read_text(), fixtures["BASIC_CONFIG"])
+            self.assertEqual((output / "kernel.config").read_text(), fixtures["BASIC_CONFIG"] + 'CONFIG_LOCALVERSION="-polly-basic"\n')
             self.assertEqual(receipt["configSha256"], tools["digest"](output / "kernel.config"))
             self.assertFalse(list(output.rglob("signing_key.pem")))
             self.assertEqual(len(list(output.glob("*.deb"))), 1)
             self.assertTrue((output / "kernel-build.log").is_file())
+            self.assertIn(b"6.12.111-polly-basic\n", (output / "kernel-build.log").read_bytes())
+            sync_enabled = False
+            stale = directory / "stale-auto-config"
+            calls.clear()
+            with mock.patch.object(subprocess, "run", side_effect=make):
+                with self.assertRaisesRegex(ValueError, "generated auto.conf disagree"):
+                    tools["build"](source, tools["digest"](source), config, tools["digest"](config), stale, 2)
+            self.assertFalse(stale.exists())
+            self.assertFalse(any("bindeb-pkg" in command for command in calls))
+            sync_enabled = True
+            release_prefix = b"unexpected make banner\n"
+            invalid_release = directory / "invalid-release"
+            calls.clear()
+            with mock.patch.object(subprocess, "run", side_effect=make):
+                with self.assertRaisesRegex(ValueError, "Dedicated kernel release"):
+                    tools["build"](source, tools["digest"](source), config, tools["digest"](config), invalid_release, 2)
+            self.assertFalse(invalid_release.exists())
+            self.assertFalse(any("bindeb-pkg" in command for command in calls))
+            failure = next(directory.glob("invalid-release.failed-*.log"))
+            self.assertIn(release_prefix + b"6.12.111-polly-basic\n", failure.read_bytes(),
+                          "Retain raw captured stdout before parsing or rejection")
+            release_prefix = b""
             with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
                 tools["build"](source, "0" * 64, config, tools["digest"](config), directory / "wrong", 2)
             hostile = directory / "hostile.tar"
