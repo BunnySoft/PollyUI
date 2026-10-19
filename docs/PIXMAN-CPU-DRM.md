@@ -158,3 +158,18 @@ Debian 13 minbase + glibc + BusyBox PID 1，复用同一 Pixman wlroots：
 
 它仍不是完整 `minimal-zh`：缺 PollyUI shell、WQY/Rime、systemd/PAM、APT lock
 和受支持的 `drm_dumb` 生产路径。
+
+## 10. CPU-only PollyUI
+
+PollyUI（layer shell）已用同一套 CPU 选项构建：
+
+```sh
+OUT=$PWD/build/minimal-zh sh desktop/release/minimal-zh/build-pollyui.sh
+```
+
+- `PU_WEBGL2=OFF`、`PU_WEBGPU=OFF`、`PU_METAL=OFF`
+- `ldd` 不含 GBM/EGL/GLES/LLVM；只额外依赖 SDL3
+- 构建入口：`desktop/release/minimal-zh/build-pollyui.sh`
+
+还没有把 PollyUI 作为 PollyWM 的 `--shell` 与 JS/assets 一起打包运行，也还没有
+WQY/Rime/systemd/PAM。
