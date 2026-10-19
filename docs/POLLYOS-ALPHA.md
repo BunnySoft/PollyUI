@@ -36,11 +36,13 @@ handoff 退出后归 WM/App，原生启动图继续承接至 READY。
 旧 179 镜像不含这项功能；当前正式媒体已经独立复验并发布，但组件/结构结果和
 旧录像均不代替新动画、真实按键、console attachment 或强杀后 VT 恢复的实屏资格。
 
-**后续构建能力：** 已合入 `full/vm/intel/nvidia` 声明式 Live SKU，复用公共 native
-并按包选择硬件固件，详 [构建入口](BUILDING.md#hardware-sku-live-builds)。
-本轮仍共享完整 kernel/Mesa/LLVM 与中文/Apps，未实际组装四份正式新镜像或量测压缩
-节省；页首已发布的 8e6 和固定入口未变。LiveCD 与 Install 分离，当前 Install
-只接 full locked platform，精简 Install 明确拒绝，不能冒已交多安装版或安装器。
+**后续构建能力：** 已合入 `basic/vm/intel/nvidia/amd/full` 声明式 Live SKU，
+顶层 `tools/build.sh --live` 可用 `--sku` 单选或 `--skus` 多选，默认 full；
+详 [构建入口](BUILDING.md#hardware-sku-live-builds)。basic 必须显式提供经验证的
+专用 simpledrm kernel pack，其余五类继续 stock kernel。所有类保共享 Mesa/LLVM、
+中文与 Apps；本轮没有实际编专用内核、组装六份正式镜像或量测压缩节省/基础图形输出。
+页首 8e6 和固定入口未变。LiveCD 与 Install 分离，当前 Install 只接 full locked
+platform，精简 Install 明确拒绝，不冒已交多安装版或安装器。
 
 ## Alpha 的范围
 

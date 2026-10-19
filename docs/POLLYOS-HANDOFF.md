@@ -1,6 +1,55 @@
 # PollyOS 当前批次交接
 
-## 2026-10-19 硬件 SKU 构建能力已合入，现发布媒体不变
+## 2026-10-19 六种 SKU 与 BUILD 参数已接线，现发布媒体不变
+
+后续源码 `b9b2042b` 和审阅修正 `365fdcf6552729f6315735c3a752a3815865bd77`
+已正常合入 `40f760869925eaa7ad0b87758f6155ffd142ef94`。
+可选 `basic | vm | intel | nvidia | amd | full`，默认仍为 `full`。
+顶层 Linux/WSL 构建脚本新增独立 `--live` 模式，不先检查 Skia/CMake 或执行
+native build；Windows MSVC `tools/build.ps1` 不变。
+
+```sh
+bash tools/build.sh --live --help
+bash tools/build.sh --live "$OUT/live-amd" --sku amd \
+  --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
+bash tools/build.sh --live "$OUT/live-skus" --skus vm,intel,nvidia,amd,full \
+  --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
+```
+
+`--sku` 单选与 `--skus` 多选互斥；未知/重复/空参数、混入 native 参数均拒绝，
+help 不要求 runtime/kernel 输入或创建输出。AMD 增加 amdgpu/Mesa 与
+`firmware-amd-graphics` 路线，full 扩为三家 GPU 固件合集，不冒全型号认证。
+其它五类保原 stock kernel；所有类保 Intel CPU 微码，本轮没有加入 AMD CPU 微码。
+
+**basic 需要显式 `--basic-kernel-pack`，不能直接使用当前 stock 内核。**
+父只读实际 `6.12.111+deb13-amd64` 配置证实 `DRM_SIMPLEDRM` 和 `SYSFB_SIMPLEFB`
+关闭；EFI/simplefb 或 Plymouth 能显示不等于当前 wlroots 能输出桌面。
+新增 `desktop/release/debian/basic-kernel.py build` 从用户明确提供并核 SHA 的
+Linux 源码/config 执行标准 bindeb-pkg，生成单个专用 image `.deb` 和来源/config/
+release/hash 收据；不会下载内核、补装工具或替换其它 SKU 的内核。
+完整调用见 [构建指南的 basic 内核输入小节](BUILDING.md#hardware-sku-live-builds)。
+
+专用内核启用 simpledrm/SYSFB，basic 单独阻止竞争 GPU 模块，不使用 `nomodeset`，
+无 splash 入口也加载必需 simpledrm。普通会话只选择唯一、设备身份相符且有
+connected mode 的 simple-framebuffer DRM 节点，再用现 pixman/raster；
+无节点/歧义/原生接管/显式 GPU 请求留诊断，不以 fb0、启动图片或 headless 冒 READY。
+kernel pack 复制到固定输入后核验，身份贯穿 root/bootstrap/origin/ISO/USB，
+旧无 SKU 媒体继续只读兼容；新发布器已复验原 8e6 的 216 摘要及原 inode/links。
+
+规范 Git blob 快照已复核：b9 的完整 49 项 Python、18 项 Node 和 package contract
+通过；最终 365 修正再跑关联 17 项 Python、18 项 Node，0 skip。父合入后的 Windows
+13 项和 package contract 通过，集成产品与最终规范快照逐 Git 路径无差异。
+实际 constructor/顶层 CLI 控制流及小 `.deb`/归档/六组微型 ISO/USB 有覆盖，
+但 make/Podman 构建和设备节点/挂载边界明确是替身，不升级成真实内核或图形资格。
+
+basic 采用明确的 unsigned-development 信任策略：清除发行版证书路径，启用模块
+签名时统一签全部模块、只在临时 buildtree 自动生成构建 key；不导出私钥或赋予
+Secure Boot 信任。producer 的最终包拒绝也保留唯一原始失败日志，不发布半成品。
+真实内核编译、APT 平台组装、新六份正式 ISO、压缩节省和 basic 图形启动均
+**未执行/未测**；已交的是源码、可选输入工具与组件路径，不是可在任意机器启动的证明。
+当前 `PollyOS.iso` 和历史媒体/收据不变，LiveCD 与 Install 仍独立，精简 Install 未接线。
+
+## 2026-10-19 首轮四种硬件 SKU（源码历史）
 
 源码 `68a40ae9` 和审阅修正 `487e55e6200fcb50e23cfe328bbd83b92dcf372f`
 已正常合入 `311940e9d1a51bbb9db94c345ecfc7098f5cebe2`。

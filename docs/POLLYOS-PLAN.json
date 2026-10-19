@@ -1253,12 +1253,12 @@
         "candidate"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "live-hardware-skus",
         "live-compressed-root-boot"
       ],
-      "evidence": "2026-10-19用户确认basic|vm|intel|nvidia|amd|full后明确“我们来补齐这些，BUILD脚本可以作为选项参数”。父只读actual8e6 target6.12.111配置SHA7264f6c17e856bf18ec53085a01be10d8e466f32a8dcb13c08c4e705d3b2c35b：DRM_SIMPLEDRM=n/SYSFB_SIMPLEFB=n、EFI/simplefb=y，不能供现wlroots通用DRM桌面；nativeI915/XE/Nouveau/AMDGPU/Radeon都是m。配对SDK缓存wlroots0.19.3真实allocator源具有DRMprimary/master+dumb/mmap/PRIME+pixman数据路径，不冒实际GPU资格。用户暂不可答kernel路线澄清，按自主要求保守选basic显式专用kernel输入/其余SKUstock不变，脚本不自动安装工具/下载kernel/实际大编译；07c3500a同owner实施，现正式8e6媒体/alias不动。"
+      "evidence": "2026-10-19已交源码/组件范围：b9b2042b→365fdcf6552729f6315735c3a752a3815865bd77正常合40f760869925eaa7ad0b87758f6155ffd142ef94。六SKU/AMD固件amdgpu/full三GPU合集、顶层tools/build.sh --live、--sku单选/--skus互斥多选和无输入无输出help齐接，full默认。实际target6.12.111配置SHA7264f6c...的SIMPLEDRM/SYSFB_SIMPLEFB关闭，basic不能误用stock；显式source/config SHA→standard bindeb-pkg→单image.deb pack核实际架构/唯一release/modules/config/imagehash，固定copy后再核，身份入root/bootstrap/origin/media；其它五版原stock不变。basic无nomodeset/加速菜单，专属模块阻止接管且拒builtin冲突，无splash亦加载simpledrm，普通会话核唯一primaryDRM设备/driver/module/connectedmode后pixman/raster，不拿fb/Plymouth/headless当READY。审阅后补unsigneddev证书路径/模块统一签名策略，临时buildkey不入pack/日志，最终包拒绝亦保完整原始失败log。1553canonicalrawblobs实核；b9完整49Python/18Node+packagecontract，365改动关联17Python/18Node全过0skip（make/Podman/硬件节点边界明确替身，实际小deb/archive/tiny六ISOUSB非bootable），父Windows13/packagecontract及旧8e6实际216摘要RO通过，原aliasinode562949954769671/links2未变。当前config签名三路径实际null不捏造缺cert已证，通用用户config风险另修；所有FIRST/fixture错误保留。仅源码/组件闭合，未编真内核/native/APT平台/正式六ISO，basic真实GOP/KMS桌面/压缩节省/VM/物理未测；SDK/WM/账户READY不改，AMD CPU微码未新增，旧媒体不重标。"
     },
     {
       "id": "bug-native-fractional-layout",

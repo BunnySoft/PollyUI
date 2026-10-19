@@ -29,12 +29,13 @@
 新正式媒体已复验发布，旧 179 不含此功能；源码/字体/IPC/进程退出测试不冒实际
 动画、Esc、VT 恢复或 Hyper-V 启动通过。
 
-已新增声明式 `full/vm/intel/nvidia` Live SKU 构建入口：公共 Runtime/源码/tools
-固定后串行按固件包组装，产物命名和实际 profile 回执隔离；保留完整 kernel/Mesa/
-LLVM、中文与 Apps，不以启动选项替代内容裁剪。LiveCD 与 Install 分离，精简
-Install 产物尚未接线并明确拒绝输入。当前仅交源码/组件能力，四份正式镜像与实际
-压缩节省未测；页首 8e6 仍是现发布媒体，见 [构建指南](BUILDING.md#hardware-sku-live-builds)
-和 [最新交接](POLLYOS-HANDOFF.md)。
+已新增 `basic/vm/intel/nvidia/amd/full` Live SKU：`tools/build.sh --live` 以
+`--sku` 单选或 `--skus` 多选、默认 full；固定公共 Runtime/源码/tools 后串行组装，
+产物命名和实际 profile 回执隔离。basic 需要显式专用 simpledrm kernel pack，
+其它五类用 stock kernel，仍共享 Mesa/LLVM、中文与 Apps，不以启动选项冒内容裁剪。
+LiveCD 与 Install 分离，精简 Install 尚未接线并明确拒绝。本轮只交源码与组件，
+未编专用内核或生成六份正式镜像，basic 输出及压缩节省未测；页首 8e6 仍是现发布媒体，
+见 [构建指南](BUILDING.md#hardware-sku-live-builds)和 [最新交接](POLLYOS-HANDOFF.md)。
 
 本轮新增 **D1 持久安装虚拟盘候选**：用户确认 GPT/EFI、ext4 A/B 系统槽和独立
 `/home` 布局，已实现镜像构建及 A/A/B/A 四次冷启动的数据连续性。
