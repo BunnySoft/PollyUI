@@ -197,21 +197,21 @@ def main():
         # The source is a template; fingerprint the actual embedded configuration too.
         cfg_source = repo / ("desktop/release/debian/live-grub.cfg" if debian else "desktop/release/live/grub.cfg")
         cfg = staging / "grub.cfg"
-        configuration = cfg_source.read_text()
+        grub_text = cfg_source.read_text()
         if debian:
-            configuration = profiles["grub_configuration"](configuration, media_id, args.sku)
+            grub_text = profiles["grub_configuration"](grub_text, media_id, args.sku)
             if not compressed_root:
-                configuration = configuration.replace(
+                grub_text = grub_text.replace(
                     "polly_prepare_media", "polly_legacy_media")
-                start = configuration.index("function polly_legacy_media {")
-                end = configuration.index('\nmenuentry ', start)
-                configuration = (configuration[:start] +
-                                 "function polly_legacy_media {\n"
-                                 "    search --no-floppy --file --set=root /polly-live.marker\n}\n" +
-                                 configuration[end:])
-                configuration = configuration.replace(
+                start = grub_text.index("function polly_legacy_media {")
+                end = grub_text.index('\nmenuentry ', start)
+                grub_text = (grub_text[:start] +
+                             "function polly_legacy_media {\n"
+                             "    search --no-floppy --file --set=root /polly-live.marker\n}\n" +
+                             grub_text[end:])
+                grub_text = grub_text.replace(
                     " polly.media_uuid=$polly_media_uuid polly.media_id=" + media_id, "")
-        cfg.write_text(configuration)
+        cfg.write_text(grub_text)
         if debian:
             run("grub-script-check", str(cfg))
         grub_receipt = {"templateSha256": digest(cfg_source), "embeddedSha256": digest(cfg)}

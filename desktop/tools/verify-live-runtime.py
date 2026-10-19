@@ -344,12 +344,12 @@ def main():
         if compressed:
             layout = media_manifest["root"]
             check_bootstrap(initramfs, layout)
-            configuration = (args.media / "grub.cfg").read_bytes()
-            if hashlib.sha256(configuration).hexdigest() != media_manifest["grub"]["embeddedSha256"]:
+            grub_bytes = (args.media / "grub.cfg").read_bytes()
+            if hashlib.sha256(grub_bytes).hexdigest() != media_manifest["grub"]["embeddedSha256"]:
                 raise ValueError("Retained generated GRUB config differs")
             if "sku" in media_manifest:
                 template = Path(__file__).resolve().parents[1] / "release/debian/live-grub.cfg"
-                if configuration.decode() != PROFILES["grub_configuration"](
+                if grub_bytes.decode() != PROFILES["grub_configuration"](
                         template.read_text(), layout["mediaIdentity"], media_manifest["sku"]):
                     raise ValueError("Actual embedded GRUB differs from SKU kernel/display policy")
             efi = Path(temporary) / "BOOTX64.EFI"
@@ -358,7 +358,7 @@ def main():
                 subprocess.run(["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract",
                                 "/" + source, str(target)], check=True, timeout=180,
                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            if efi.read_bytes().count(configuration) != 1:
+            if efi.read_bytes().count(grub_bytes) != 1:
                 raise ValueError("Actual EFI does not contain the exact generated GRUB config")
             inner_efi = Path(temporary) / "inner-efi"
             subprocess.run(["mcopy", "-i", str(efiboot), "::/EFI/BOOT/BOOTX64.EFI", str(inner_efi)],

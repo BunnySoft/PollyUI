@@ -127,8 +127,18 @@ done
 case "$uuid" in ''|*[!a-zA-Z0-9-]*) fail "Missing/invalid boot filesystem UUID" ;; esac
 uuid=$(printf '%s' "$uuid" | tr '[:upper:]' '[:lower:]')
 [ "$identity" = "$POLLY_MEDIA_ID" ] || fail "Boot/bootstrap media identity mismatch"
+# Hardware-specific transport/input drivers are best-effort: their absence must
+# not stop a valid QEMU/virtio or physical boot before the media is mounted.
+optional_modules=" hv_vmbus hv_storvsc hid_hyperv hyperv_keyboard ehci_pci ohci_pci uhci_hcd uas usbhid hid_generic "
 while read -r module; do
-    modprobe "$module" || fail "Cannot load driver $module"
+    case "$optional_modules" in
+        *" $module "*)
+            if ! modprobe "$module" 2>>"$log_directory/early-boot.log"; then
+                stage "Optional driver $module unavailable; continuing with other media paths"
+            fi ;;
+        *)
+            modprobe "$module" || fail "Cannot load driver $module" ;;
+    esac
 done </etc/polly-live-modules
 if [ -f /etc/polly-live-graphics-required ]; then
     while read -r module; do
