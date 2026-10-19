@@ -74,6 +74,8 @@ def main():
         origin = None
 
         with tarfile.open(args.export, "r:") as archive:
+            if debian and args.legacy_initramfs:
+                profiles["verify_legacy_export"](archive, root_tools["export_members"](archive))
             kernel_name = "boot/vmlinuz-lts"
             if debian:
                 with archive.extractfile("usr/lib/os-release") as release:

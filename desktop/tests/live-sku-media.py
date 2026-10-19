@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Actual tiny ISO/USB byte verification for four synthetic, non-bootable SKU fixtures."""
 import hashlib
+import copy
 import json
 from pathlib import Path
 import runpy
@@ -133,6 +134,10 @@ class MediaProfiles(unittest.TestCase):
                             "bootFiles": [{"path": "boot/" + file.name, "size": file.stat().st_size, "sha256": digest(file)}
                                           for file in boot.iterdir() if file.name != "efiboot.img"]}
                 profiles["validate_media"](manifest)
+                duplicate = copy.deepcopy(manifest)
+                duplicate["packages"][0] = dict(duplicate["packages"][1])
+                with self.assertRaisesRegex(ValueError, "differs from media package inventory"):
+                    profiles["validate_media"](duplicate)
                 write(media / "live-manifest.json", manifest)
                 command = [sys.executable, "-I", "-B", str(REPO / "desktop/tools/verify-live-runtime.py"),
                            str(media), str(bundle), str(inputs), "--producer-revision", "d" * 40]

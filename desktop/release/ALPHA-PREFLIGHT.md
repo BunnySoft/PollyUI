@@ -18,14 +18,22 @@ Minimal tooling-only checks (no native build, apt or guest):
 
 ```sh
 node --test desktop/tests/live-profiles.mjs desktop/tests/publish-live-iso.mjs desktop/tests/release-report.mjs
+# Linux SDK: execute the real shell/Node entry with isolated external backend fixtures:
+node --test desktop/tests/live-sku-build.mjs
 # In an existing private root tools container, source read-only, writable /tmp:
 python3 -I -B desktop/tests/live-profiles.py
+python3 -I -B desktop/tests/live-bootstrap-constructor.py
 python3 -I -B desktop/tests/live-sku-media.py
 ```
 
 The latter makes tiny synthetic, deliberately non-bootable ISO/USB **files** and
 verifies actual root/boot profile bytes for all four SKUs. Its receipts are
 `fixtureOnly` and cannot be published; it is not a real SKU or boot result.
+The constructor test executes actual `build_bootstrap`, profile verification,
+hardware-marker creation and cpio packing, replacing only external ELF/module
+copy boundaries. The entry test executes the actual shell/Node entry and source/
+bundle freeze, integrity/reporting and failure control; only external Podman
+operations use synthetic boundary data. Neither is an apt/native-build result.
 New explicit-SKU publication is versioned-only by default; only explicitly
 selected `full --update-alias` may change `PollyOS.iso`.
 LiveCD contains no new installer. Reduced locked platforms are retained, but

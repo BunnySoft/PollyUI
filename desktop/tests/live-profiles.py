@@ -8,6 +8,7 @@ from pathlib import Path
 import runpy
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 from types import SimpleNamespace
@@ -164,6 +165,64 @@ class HardwareProfiles(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Install SKU filenames/manifests are not wired"):
                 builder["build"](args)
             self.assertFalse(output.exists())
+
+    def test_orphan_profile_copy_cannot_downgrade_a_direct_install_export_to_legacy(self):
+        builder = runpy.run_path(str(REPO / "desktop/tools/build-installed-image.py"))
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            root = directory / "root"
+            root.mkdir()
+            seed(root, "full")
+            (root / profiles["MARKER"]).unlink()
+            export = directory / "root.tar"
+            with tarfile.open(export, "w") as archive:
+                archive.add(root, arcname=".")
+            output = directory / "must-not-exist"
+            args = SimpleNamespace(source_revision="a" * 40, export=export, output=output,
+                                   system_mib=3072, data_mib=2048)
+            with self.assertRaisesRegex(ValueError, "refusing legacy Install downgrade"):
+                builder["build"](args)
+            self.assertFalse(output.exists())
+
+    def test_direct_legacy_live_entry_refuses_new_profile_artifacts_and_sku_origins(self):
+        for kind in ("full", "vm", "orphan-copy", "sku-origin"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                root = directory / "root"
+                root.mkdir()
+                seed(root, "full" if kind == "full" else "vm")
+                if kind == "orphan-copy":
+                    (root / profiles["MARKER"]).unlink()
+                elif kind == "sku-origin":
+                    for name in (profiles["MARKER"], profiles["PROFILE_COPY"]):
+                        (root / name).unlink()
+                    origin = root / "usr/share/pollyui/runtime-origin.json"
+                    origin.parent.mkdir()
+                    origin.write_text(json.dumps({"schemaVersion": 1, "sku": "vm"}))
+                export = directory / "root.tar"
+                with tarfile.open(export, "w") as archive:
+                    archive.add(root, arcname=".")
+                output = directory / "must-not-exist"
+                result = subprocess.run([sys.executable, "-I", "-B", str(REPO / "desktop/tools/build-live-image.py"),
+                                         str(export), str(output), "--source-revision", "a" * 40,
+                                         "--source-dirty", "0", "--runtime-image", "b" * 64,
+                                         "--distribution", "debian13", "--legacy-initramfs"],
+                                        capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Legacy initramfs", result.stderr)
+                self.assertFalse(output.exists())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            seed(root, "full", marked=False)
+            origin = root / "usr/share/pollyui/runtime-origin.json"
+            origin.parent.mkdir()
+            origin.write_text(json.dumps({"schemaVersion": 1, "runtimeSourceRevision": "a" * 40}))
+            export = root.parent / "historical.tar"
+            with tarfile.open(export, "w") as archive:
+                archive.add(root, arcname=".")
+            with tarfile.open(export) as archive:
+                profiles["verify_legacy_export"](archive, root_tools["export_members"](archive))
 
     def test_size_report_measures_actual_files_not_declared_or_compressed_savings(self):
         with tempfile.TemporaryDirectory() as temporary:

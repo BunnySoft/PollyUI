@@ -6,6 +6,7 @@ import lzma
 import os
 from pathlib import Path, PurePosixPath
 import re
+import runpy
 import shutil
 import stat
 import struct

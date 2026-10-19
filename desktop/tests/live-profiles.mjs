@@ -106,6 +106,9 @@ test('all four media layouts bind source profile, root/boot, runtime, sizes and 
       m => { m.nativeRuntime.imageID = 'mutable-tag'; }, m => { m.imageToolsID = 'mutable-tools'; },
       m => { m.sizeReport.media.isoBytes++; }, m => { m.sizeReport.media.rootBytes++; },
       m => { m.sizeReport.packages.pop(); },
+      m => { m.packages[0] = { ...m.packages[1] }; },
+      m => { m.packages[0] = { name: 'unknown-package', version: '1.0' }; },
+      m => { m.packages[0] = { name: 'unknown-package' }; },
       m => { m.sizeReport.packages[0].regularFileBytes = -1; },
     ]) {
       const copy = structuredClone(manifest);

@@ -99,8 +99,17 @@ export function validateHardwareMedia(value) {
   const allowed = new Set(expected.requiredPackages.map(spec => spec.split('=')[0]));
   if ([...installed.keys()].some(name => name.startsWith('firmware-') && !allowed.has(name)))
     fail('Undeclared hardware firmware package');
-  if (!Array.isArray(value.packages) || value.packages.length !== installed.size ||
-      value.packages.some(pkg => installed.get(pkg.name.replace(/:amd64$/, '')) !== pkg.version))
+  const inventory = new Map();
+  if (!Array.isArray(value.packages)) fail('Missing hardware media package inventory');
+  for (const pkg of value.packages) {
+    if (!pkg || typeof pkg.name !== 'string' || typeof pkg.version !== 'string' || !pkg.version)
+      fail('Invalid hardware media package');
+    const name = pkg.name.replace(/:amd64$/, '');
+    if (inventory.has(name)) fail('Duplicate hardware media package: ' + name);
+    inventory.set(name, pkg.version);
+  }
+  if (inventory.size !== installed.size ||
+      [...inventory].some(([name, version]) => !installed.has(name) || installed.get(name) !== version))
     fail('Hardware size report differs from media package inventory');
   const measured = report.media;
   if (!measured || measured.isoBytes !== value.iso.size || measured.usbBytes !== value.usb.size ||

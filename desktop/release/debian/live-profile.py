@@ -150,14 +150,30 @@ def clean_runtime(root, path=MANIFEST):
 
 
 def installed_input(root):
-    target = root / MARKER
-    if target.exists() or target.is_symlink():
+    target, copy = root / MARKER, root / PROFILE_COPY
+    present = [path.exists() or path.is_symlink() for path in (target, copy)]
+    if any(present):
+        if not all(present):
+            raise ValueError("Incomplete hardware profile artifacts; refusing legacy Install downgrade")
         regular(target)
         value = json.loads(target.read_bytes())
         if value.get("sku") != "full":
             raise ValueError("Install SKU filenames/manifests are not wired: reduced hardware platforms cannot "
                              "become unlabelled installed media. Use the full locked platform.")
         verify(root, "full")
+
+
+def verify_legacy_export(archive, members):
+    if any(name in members for name in (MARKER, PROFILE_COPY)):
+        raise ValueError("Legacy initramfs accepts only historical unlabelled roots, not hardware profile artifacts")
+    origin = members.get("usr/share/pollyui/runtime-origin.json")
+    if origin is not None:
+        if not origin.isfile() or origin.size > 1024 * 1024:
+            raise ValueError("Invalid legacy runtime origin")
+        with archive.extractfile(origin) as source:
+            value = json.loads(source.read())
+        if not isinstance(value, dict) or any(key in value for key in ("sku", "hardwareProfile", "nativeRuntime")):
+            raise ValueError("Legacy initramfs cannot contain a hardware SKU runtime origin")
 
 
 def size_report(root, sku, repo):

@@ -56,6 +56,10 @@ builder accepts the full platform explicitly via `POLLY_PLATFORM_IMAGE=<imageID>
 It refuses reduced hardware markers with an Install-SKU-not-wired diagnostic:
 Install filenames/manifests are not yet SKU-aware, and this change produces no
 new Install media or physical installer.
+An orphan marker or manifest copy cannot downgrade an export to legacy Install.
+The explicit historical `--legacy-initramfs` route accepts only unlabelled old
+roots: any new hardware marker/copy or SKU-bearing runtime origin is refused,
+including a new `full` marker, rather than dropping its SKU label.
 
 **2026-10-19 compressed RAM-root candidate:** use
 `D:\temp\PollyOS\PollyOS-179f20e.iso`, clean runtime/overlay/media source
