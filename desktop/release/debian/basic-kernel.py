@@ -197,6 +197,9 @@ def build(source, source_sha, config, config_sha, output, jobs):
             if any(config_values[0].get(name, "n") != config_values[1].get(name, "n") for name in policy_names):
                 raise ValueError("Kernel .config and generated auto.conf disagree on basic kernel policy")
             PROFILES["verify_kernel"]((obj / ".config").read_text(), PROFILES["profile"]("basic"))
+            if config_values[0].get("CONFIG_KERNEL_ZSTD") == "y" and shutil.which("zstd") is None:
+                raise ValueError("Missing kernel image compression tool: zstd (CONFIG_KERNEL_ZSTD=y). "
+                                 "Provide zstd in the builder before compiling; module compression is independent.")
             release = run(*make, "-s", "kernelrelease", capture=True)
             if not re.fullmatch(r"[a-zA-Z0-9.+_-]+-polly-basic", release):
                 raise ValueError("Dedicated kernel release must end with -polly-basic")
