@@ -34,6 +34,22 @@ Prerequisite for PollyWM: build the Pixman prefix with
 Both scripts use `localhost/polly-debian-sdk` and Podman volumes. They check the
 final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
+## Current shell integration blocker
+
+PollyUI is built CPU-only, but the first end-to-end shell launch does not yet
+stay up. In the Debian minbase test root:
+
+- SDL now reaches the Wayland driver after adding `libwayland-egl`,
+  `libwayland-cursor`, XKB data and DejaVu/fontconfig.
+- PollyUI then exits with
+  `Uncaught SyntaxError: unexpected token in expression: '\x7f'` while loading
+  the shell entry.
+- `live.mjs` is text; the likely cause is an entry/import packaging mismatch,
+  not a WebGL dependency. This remains to be diagnosed.
+
+Do not claim the PollyUI shell is integrated until this is resolved and a
+screenshot shows the actual shell.
+
 ## Remaining for the real minimal-zh
 
 1. Package and run PollyUI as the PollyWM shell, with its JS/assets
