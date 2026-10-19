@@ -45,7 +45,8 @@ def guest_drm_input_record(text):
 
 def fatal_guest_record(raw):
     return any(message in raw for message in
-               ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer"])
+               ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer",
+                "Polly Live: ERROR:", "Polly ERROR:"])
 
 
 def settings_tab_steps(control, user_theme_loaded=False):
@@ -246,6 +247,9 @@ def main():
                     if "Initramfs unpacking failed" in text:
                         execute("screendump", {"filename": str(evidence / "failed-guest.ppm")})
                         raise RuntimeError("The memory-only root did not unpack completely; do not accept partial startup:\n" + text[-8000:])
+                    if fatal_guest_record(text):
+                        execute("screendump", {"filename": str(evidence / "failed-guest.ppm")})
+                        raise RuntimeError("Live bootstrap/system reported an error:\n" + text[-8000:])
                     if "POLLY_LIVE_DESKTOP_READY" in text:
                         break
                     if text.count("POLLY_SESSION_REGISTERED uid=1000") > 1:
@@ -263,6 +267,13 @@ def main():
                     raise RuntimeError("PAM did not register an active ordinary-user elogind session")
                 if fatal_guest_record(text):
                     raise RuntimeError("Boot reported a fatal error:\n" + text[-8000:])
+                stages = [line for line in text.splitlines() if re.search(r"\[\d+\.\d+\] Polly Live:", line)]
+                if stages:
+                    (evidence / "early-boot.log").write_text("\n".join(stages) + "\n")
+                    for required in ("Copying compressed root to RAM", "Verifying RAM copy",
+                                     "Boot medium released; mounting RAM root", "RAM mounts transferred; switching root"):
+                        if not any(required in line for line in stages):
+                            raise RuntimeError("Compressed root lacks completed early stage: " + required)
                 def wait_log(marker, seconds=30, pattern=False):
                     until = time.monotonic() + seconds
                     while True:

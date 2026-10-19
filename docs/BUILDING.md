@@ -383,6 +383,23 @@ cd "$REPO"
 3. export rootfs 到普通 `root.tar`，在工具容器内生成 UEFI ISO 与 GPT/FAT32 USB
    **文件**，输出源码身份、package inventory、`live-manifest.json` 和摘要。
 
+当前 Debian 默认是 schema 2：小 bootstrap `initramfs.gz` 与独立
+`boot/root.squashfs`，不是把整个 root 或大 SquashFS 再塞回 initrd。
+工具镜像直接依赖 `busybox-static`、`squashfs-tools`、`kmod`、`xz-utils`、
+`util-linux`，模块和声明的固件闭包取自导出 root 中**同一个内核版本**，
+不使用宿主模块。归档路径、重复项、父 symlink、硬链接和 xattr 编码在构建时
+显式校验；不支持的编码停止，不能静默丢 capabilities。
+
+GRUB 只按每 build 唯一 marker 查找本次根媒体，再传该文件系统 UUID；
+不把 standalone memdisk 或 El Torito EFI 子映像当作根媒体。
+早期 init 只读读取匹配的 ISO/FAT 媒体，将压缩根复制、
+校验到 RAM，卸载媒体，再用 RAM loop/SquashFS + 同一 tmpfs 的 overlay upper/work
+启动现有 systemd；`/run` 与早期单调时间日志跨 `switch_root` 保留。
+任何缺媒体、错 hash、内存、驱动或挂载错误都可见并停止，不偷偷换根或写内盘。
+日志为 `/run/polly-live/early-boot.log`。详见 [Live 格式](../desktop/LIVE.md#compressed-ram-root-new-debian-builds-boot-qualification-pending)。
+这改变前置全根展开结构，不是 Hyper-V 实测耗时或“黑屏已消失”的证明；
+实际 ISO/USB 引导、介质脱离和显示接管仍须独立授权并资格验证。
+
 它要联网，并使用/更新固定标签 `localhost/polly-debian-live-base`、
 `localhost/polly-debian-platform-base`、`localhost/polly-debian-live-tools`；
 在隔离构建引擎运行。它不会写入 USB 设备、安装系统或启动 QEMU。
@@ -466,7 +483,9 @@ python3 -I -B desktop/tools/verify-live-runtime.py \
   --producer-revision "$REV"
 ```
 
-它从**实际 ISO**提取 initramfs，逐文件比较 bytes/mode/owner、overlay origin，
+它按精确 manifest schema 分路：旧 schema 1 的全根 initramfs 保持兼容；
+新 Debian 默认 schema 2，从**实际 ISO**提取独立 `boot/root.squashfs`，
+逐文件流式比较 bytes/mode/owner、overlay origin，
 拒绝遗漏/意外旧 Polly 文件，生成 `candidate-origin.json` 并追加摘要。
 输出不能重复覆盖；输入不齐就明确不具备该级别资格。
 历次交付的额外 native/资源/无启动等回执由各次构建真实记录，不应从旧包复制

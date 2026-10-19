@@ -3,13 +3,21 @@ set -eu
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 chmod 0755 /
 mkdir -p /proc /sys /dev /run /tmp
+if [ -f /run/polly-live/root-ready ]; then
+    # The bootstrap already moved these mounts, including the RAM loop backing.
+    grep -q ' / overlay ' /proc/mounts || {
+        echo "Polly ERROR: RAM root handoff is not an overlay." >/dev/console
+        exit 1
+    }
+else
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
+mount -t tmpfs -o mode=0755 tmpfs /run
+fi
 mkdir -p /dev/pts /dev/shm
 mount -t devpts devpts /dev/pts
 mount -t tmpfs -o mode=1777 tmpfs /dev/shm
-mount -t tmpfs -o mode=0755 tmpfs /run
 mount -t tmpfs -o mode=1777 tmpfs /tmp
 case " $(cat /proc/cmdline) " in
     *" polly.splash=1 "*) ;;

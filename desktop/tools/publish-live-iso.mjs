@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateLiveRootReceipt } from './live-layout.mjs';
 
 export const DEFAULT_DESTINATION = String.raw`D:\temp\PollyOS`;
 export const ALIAS = 'PollyOS.iso';
@@ -45,17 +46,24 @@ export function verifyBundle(directory) {
     if (!checksums.has(name)) throw new Error('Missing verified media receipt: ' + name);
   const read = name => JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'));
   const manifest = read('live-manifest.json'), origin = read('candidate-origin.json'), iso = manifest.iso;
+  const layout = validateLiveRootReceipt(manifest, origin);
+  if (layout === 'squashfs-ram-overlay' &&
+      (checksums.get(manifest.usb?.name?.toLowerCase())?.sha !== manifest.usb?.sha256 ||
+       !Number.isSafeInteger(manifest.usb.size) || manifest.usb.size <= 0 ||
+       regular(path.join(directory, manifest.usb.name)).size !== manifest.usb.size ||
+       checksums.get('grub.cfg')?.sha !== manifest.grub.embeddedSha256))
+    throw new Error('Compressed RAM root USB/config receipt is missing or mismatched');
   if (typeof iso?.name !== 'string' || /[/\\]/.test(iso.name) || !iso.name.endsWith('.iso') ||
       checksums.get(iso.name.toLowerCase())?.sha !== iso.sha256 ||
       !Number.isSafeInteger(iso.size) || iso.size <= 0 || regular(path.join(directory, iso.name)).size !== iso.size)
     throw new Error('Actual ISO does not match the Live manifest');
   for (const revision of [manifest.sourceRevision, origin.runtimeSourceRevision, origin.mediaProducerRevision])
     if (typeof revision !== 'string' || !/^[0-9a-f]{40}$/.test(revision)) throw new Error('Missing full source revision');
-  if (manifest.sourceDirty !== false || origin.runtimeSourceDirty !== false ||
+  if (manifest.sourceDirty !== false || origin.runtimeSourceDirty !== false || origin.fixtureOnly === true ||
       origin.isoSha256 !== iso.sha256 || origin.mediaProducerRevision !== manifest.sourceRevision ||
       origin.runtimeImageID !== manifest.runtimeImage ||
       !Number.isSafeInteger(origin.isoPayloadFilesVerified) || origin.isoPayloadFilesVerified <= 0 ||
-      manifest.root !== 'initramfs, memory only' || manifest.architecture !== 'x86_64')
+      manifest.architecture !== 'x86_64')
     throw new Error('ISO payload/source verification receipt does not match this clean Live bundle');
   for (const value of [manifest.version, manifest.distribution])
     if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9.+_-]*$/.test(value))
