@@ -22,7 +22,10 @@ SKUS = ("basic", "vm", "intel", "nvidia", "amd", "full")
 BASIC_CONFIG = "\n".join(name + "=y" for name in (
     "CONFIG_DEVTMPFS", "CONFIG_TMPFS", "CONFIG_PROC_FS", "CONFIG_SYSFS", "CONFIG_EFI_PARTITION",
     "CONFIG_MSDOS_PARTITION", "CONFIG_VT", "CONFIG_VT_CONSOLE", "CONFIG_FB_EFI", "CONFIG_FRAMEBUFFER_CONSOLE",
-    "CONFIG_SYSFB_SIMPLEFB")) + "\nCONFIG_DRM_SIMPLEDRM=m\n# CONFIG_FB_SIMPLE is not set\n"
+    "CONFIG_SYSFB_SIMPLEFB")) + ('\nCONFIG_DRM_SIMPLEDRM=m\n# CONFIG_FB_SIMPLE is not set\n'
+                               'CONFIG_SYSTEM_TRUSTED_KEYS=""\nCONFIG_SYSTEM_REVOCATION_KEYS=""\n'
+                               'CONFIG_MODULE_SIG=y\nCONFIG_MODULE_SIG_ALL=y\nCONFIG_MODULE_SIG_FORCE=y\n'
+                               'CONFIG_MODULE_SIG_KEY="certs/signing_key.pem"\n')
 
 
 def basic_receipt():
@@ -32,7 +35,7 @@ def basic_receipt():
             "configSha256": hashlib.sha256(BASIC_CONFIG.encode()).hexdigest(),
             "packManifestSha256": "b" * 64, "imageSha256": hashlib.sha256(b"not-a-kernel").hexdigest(),
             "source": {"archiveSha256": "c" * 64, "baseConfigSha256": "d" * 64,
-                       "strategy": "debian-bindeb-pkg-simpledrm"}}
+                       "strategy": "debian-bindeb-pkg-simpledrm-unsigned-dev"}}
 
 
 def seed(root, sku, *, marked=True):

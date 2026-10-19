@@ -11,12 +11,14 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import traceback
 
 HERE = Path(__file__).resolve().parent
 PROFILES = runpy.run_path(str(HERE / "live-profile.py"))
 HELPERS = HERE / "live-root.py" if (HERE / "live-root.py").is_file() else HERE.parents[1] / "tools/live-root.py"
 RECEIPT = "usr/share/polly-basic-kernel.json"
 CONFIG = "usr/share/polly-basic-kernel.config"
+STRATEGY = "debian-bindeb-pkg-simpledrm-unsigned-dev"
 
 
 def digest(path):
@@ -41,7 +43,7 @@ def check_manifest(value):
             type(package["size"]) is not int or not 0 < package["size"] < 2 ** 31):
         raise ValueError("Invalid kernel image Debian package identity")
     PROFILES["keys"](value["source"], ("archiveSha256", "baseConfigSha256", "strategy"))
-    if value["source"]["strategy"] != "debian-bindeb-pkg-simpledrm":
+    if value["source"]["strategy"] != STRATEGY:
         raise ValueError("Unknown kernel source build strategy")
     for sha in (value["configSha256"], package["sha256"],
                 value["source"]["archiveSha256"], value["source"]["baseConfigSha256"]):
@@ -75,6 +77,8 @@ def verify_pack(directory):
         helpers = runpy.run_path(str(HELPERS))
         with tarfile.open(fileobj=archive_file) as archive:
             members = helpers["export_members"](archive)
+            if any(name.endswith("/signing_key.pem") for name in members):
+                raise ValueError("Kernel image package must not contain the private build signing key")
             release = value["kernelRelease"]
             kernels = [name for name, node in members.items() if name.startswith("boot/vmlinuz-") and node.isfile()]
             module_releases = {name.split("/")[3 if name.startswith("usr/") else 2] for name in members
@@ -132,7 +136,9 @@ def build(source, source_sha, config, config_sha, output, jobs):
         unpack.mkdir()
         with tarfile.open(source) as archive:
             helpers = runpy.run_path(str(HELPERS))
-            helpers["export_members"](archive)
+            members = helpers["export_members"](archive)
+            if any(name.endswith("/certs/signing_key.pem") for name in members):
+                raise ValueError("Dedicated kernel source archive must not contain a pre-existing private signing key")
             archive.extractall(unpack, filter="data")
         roots = [path for path in unpack.iterdir() if path.is_dir() and not path.is_symlink()]
         if len(roots) != 1 or not (roots[0] / "Makefile").is_file() or not (roots[0] / "scripts/config").is_file():
@@ -141,6 +147,7 @@ def build(source, source_sha, config, config_sha, output, jobs):
         obj.mkdir()
         shutil.copyfile(config, obj / ".config")
         log = stage / "kernel-build.log"
+        log.touch()
 
         def retain_failure():
             with tempfile.NamedTemporaryFile(prefix=output.name + ".failed-", suffix=".log",
@@ -152,60 +159,63 @@ def build(source, source_sha, config, config_sha, output, jobs):
         def run(*command, capture=False):
             with log.open("ab") as target:
                 target.write(("\n$ " + repr(command) + "\n").encode())
-                try:
-                    result = subprocess.run(command, check=False, stdout=subprocess.PIPE if capture else target,
-                                            stderr=target, timeout=21600)
-                except (OSError, subprocess.TimeoutExpired):
-                    target.flush()
-                    retain_failure()
-                    raise
+                result = subprocess.run(command, check=False, stdout=subprocess.PIPE if capture else target,
+                                        stderr=target, timeout=21600)
                 if result.returncode:
-                    target.flush()
-                    failure = retain_failure()
-                    raise ValueError("Kernel build failed; raw log retained: " + str(failure))
+                    raise subprocess.CalledProcessError(result.returncode, command)
                 return result.stdout.decode().strip() if capture else None
 
-        make = ["make", "-C", str(kernel), "O=" + str(obj)]
-        run(*make, "olddefconfig")
-        run(str(kernel / "scripts/config"), "--file", str(obj / ".config"),
-            "--module", "DRM_SIMPLEDRM", "--enable", "SYSFB_SIMPLEFB", "--disable", "FB_SIMPLE",
-            "--disable", "MODULE_COMPRESS_ZSTD", "--enable", "MODULE_COMPRESS_XZ",
-            "--disable", "LOCALVERSION_AUTO", "--set-str", "LOCALVERSION", "-polly-basic")
-        run(*make, "olddefconfig")
         try:
+            for key in (kernel / "certs/signing_key.pem", obj / "certs/signing_key.pem"):
+                if key.exists() or key.is_symlink():
+                    raise ValueError("Dedicated kernel build refuses pre-existing signing keys; use a key-free source archive")
+            make = ["make", "-C", str(kernel), "O=" + str(obj)]
+            run(*make, "olddefconfig")
+            signing = []
+            if "CONFIG_MODULE_SIG=y" in (obj / ".config").read_text().splitlines():
+                signing = ["--enable", "MODULE_SIG_ALL", "--set-str", "MODULE_SIG_KEY", "certs/signing_key.pem"]
+            run(str(kernel / "scripts/config"), "--file", str(obj / ".config"),
+                "--module", "DRM_SIMPLEDRM", "--enable", "SYSFB_SIMPLEFB", "--disable", "FB_SIMPLE",
+                "--disable", "MODULE_COMPRESS_ZSTD", "--enable", "MODULE_COMPRESS_XZ",
+                "--disable", "LOCALVERSION_AUTO", "--set-str", "LOCALVERSION", "-polly-basic",
+                "--set-str", "SYSTEM_TRUSTED_KEYS", "", "--set-str", "SYSTEM_REVOCATION_KEYS", "",
+                *signing)
+            run(*make, "olddefconfig")
             PROFILES["verify_kernel"]((obj / ".config").read_text(), PROFILES["profile"]("basic"))
-        except ValueError:
-            retain_failure()
+            release = run(*make, "-s", "kernelrelease", capture=True)
+            if not re.fullmatch(r"[a-zA-Z0-9.+_-]+-polly-basic", release):
+                raise ValueError("Dedicated kernel release must end with -polly-basic")
+            run(*make, "-j" + str(jobs), "bindeb-pkg", "KDEB_PKGVERSION=1+polly.basic",
+                "KDEB_SOURCENAME=polly-basic-linux")
+            images = []
+            for deb in stage.glob("linux-image-*.deb"):
+                name = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Package"], text=True, timeout=30).strip()
+                if name == "linux-image-" + release:
+                    images.append(deb)
+            if len(images) != 1:
+                raise ValueError("Expected exactly one dedicated built kernel image package")
+            pack = stage / "pack"
+            pack.mkdir()
+            shutil.copyfile(images[0], pack / "kernel-image.deb")
+            shutil.copyfile(obj / ".config", pack / "kernel.config")
+            deb = pack / "kernel-image.deb"
+            version = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Version"], text=True, timeout=30).strip()
+            value = {"schemaVersion": 1, "kind": "polly-basic-kernel-pack", "kernelRelease": release,
+                     "package": {"name": "linux-image-" + release, "version": version, "architecture": "amd64",
+                                 "sha256": digest(deb), "size": deb.stat().st_size},
+                     "configSha256": digest(pack / "kernel.config"),
+                     "source": {"archiveSha256": source_sha, "baseConfigSha256": config_sha, "strategy": STRATEGY}}
+            (pack / "kernel-pack.json").write_text(json.dumps(value, indent=2) + "\n")
+            result = verify_pack(pack)
+            shutil.copyfile(log, pack / "kernel-build.log")
+            pack.rename(output)
+        except BaseException as error:
+            with log.open("a") as target:
+                traceback.print_exception(error, file=target)
+            failure = retain_failure()
+            error.add_note("Kernel build raw log retained: " + str(failure))
             raise
-        release = run(*make, "-s", "kernelrelease", capture=True)
-        if not re.fullmatch(r"[a-zA-Z0-9.+_-]+-polly-basic", release):
-            raise ValueError("Dedicated kernel release must end with -polly-basic")
-        run(*make, "-j" + str(jobs), "bindeb-pkg", "KDEB_PKGVERSION=1+polly.basic",
-            "KDEB_SOURCENAME=polly-basic-linux")
-        images = []
-        for deb in stage.glob("linux-image-*.deb"):
-            name = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Package"], text=True, timeout=30).strip()
-            if name == "linux-image-" + release:
-                images.append(deb)
-        if len(images) != 1:
-            raise ValueError("Expected exactly one dedicated built kernel image package")
-        pack = stage / "pack"
-        pack.mkdir()
-        shutil.copyfile(images[0], pack / "kernel-image.deb")
-        shutil.copyfile(obj / ".config", pack / "kernel.config")
-        deb = pack / "kernel-image.deb"
-        version = subprocess.check_output(["dpkg-deb", "-f", str(deb), "Version"], text=True, timeout=30).strip()
-        value = {"schemaVersion": 1, "kind": "polly-basic-kernel-pack", "kernelRelease": release,
-                 "package": {"name": "linux-image-" + release, "version": version, "architecture": "amd64",
-                             "sha256": digest(deb), "size": deb.stat().st_size},
-                 "configSha256": digest(pack / "kernel.config"),
-                 "source": {"archiveSha256": source_sha, "baseConfigSha256": config_sha,
-                            "strategy": "debian-bindeb-pkg-simpledrm"}}
-        (pack / "kernel-pack.json").write_text(json.dumps(value, indent=2) + "\n")
-        verify_pack(pack)
-        shutil.copyfile(log, pack / "kernel-build.log")
-        pack.rename(output)
-    return verify_pack(output)
+    return result
 
 
 def main():

@@ -64,7 +64,8 @@ def pack(directory, *, config=fixtures["BASIC_CONFIG"], architecture="amd64", ex
 
 class BasicKernel(unittest.TestCase):
     def test_actual_deb_config_arch_single_kernel_path_and_raw_hash_guards(self):
-        for mode in ("valid", "stock", "simplefb", "builtin", "arch", "multiple", "unsafe", "changed", "linked", "missing-module"):
+        for mode in ("valid", "stock", "simplefb", "builtin", "arch", "multiple", "unsafe", "changed", "linked",
+                     "missing-module", "trusted", "revocation", "module-key", "unsigned-modules"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 config = fixtures["BASIC_CONFIG"]
@@ -74,6 +75,13 @@ class BasicKernel(unittest.TestCase):
                     config += "CONFIG_FB_SIMPLE=y\n"
                 if mode == "builtin":
                     config += "CONFIG_DRM_I915=y\n"
+                for broken, symbol in (("trusted", "SYSTEM_TRUSTED_KEYS"), ("revocation", "SYSTEM_REVOCATION_KEYS")):
+                    if mode == broken:
+                        config = config.replace("CONFIG_" + symbol + '=""', "CONFIG_" + symbol + '="debian/missing.pem"')
+                if mode == "module-key":
+                    config = config.replace("certs/signing_key.pem", "debian/missing-key.pem")
+                if mode == "unsigned-modules":
+                    config = config.replace("CONFIG_MODULE_SIG_ALL=y", "# CONFIG_MODULE_SIG_ALL is not set")
                 pack(directory, config=config, architecture="arm64" if mode == "arch" else "amd64",
                      extra_kernel=mode == "multiple", unsafe=mode == "unsafe")
                 if mode == "changed":
@@ -108,7 +116,12 @@ class BasicKernel(unittest.TestCase):
             inputs.mkdir()
             pack(inputs)
             config = directory / "base.config"
-            config.write_text("CONFIG_DRM=m\n# CONFIG_DRM_SIMPLEDRM is not set\n")
+            config.write_text('CONFIG_DRM=m\n# CONFIG_DRM_SIMPLEDRM is not set\n'
+                              'CONFIG_SYSTEM_TRUSTED_KEYS="debian/missing-certs.pem"\n'
+                              'CONFIG_SYSTEM_REVOCATION_KEYS="debian/missing-revocation.pem"\n'
+                              'CONFIG_MODULE_SIG=y\nCONFIG_MODULE_SIG_FORCE=y\n'
+                              '# CONFIG_MODULE_SIG_ALL is not set\n'
+                              'CONFIG_MODULE_SIG_KEY="debian/missing-key.pem"\n')
             source_dir = directory / "linux-fixture"
             (source_dir / "scripts").mkdir(parents=True)
             (source_dir / "Makefile").write_text("# not a real kernel\n")
@@ -142,6 +155,16 @@ class BasicKernel(unittest.TestCase):
             self.assertEqual([command[-1] for command in calls if command[0] == "make" and "olddefconfig" in command],
                              ["olddefconfig", "olddefconfig"])
             self.assertTrue(any("bindeb-pkg" in command for command in calls))
+            configure = next(command for command in calls if command[0].endswith("/scripts/config"))
+            for symbol, expected in (("SYSTEM_TRUSTED_KEYS", ""), ("SYSTEM_REVOCATION_KEYS", ""),
+                                     ("MODULE_SIG_KEY", "certs/signing_key.pem")):
+                index = configure.index(symbol)
+                self.assertEqual(configure[index - 1], "--set-str")
+                self.assertEqual(configure[index + 1], expected)
+            self.assertEqual(configure[configure.index("MODULE_SIG_ALL") - 1], "--enable")
+            self.assertEqual((output / "kernel.config").read_text(), fixtures["BASIC_CONFIG"])
+            self.assertEqual(receipt["configSha256"], tools["digest"](output / "kernel.config"))
+            self.assertFalse(list(output.rglob("signing_key.pem")))
             self.assertEqual(len(list(output.glob("*.deb"))), 1)
             self.assertTrue((output / "kernel-build.log").is_file())
             with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
@@ -154,11 +177,35 @@ class BasicKernel(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unsafe export"):
                 tools["build"](hostile, tools["digest"](hostile), config, tools["digest"](config), directory / "unsafe", 2)
             self.assertFalse((directory / "escape").exists())
+            keyed = directory / "source-with-key.tar"
+            with tarfile.open(keyed, "w") as archive:
+                archive.add(source_dir, arcname="linux-fixture")
+                entry = tarfile.TarInfo("linux-fixture/certs/signing_key.pem")
+                entry.size = 0
+                archive.addfile(entry, io.BytesIO(b""))
+            with self.assertRaisesRegex(ValueError, "must not contain a pre-existing private signing key"):
+                tools["build"](keyed, tools["digest"](keyed), config, tools["digest"](config),
+                               directory / "keyed-pack", 2)
             with mock.patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(["make"], 2)):
-                with self.assertRaisesRegex(ValueError, "raw log retained"):
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
                     tools["build"](source, tools["digest"](source), config, tools["digest"](config),
                                    directory / "failed-build", 2)
             self.assertEqual(len(list(directory.glob("failed-build.failed-*.log"))), 1)
+            self.assertTrue(any("raw log retained" in note for note in raised.exception.__notes__))
+            rejected = directory / "rejected-pack"
+            with mock.patch.object(subprocess, "run", side_effect=make), \
+                    mock.patch.dict(tools["build"].__globals__,
+                                    {"verify_pack": mock.Mock(side_effect=ValueError("injected final pack rejection"))}):
+                with self.assertRaisesRegex(ValueError, "^injected final pack rejection$"):
+                    tools["build"](source, tools["digest"](source), config, tools["digest"](config), rejected, 2)
+            self.assertFalse(rejected.exists())
+            failures = list(directory.glob("rejected-pack.failed-*.log"))
+            self.assertEqual(len(failures), 1)
+            text = failures[0].read_text()
+            self.assertIn("bindeb-pkg", text)
+            self.assertIn("olddefconfig", text)
+            self.assertIn("ValueError: injected final pack rejection", text)
+            self.assertNotIn("BEGIN PRIVATE KEY", text)
             print("PASS: real local .deb and archive identities; standard kernel make control is mocked, not compiled")
 
     def test_simpledrm_primary_kms_detection_and_visible_refusal_not_framebuffer_success(self):

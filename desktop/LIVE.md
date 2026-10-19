@@ -90,6 +90,13 @@ provided source/base-config SHA256 and build strategy. The optional offline
 explicit SHA-verified local Linux source archive and base config. It enables
 `DRM_SIMPLEDRM=m`, `SYSFB_SIMPLEFB=y`, disables old `FB_SIMPLE`, verifies final
 config and packages only the dedicated image (no headers/debug/meta packages).
+Its `debian-bindeb-pkg-simpledrm-unsigned-dev` strategy clears distribution trust/
+revocation certificate paths. When module signing is enabled, it signs all modules
+with the standard automatic build-local key, including with signature enforcement.
+Pre-existing private build keys are refused without reading them; private keys are
+never exported in the pack or logs. This does not establish Secure Boot trust.
+All failures after configuration starts, including final pack acceptance, retain
+unique raw logs and propagate the original error before publishing output.
 It never downloads a kernel or installs build tools. See the build guide for
 commands; stock profiles never consume the pack.
 

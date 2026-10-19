@@ -22,7 +22,7 @@ export function media(sku) {
   const kernel = { schemaVersion: 1, kind: 'polly-basic-kernel-pack', kernelRelease: '6.12.111-polly-basic',
     package: { name: 'linux-image-6.12.111-polly-basic', version: '1.0', architecture: 'amd64', sha256: 'a'.repeat(64), size: 100 },
     configSha256: 'b'.repeat(64), packManifestSha256: 'c'.repeat(64), imageSha256: 'd'.repeat(64),
-    source: { archiveSha256: 'e'.repeat(64), baseConfigSha256: 'f'.repeat(64), strategy: 'debian-bindeb-pkg-simpledrm' } };
+    source: { archiveSha256: 'e'.repeat(64), baseConfigSha256: 'f'.repeat(64), strategy: 'debian-bindeb-pkg-simpledrm-unsigned-dev' } };
   if (sku === 'basic') root.kernelInput = kernel;
   const packages = [...selected.requiredPackages, ...(sku === 'basic' ? [kernel.package.name + '=1.0'] : [])].map(spec => {
     const [name, version = '1.0'] = spec.split('=');

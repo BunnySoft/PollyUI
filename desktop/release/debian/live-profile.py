@@ -193,6 +193,17 @@ def verify_kernel(config, selected):
             raise ValueError("basic dedicated kernel must disable CONFIG_FB_SIMPLE so simpledrm owns the GOP framebuffer")
         if options.get("CONFIG_MODULE_COMPRESS_ZSTD") == "y":
             raise ValueError("basic bootstrap supports uncompressed/XZ/gzip modules, not Zstd module compression")
+        if any(options.get(name) not in (None, '""') for name in
+               ("CONFIG_SYSTEM_TRUSTED_KEYS", "CONFIG_SYSTEM_REVOCATION_KEYS")):
+            raise ValueError("basic unsigned-development kernel must clear distribution trust/revocation key paths")
+        key = options.get("CONFIG_MODULE_SIG_KEY")
+        if (options.get("CONFIG_MODULE_SIG") == "y" and
+                (options.get("CONFIG_MODULE_SIG_ALL") != "y" or key != '"certs/signing_key.pem"')):
+            raise ValueError("basic enabled module signing must sign all modules with the automatic build-local key")
+        if (options.get("CONFIG_MODULE_SIG_FORCE") == "y" and options.get("CONFIG_MODULE_SIG") != "y"):
+            raise ValueError("basic cannot force module signatures without consistent signing")
+        if key is not None and key != '"certs/signing_key.pem"':
+            raise ValueError("basic module signing must use only the build-local automatic certs/signing_key.pem")
         for option in ("CONFIG_DRM_I915", "CONFIG_DRM_XE", "CONFIG_DRM_NOUVEAU", "CONFIG_DRM_AMDGPU",
                        "CONFIG_DRM_RADEON", "CONFIG_DRM_VIRTIO_GPU", "CONFIG_DRM_HYPERV",
                        "CONFIG_DRM_VMWGFX", "CONFIG_DRM_QXL", "CONFIG_DRM_BOCHS",

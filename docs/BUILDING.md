@@ -494,7 +494,16 @@ bash tools/build.sh --live "$OUT/live-basic" --sku basic \
 该独立可选内核构建脚本只从已校验源码/config 执行 olddefconfig → scripts/config
 开启 `DRM_SIMPLEDRM=m`/`SYSFB_SIMPLEFB=y`、关闭旧 `FB_SIMPLE`、保早期可解压模块格式
 → olddefconfig → 核最终 config → 标准 bindeb-pkg。不会下载内核、引第三方内核、
-补装 toolchain、替换其它五版默认内核或修改 WM/SDK。失败原始日志以唯一名字保留。
+补装 toolchain、替换其它五版默认内核或修改 WM/SDK。
+`source.strategy=debian-bindeb-pkg-simpledrm-unsigned-dev` 明确采用开发版信任策略：
+清空 `SYSTEM_TRUSTED_KEYS`/`SYSTEM_REVOCATION_KEYS` 的发行版证书路径；若
+`MODULE_SIG=y`，显式启用 `MODULE_SIG_ALL` 并恢复标准
+`MODULE_SIG_KEY="certs/signing_key.pem"`，避免 FORCE 签名内核拒绝未签的必需模块。
+未开模块签名不强造缺失配置项；最终 pack config 仍须满足一致性校验。
+预存在源码中的该 private key 路径会被拒绝，不读取 key 内容；内核只在临时私有
+buildtree 自动生成构建 key，不导出、不入 pack/日志，不赋予 Secure Boot 信任。
+配置/编译开始后的所有失败（含 release、包选择、dpkg 字段或最终 pack 验证）
+都保留唯一完整失败日志并原错抛出，未通过最终验证不发布输出。
 
 pack 仅含一个专用 `linux-image-<release>-polly-basic` 的 `kernel-image.deb`、
 `kernel.config`、`kernel-pack.json` 和构建日志；headers/dbg/meta 包不入。

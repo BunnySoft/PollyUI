@@ -111,7 +111,7 @@ export function validateHardwareMedia(value) {
         !Number.isSafeInteger(kernel.package.size) || kernel.package.size <= 0 || kernel.package.size >= 2 ** 31 ||
         ![kernel.package?.sha256, kernel.configSha256, kernel.packManifestSha256, kernel.imageSha256,
           kernel.source?.archiveSha256, kernel.source?.baseConfigSha256].every(sha => /^[0-9a-f]{64}$/.test(sha)) ||
-        kernel.source.strategy !== 'debian-bindeb-pkg-simpledrm')
+        kernel.source.strategy !== 'debian-bindeb-pkg-simpledrm-unsigned-dev')
       fail('basic media/root missing exact dedicated kernel input');
   } else if (Object.hasOwn(value, 'kernelInput') || Object.hasOwn(value.root ?? {}, 'kernelInput'))
     fail('Stock SKU cannot acquire an unrequested dedicated kernel');
