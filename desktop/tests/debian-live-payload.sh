@@ -36,8 +36,20 @@ id -Gn polly | grep -qw audio
 test "$(getent passwd polly | cut -d: -f3)" -eq 1000
 grep -q 'session required pam_systemd.so' /etc/pam.d/login
 python3 -I -B /workspace/desktop/release/debian/power-policy.py / /workspace usr/share/polly-live-packages.tsv
-if [ -f /usr/share/polly-live-boot-dependencies.json ]; then
+getty_override=/etc/systemd/system/getty@tty1.service.d/polly.conf
+if [ -e /usr/share/polly-live-boot-dependencies.json ] || [ -L /usr/share/polly-live-boot-dependencies.json ]; then
+    test "$profile" = live
+    test -f /usr/share/polly-live-boot-dependencies.json
+    test ! -L /usr/share/polly-live-boot-dependencies.json
+    for old in polly.conf live-boot.conf; do
+        path=/etc/systemd/system/getty@tty1.service.d/$old
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            echo "Obsolete final Live getty override: $path" >&2
+            exit 1
+        fi
+    done
     python3 -I -B /workspace/desktop/release/debian/boot-install.py verify /workspace
+    getty_override=/etc/systemd/system/getty@tty1.service.d/zz-polly-live.conf
 fi
 grep -q 'HandlePowerKey=ignore' /etc/systemd/logind.conf.d/50-polly.conf
 grep -q '^resolv_conf=/run/polly-network/resolv.conf$' /etc/resolvconf.conf
@@ -49,7 +61,7 @@ for unit in getty@tty1.service iwd.service dhcpcd.service; do
 done
 for file in /etc/pam.d/login /etc/pam.d/polly-lock /etc/iwd/main.conf /etc/dhcpcd.conf \
     /etc/systemd/logind.conf.d/50-polly.conf /etc/systemd/journald.conf.d/polly.conf \
-    /etc/systemd/system/getty@tty1.service.d/polly.conf /etc/systemd/system/polly-hardware-log.service; do
+    "$getty_override" /etc/systemd/system/polly-hardware-log.service; do
     test "$(stat -c '%a:%u:%g' "$file")" = 644:0:0
     if grep -q "$(printf '\r')" "$file"; then echo "CRLF configuration: $file" >&2; exit 1; fi
 done

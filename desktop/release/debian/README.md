@@ -44,8 +44,12 @@ do not establish new-image boot acceptance; existing artifacts are unchanged.
 Remote login stays disabled by default.
 
 The new [continuous Live startup](../../LIVE.md#continuous-live-startup-source-wired-new-media-acceptance-pending)
-is also final-Live-only. Standard Plymouth **24.004.60-5** and its exact matching
-`libplymouth5` supply the DRM/framebuffer/script machinery; the dependency and
+is also final-Live-only. `plymouth`, `libplymouth5` and `plymouth-label` are all
+pinned to **24.004.60-5**. The label plugin and its actual fontconfig/Pango/Cairo
+OS dependency closure are required for the theme's text, not new WM dependencies.
+The [early animation and Esc details](../../LIVE.md#early-animation-and-esc-details)
+section describes the bounded exported font/plugin closure and same-daemon
+bootstrap-to-systemd handoff. The dependency and
 overlay manifests are `boot-dependencies.json` and `boot-files.json`.
 `boot-install.py` is shared by fresh Live and frozen offline overlay assembly.
 Offline input packs must explicitly supply that pinned dependency closure (or

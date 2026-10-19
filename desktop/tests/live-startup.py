@@ -162,6 +162,42 @@ class Startup(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unrecognized"):
                 install["remove_old_getty"](root, REPO)
 
+    def test_payload_qualifier_distinguishes_final_live_from_base_and_template(self):
+        source = (REPO / "desktop/tests/debian-live-payload.sh").read_text()
+        selection = "getty_override=" + source.split("getty_override=", 1)[1].split(
+            "grep -q 'HandlePowerKey=ignore'", 1)[0]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker = root / "usr/share/polly-live-boot-dependencies.json"
+            marker.parent.mkdir(parents=True)
+            dropins = root / "etc/systemd/system/getty@tty1.service.d"
+            dropins.mkdir(parents=True)
+            script = selection.replace("/etc/", str(root / "etc") + "/").replace(
+                "/usr/share/", str(root / "usr/share") + "/")
+            script = ('set -e\npython3() { printf "VERIFY_BOOT_CALLED\\n"; }\n' + script +
+                      '\nprintf "%s\\n" "$getty_override"\n')
+            def check(profile):
+                return subprocess.run(["sh", "-c", script], text=True, capture_output=True, timeout=5,
+                                      env={**os.environ, "profile": profile})
+            for profile in ("live", "template"):
+                result = check(profile)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(str(dropins / "polly.conf"), result.stdout)
+                self.assertNotIn("VERIFY_BOOT_CALLED", result.stdout)
+            marker.write_text("{}")
+            result = check("live")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("VERIFY_BOOT_CALLED", result.stdout)
+            self.assertIn(str(dropins / "zz-polly-live.conf"), result.stdout)
+            self.assertNotEqual(check("template").returncode, 0)
+            for old in ("polly.conf", "live-boot.conf"):
+                (dropins / old).symlink_to("missing")
+                self.assertNotEqual(check("live").returncode, 0)
+                (dropins / old).unlink()
+            marker.unlink()
+            marker.symlink_to("missing")
+            self.assertNotEqual(check("live").returncode, 0)
+
     def test_original_logo_size_colors_and_repeatability(self):
         data = assets["logo"]()
         self.assertEqual(data, assets["logo"]())
