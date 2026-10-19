@@ -55,6 +55,18 @@ function receipt(manifest) {
       .map(key => [key, manifest[key]])) };
 }
 
+test('fresh Live recipe keeps the session-mode overlay executable for strict assembly verification', () => {
+  const recipe = fs.readFileSync(new URL('../release/debian/Containerfile.live', import.meta.url), 'utf8');
+  const target = '/usr/share/pollyui/desktop/tools/live-session-mode.sh';
+  const modes = [...recipe.matchAll(/\bchmod\s+([0-7]{3})\s+([^&]+)(?=&&)/g)]
+    .filter(([, , files]) => files.replace(/\\\r?\n/g, ' ').split(/\s+/).includes(target))
+    .map(([, mode]) => mode);
+  assert.deepEqual(modes, ['755'], 'No later chmod may reset the source-owned .sh overlay to 644');
+  assert.ok(recipe.includes('COPY release/live/session-mode ' + target));
+  const normalization = recipe.match(/sed -i 's\/\\r\$\/\/' ([^&]+)(?=&&)/)?.[1];
+  assert.ok(normalization?.includes(target), 'Preserve existing CRLF normalization');
+});
+
 test('strict SKU CLI defaults to full and refuses unknown, duplicate, empty or unsafe selections', () => {
   assert.deepEqual(parseSkus(), ['full']);
   assert.deepEqual(parseSkus(hardwareSkus.join(',')), hardwareSkus);
