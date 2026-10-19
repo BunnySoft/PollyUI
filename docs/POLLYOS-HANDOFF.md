@@ -1,5 +1,52 @@
 # PollyOS 当前批次交接
 
+## 2026-10-19 硬件 SKU 构建能力已合入，现发布媒体不变
+
+源码 `68a40ae9` 和审阅修正 `487e55e6200fcb50e23cfe328bbd83b92dcf372f`
+已正常合入 `311940e9d1a51bbb9db94c345ecfc7098f5cebe2`。
+同一入口从干净的公共 native Runtime 分别组装 `full`、`vm`、`intel`、`nvidia`，
+默认 `full`；共享固定源码、原生 bundle 和 runtime/tools immutable ID，串行生成
+独立目录与平台/Live 标签，不为每个 SKU 重编 native 或 SDK。
+实际命令及输入准备见 [构建指南](BUILDING.md#hardware-sku-live-builds)：
+
+```sh
+sh desktop/tools/build-live.sh --debian "$OUT/live-skus" \
+  --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" \
+  --tools-image "$TOOLS_ID" --skus full,vm,intel,nvidia
+```
+
+以上在 Linux/WSL 的已准备构建环境中运行；公共 Runtime 不能用包含全部固件的
+现有 Live/platform 镜像冒充。唯一配置为
+`desktop/release/debian/live-profiles.json`。VM 不装物理 Intel/NVIDIA GPU、
+Intel Wi-Fi、SOF 四个固件包；物理 Intel/NVIDIA SKU 仅省去另一家的 graphics
+firmware，保 Wi-Fi/音频和与 GPU 独立的 Intel CPU 微码。NVIDIA 是原 Nouveau/Mesa
+路线，不是新专有驱动版。**完整内核模块、Mesa/Gallium/Vulkan/LLVM、中文字体/IME
+和 Apps 仍共享**，不声称彻底移除了其它厂商驱动或已达最小可能体积。
+
+每份媒体记录支持范围、仍共享部分、包级 metadata/实际 regular 文件字节及实际
+root/bootstrap/ISO/USB 尺寸；根和 bootstrap 中的 profile 与实际包清单、媒体回执
+绑定。未知/重复 SKU、缺包/禁止包和不匹配 profile 都拒绝。
+新显式 SKU 的文件名与发布目录含 SKU；默认仅版本化发布，不改 `PollyOS.iso`，
+仅 `full --update-alias` 可明确更新它，精简版不能最后完成便覆盖稳定入口。
+旧无 SKU schema 1/2 仍兼容，新 SKU 不能绕旧 initramfs 路径隐去身份。
+
+LiveCD 与 Install 载荷独立，没有把新增安装器捆进 LiveCD。每 SKU 有独立 locked
+platform；当前旧 Install 流程只接受 full 平台，精简 Install 的文件名/manifest
+尚未接线，两个入口会明确拒绝，不能据此声称新多 SKU 安装版或物理安装器已交。
+
+父只读审计了当前正式 8e6 的 root export（SHA
+`2a1a0f3b70269cb315ba64ebe9e73f65a6938f51503cf5f05c4f8500ca409ccc`）：
+固件 regular 文件约 267.5 MB，其中 Intel graphics 29,587,061 字节、
+NVIDIA graphics 65,633,076 字节、Intel Wi-Fi 116,721,656 字节、
+SOF 35,505,120 字节。**这些是展开文件占用，不是压缩后 ISO 节省量。**
+
+冻结 canonical 源码的 44 项 Python 和 16 项 Node 检查通过，覆盖真实 bootstrap
+SKU 分支、包/profile/拒绝路径、四组实际微型 ISO/USB 及实际 shell→Node 入口控制。
+构造测试的外部 ELF/modules 边界和入口的 Podman 后端是明确替身；微型媒体不可启动、
+`fixtureOnly` 不可发布。父集成 Windows 13 项及新发布器读取旧 8e6 实际 216 摘要通过。
+**未执行真实 APT 平台组装、四份正式新 ISO、压缩节省测量、VM 或物理启动**；
+现 `PollyOS.iso` 仍是下文 8e6，inode/links/SHA 未变，没有改旧媒体或收据。
+
 ## 2026-10-19 早期图形启动候选 8e6ca02
 
 **固定入口 `D:\temp\PollyOS\PollyOS.iso` 已通过标准发布器原子更新到本候选。**

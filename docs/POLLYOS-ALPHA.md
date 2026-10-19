@@ -36,6 +36,12 @@ handoff 退出后归 WM/App，原生启动图继续承接至 READY。
 旧 179 镜像不含这项功能；当前正式媒体已经独立复验并发布，但组件/结构结果和
 旧录像均不代替新动画、真实按键、console attachment 或强杀后 VT 恢复的实屏资格。
 
+**后续构建能力：** 已合入 `full/vm/intel/nvidia` 声明式 Live SKU，复用公共 native
+并按包选择硬件固件，详 [构建入口](BUILDING.md#hardware-sku-live-builds)。
+本轮仍共享完整 kernel/Mesa/LLVM 与中文/Apps，未实际组装四份正式新镜像或量测压缩
+节省；页首已发布的 8e6 和固定入口未变。LiveCD 与 Install 分离，当前 Install
+只接 full locked platform，精简 Install 明确拒绝，不能冒已交多安装版或安装器。
+
 ## Alpha 的范围
 
 首个 Alpha 是**普通用户可启动、可进行日常基础操作、可集中手测的开发版**：

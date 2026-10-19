@@ -1235,11 +1235,11 @@
         "candidate"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "live-compressed-root-boot"
       ],
-      "evidence": "2026-10-19用户明确希望最小硬件ISO和兼容更广的完整ISO，接受先full默认逐个建立精简版。当前正式8e6 root.tar只读SHA2a1a0f3b70269cb315ba64ebe9e73f65a6938f51503cf5f05c4f8500ca409ccc实审：regular1415935296B，其中固件267464310B、modules99658546B、原生库581792682B、fonts152535004B；IntelGPU29587061/NVIDIA65633076/iwlwifi116721656/SOF35505120为展开regularbytes，不是ISO节省测量。07c3500a独立源码owner正在接线与最小Linux测试；不重建SDK或运行VM，不改已发布8e6/历史ISO或stablealias。首轮不声称拆除monolithicMesa/kernel中所有他厂后端，后续实测压缩尺寸另记。"
+      "evidence": "2026-10-19已交源码/组件范围：68a40ae9→487e55e6200fcb50e23cfe328bbd83b92dcf372f正常合311940e9d1a51bbb9db94c345ecfc7098f5cebe2。live-profiles.json统一full/vm/intel/nvidia包组；真实干净公共Runtime拒firmware/kernel/profile残留，四SKU串行复用固定source/nativebundle/runtime-tools IDs并隔离platform/Live标签和输出，不重native/SDK。VM去四物理固件，Intel/NVIDIA仅去另一家graphics并保物理WiFi/SOF与CPU微码；完整kernel/Mesa/LLVM/中文IME/App仍共享。marker实际包必需/禁止、root/bootstrap与ISOUSB receipt绑定，包级metadata/actualregular及最终媒体size分账；SKU文件/版本名隔离，显式SKU默认不更新alias且仅full能明确更新。Install保独立链路，精简输入及orphan metadata在两入口明确拒绝，legacyinitramfs不接新SKU。父review修runpy真constructor缺导入、Node完整唯一包集合、Install/legacy降级缺口，原失败保留；1550canonicalrawblobs后44Python/16Node全过，含实际constructor四profile（外部ELF/modules边界替身）、实际shell→Node控制流（Podman替身）和tiny非bootable ISOUSB四profile。父合入Windows13过，新publisher只读复验旧8e6实际216摘要/原aliasinode562949954769671/links2未变。只读root实审regular1415935296B/固件267464310B；IntelGPU29587061/NVIDIA65633076/iwlwifi116721656/SOF35505120仅展开bytes。实际APT平台组装、四份正式ISO/压缩节省、新Install媒体、VM/物理资格均未执行，不把fixtures或raw差额冒正式新产物；旧8e6及所有历史媒体/收据保留。"
     },
     {
       "id": "bug-native-fractional-layout",
