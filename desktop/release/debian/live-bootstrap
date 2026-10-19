@@ -1,0 +1,140 @@
+#!/bin/sh
+export PATH=/bin
+umask 022
+
+stage() {
+    stamp="untimed: /proc/uptime unavailable"
+    if [ -r "$uptime_file" ]; then
+        if read -r uptime rest < "$uptime_file"; then
+            stamp=$uptime
+        else
+            stamp="untimed: /proc/uptime read failed"
+        fi
+    fi
+    printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&3
+    if [ "$serial" = 1 ]; then
+        printf '[%s] Polly Live: %s\n' "$stamp" "$*" >&4
+    fi
+    if [ -d "$log_directory" ]; then
+        printf '[%s] Polly Live: %s\n' "$stamp" "$*" >>"$log_directory/early-boot.log"
+    fi
+}
+
+fail() {
+    trap - EXIT
+    stage "ERROR: $*. No disk writes or alternate root attempted."
+    printf 'Boot stopped. Diagnostic shell only; exit does not continue boot.\n' >&3
+    while :; do /bin/sh <"$console" >&3 2>&1; done
+}
+
+set -eu
+serial=0
+console=/dev/console
+uptime_file=/proc/uptime
+log_directory=/tmp
+exec 3>/dev/console
+trap 'fail "Bootstrap command failed (status $?)"' EXIT
+chmod 0755 /
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in polly.serial=1) serial=1 ;; esac
+done
+if [ "$serial" = 1 ]; then exec 4>/dev/ttyS0; fi
+stage "Bootstrap running; preparing memory-only root"
+mount --make-rprivate /
+mount -t tmpfs -o mode=0755,size=75% tmpfs /run
+mkdir -p /run/polly-live
+chmod 0755 /run/polly-live
+cp /tmp/early-boot.log /run/polly-live/early-boot.log
+log_directory=/run/polly-live
+stage "Loading boot-media and compressed-root drivers"
+. /etc/polly-live-root
+uuid=
+identity=
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        polly.media_uuid=*) [ -z "$uuid" ] || fail "Duplicate media UUID"; uuid=${arg#*=} ;;
+        polly.media_id=*) [ -z "$identity" ] || fail "Duplicate media identity"; identity=${arg#*=} ;;
+    esac
+done
+case "$uuid" in ''|*[!a-zA-Z0-9-]*) fail "Missing/invalid boot filesystem UUID" ;; esac
+uuid=$(printf '%s' "$uuid" | tr '[:upper:]' '[:lower:]')
+[ "$identity" = "$POLLY_MEDIA_ID" ] || fail "Boot/bootstrap media identity mismatch"
+while read -r module; do
+    modprobe "$module" || fail "Cannot load driver $module"
+done </etc/polly-live-modules
+
+stage "Finding the exact boot filesystem (read-only)"
+attempt=0
+found=
+while [ "$attempt" -lt 30 ]; do
+    mdev -s
+    found=
+    for node in /sys/class/block/*; do
+        device=/dev/${node##*/}
+        [ -b "$device" ] || continue
+        actual=$(blkid -s UUID -o value "$device" 2>/dev/null) || continue
+        actual=$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')
+        [ "$actual" = "$uuid" ] || continue
+        type=$(blkid -s TYPE -o value "$device") || fail "Cannot identify boot filesystem"
+        case "$type" in iso9660|vfat) ;; *) fail "Boot filesystem is not ISO9660/FAT" ;; esac
+        mount -t "$type" -o ro,nosuid,nodev,noexec "$device" /media ||
+            fail "Cannot read boot filesystem"
+        if [ -f "/media/polly/$POLLY_MEDIA_ID.marker" ]; then
+            [ "$(cat "/media/polly/$POLLY_MEDIA_ID.marker")" = "$POLLY_ROOT_SHA256" ] ||
+                fail "Boot marker/root hash mismatch"
+            [ -z "$found" ] || fail "Ambiguous duplicate boot media"
+            found=$device
+        fi
+        umount /media || fail "Cannot release inspected media"
+    done
+    [ -z "$found" ] || break
+    attempt=$((attempt + 1))
+    sleep 1
+done
+[ -n "$found" ] || fail "Exact boot media not found"
+type=$(blkid -s TYPE -o value "$found") || fail "Boot media disappeared"
+mount -t "$type" -o ro,nosuid,nodev,noexec "$found" /media || fail "Cannot reopen boot media"
+[ "$(cat "/media/polly/$POLLY_MEDIA_ID.marker")" = "$POLLY_ROOT_SHA256" ] ||
+    fail "Boot media identity changed"
+[ "$(stat -c %s /media/boot/root.squashfs)" = "$POLLY_ROOT_BYTES" ] ||
+    fail "Compressed root size mismatch"
+stage "Copying compressed root to RAM ($POLLY_ROOT_BYTES bytes)"
+available=0
+while read -r key value unit; do
+    case "$key" in MemAvailable:) available=$((value * 1024)); break ;; esac
+done </proc/meminfo
+[ "$available" -gt "$((POLLY_ROOT_BYTES + 1073741824))" ] ||
+    fail "Insufficient RAM for compressed root plus system reserve"
+cp /media/boot/root.squashfs /run/polly-live/root.squashfs ||
+    fail "RAM copy failed (insufficient memory or media I/O)"
+stage "Verifying RAM copy"
+[ "$(stat -c %s /run/polly-live/root.squashfs)" = "$POLLY_ROOT_BYTES" ] ||
+    fail "Incomplete RAM copy"
+printf '%s  /run/polly-live/root.squashfs\n' "$POLLY_ROOT_SHA256" | sha256sum -c - ||
+    fail "RAM root hash mismatch"
+umount /media || fail "Cannot detach boot medium"
+stage "Boot medium released; mounting RAM root"
+mkdir -p /run/polly-live/lower /run/polly-live/upper /run/polly-live/work
+loop=$(losetup -f) || fail "No available RAM loop device"
+losetup -r "$loop" /run/polly-live/root.squashfs || fail "Cannot attach RAM loop"
+mount -t squashfs -o ro "$loop" /run/polly-live/lower || fail "Cannot mount compressed RAM root"
+mount -t overlay overlay \
+    -o lowerdir=/run/polly-live/lower,upperdir=/run/polly-live/upper,workdir=/run/polly-live/work /newroot ||
+    fail "Cannot mount writable RAM overlay"
+[ -x /newroot/init ] && [ -x /newroot/sbin/init ] || fail "RAM root lacks system init"
+printf '%s\n' "$POLLY_MEDIA_ID" >/run/polly-live/root-ready
+stage "Starting system from RAM overlay"
+for name in dev proc sys; do
+    mount --move "/$name" "/newroot/$name" || fail "Cannot transfer /$name"
+    case "$name" in
+        dev) console=/newroot/dev/console ;;
+        proc) uptime_file=/newroot/proc/uptime ;;
+    esac
+done
+mount --move /run /newroot/run || fail "Cannot retain RAM root and boot log"
+log_directory=/newroot/run/polly-live
+stage "RAM mounts transferred; switching root"
+exec switch_root -c /dev/console /newroot /init

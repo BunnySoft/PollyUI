@@ -149,7 +149,88 @@ The preserved Alpine path combines the packaged PollyDesktop runtime with Alpine
 the kernel and an
 initramfs containing the entire runtime; there is no writable block-device root.
 The Debian path uses a minbase-derived runtime, its Debian kernel and
-systemd/udev/logind instead of OpenRC/eudev/elogind.
+systemd/udev/logind instead of OpenRC/eudev/elogind. **Current-source Debian
+builds use the compressed RAM-root layout below**, not the historical
+full-runtime initramfs. Older delivered images retain their original layout;
+Alpine is a historical unsupported path, not qualified by this Debian change.
+
+## Compressed RAM root (new Debian builds; boot qualification pending)
+
+GRUB loads only the kernel, Intel microcode and a bounded bootstrap initramfs.
+`boot/root.squashfs` is a separate file on **both** the optical ISO and GPT/FAT32
+USB image; it is never embedded in the bootstrap. The early init copies that
+compressed file into `/run/polly-live/root.squashfs`, verifies its size and SHA-256,
+unmounts the read-only boot medium, and attaches a read-only RAM-backed loop.
+SquashFS is the lower root; `upper` and `work` share the same `/run` tmpfs.
+The overlay, `/run`, `/dev`, `/proc` and `/sys` survive `switch_root`; the
+existing root `/init` recognizes this handoff rather than replacing `/run`.
+Systemd, temporary accounts, tty1-only desktop startup, PAM/DRM, IME/clipboard,
+workspace contracts and the 90-second desktop gate are unchanged.
+
+The medium can be removed **after** the explicit `Boot medium released` stage.
+This is not a media-backed root or persistent installation. No internal
+filesystem is mounted writable, no fsck/swap/installer runs, and copy, memory,
+module, hash or mount failure stops with a visible error and diagnostic shell,
+never an alternate root. At least the compressed root size plus a 1 GiB system
+reserve must be available before copying; the supported guest target stays
+4 GiB, not a newly measured minimum.
+
+The embedded GRUB config searches only for a unique per-build marker and passes
+the selected filesystem's UUID plus the build identity. It does not assume the
+standalone GRUB's initial memdisk or the El Torito EFI image is the root medium.
+The bootstrap only
+reads ISO9660/FAT candidates with that exact UUID and marker, rejects duplicate
+matching media, and checks the root hash and size baked into its own archive.
+The fixed `POLLYLIVE` label is not an identity or a discovery fallback.
+This is local integrity/binding, **not** a signed or authenticated boot chain.
+
+Every entry prints `Loading kernel`, `Loading bootstrap` and `Starting kernel`
+only as the preceding command succeeds; kernel/bootstrap load failure prints
+an explicit GRUB error and halts rather than booting a partial payload.
+Early init prints real copy/hash/mount stages with `/proc/uptime` timestamps
+before the large copy, also to serial in the serial entry. The retained log is
+`/run/polly-live/early-boot.log` and is included by `polly-live-diagnostics`.
+The newc writer synthesizes root-owned console/null character entries without
+host `mknod`; init opens its console before the first mount. Failures before proc
+is available explicitly say `untimed`, never invent a monotonic timestamp.
+The bootstrap uses static BusyBox plus `blkid` with its exact ELF loader/library
+closure, and only the selected kernel's storage/filesystem module dependency
+closure and declared firmware. The builder requires built-in EFI framebuffer,
+VT and framebuffer console support; it does not start a second graphics daemon.
+Plymouth still starts in the systemd stage. **Actual Hyper-V screen visibility,
+media-detach survival, memory behavior and startup time require fresh boot
+qualification.** Smaller structure and earlier source-wired output do not
+prove that the user's black interval disappeared or that boot is faster.
+
+`live-manifest.json` schema 2 records the root object
+(`kind=squashfs-ram-overlay`, path/hash/size, unique identity, `copyToRam=true`,
+`writable=tmpfs-overlay`) and the bounded bootstrap's exact node inventory.
+It fingerprints both the GRUB source template and actual embedded generated
+config, retaining the latter as checksummed `grub.cfg`. The media verifier
+streams actual SquashFS runtime/overlay bytes and checks numeric owner/mode,
+origin and unexpected Polly namespaces. USB root/bootstrap/marker must match
+the verified ISO. Publication requires a matching schema-2 receipt, USB and
+config checksums; it cannot accept an arbitrary root string or a legacy receipt
+as compressed-root verification. Exact legacy schema-1/root-string artifacts
+remain readable. The low-level builder's explicit `--legacy-initramfs` is only
+for historical comparison, never automatic fallback.
+
+Focused Linux checks are `python3 -I -B desktop/tests/live-compressed-root.py`
+and the existing `live-startup.py`, `verify-live-runtime.py` and
+`account-profiles.py`. The same test script's explicit `--mount-handoff`
+requires a private container mount/PID namespace (`SYS_ADMIN` in that container)
+and exercises actual tmpfs/overlay/mount moves, PID1 `switch_root` and the root
+`/init`; it never uses a block device and **does not** test a SquashFS mount,
+boot-media discovery, a kernel boot or systemd. Do not confuse these fixtures
+with authorized ISO/USB/Hyper-V acceptance.
+
+The image-tools recipe adds `busybox-static`, `squashfs-tools`, `kmod`,
+`xz-utils` and explicit `util-linux`; these do not change runtime package pins,
+the installed-system builder or the frozen native SDK. Root export validation
+rejects traversal, duplicate paths, non-directory parents and unsafe hardlinks
+before extraction; symlinks are created last. Ownership, modes, hardlinks and
+supported export xattrs (including capabilities) are preserved, and an
+unsupported xattr encoding fails rather than being silently discarded.
 
 This image prepares a first physical-machine validation preview, with disposable
 VM checks before writing any external boot media. The initial
@@ -215,7 +296,7 @@ it does not promise mouse input, horizontal cards or animation. The main menu
 contains **Start PollyDesktop Live (memory only)** (default index 0) and
 **Advanced startup**. Advanced contains GPU automatic selection, Intel GPU,
 verbose startup, diagnostics console, and the serial VM baseline, in that order,
-with the original kernel/search/initrd commands unchanged. Entering Advanced
+with the same modes and the compressed-root media binding described above. Entering Advanced
 disables automatic boot (`timeout=-1`); its initial selection is GPU, not a
 different hidden normal-boot default. Esc returns to the main menu. No installed
 OS entries, disk discovery, mounts or chainloading are added.
@@ -340,13 +421,15 @@ Do not infer the tested ISO revision from the current Git branch.
 | Plymouth handoff → compositor output | Plymouth exits before getty/PAM, private D-Bus/audio, DRM/logind setup and first compositor output | Handoff/getty/logind journal versus `polly-live`, `polly-login` and `polly-session` records |
 | Compositor output → usable desktop | Decorator/Shell/IME or presentation readiness; supervisor waits for actual `POLLY_LIVE_DESKTOP_READY outputs=N` | Private `~/polly-session-*` and tag-filtered journal; output mapping/submission alone is not readiness |
 
-Two specific blind intervals are present in the current source, not a proven
+Two specific blind intervals are present in the delivered historical layout, not a proven
 diagnosis of an individual user's machine:
 
 - Default GRUB suppresses most kernel messages. This is a memory-root image:
   the delivered `8433048` manifest records **1,509,735,523 unpacked regular-file
   bytes** in a 711,337,984-byte ISO. Loading and unpacking are real work before
-  the systemd Plymouth unit. These sizes do not measure their duration.
+  the systemd Plymouth unit. These sizes do not measure their duration. New
+  Debian source removes full-root kernel unpacking but still performs real
+  media loading, RAM copy and hash work; no measured speedup is implied.
 - `polly-hardware-log.service` wants and waits for
   `systemd-udev-settle.service`, and tty1 getty waits for that hardware logger.
   The logger itself runs `lspci -nnk` and `dmesg`. Global udev settle can wait
@@ -468,9 +551,10 @@ POLLY_RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.4 \
 The script builds two scoped Podman images: `localhost/polly-live-base` and
 `localhost/polly-live-tools`. Package installation takes place only inside
 these containers. The runtime container is exported without running its init.
-A Python builder streams that export into a `newc` initramfs, preserving file
-modes, guest owners and symbolic links without needing privileged extraction.
-Kernel device nodes exist only in the archive. Container-specific runtime
+A Python builder preserves file modes, guest owners, links and supported xattrs
+in the Debian SquashFS root. The historical Alpine/explicit legacy path streams
+the export into a full `newc` initramfs instead.
+Container-specific runtime
 mounts, resolver data and machine IDs are excluded.
 
 The builder refuses existing output directories. It records the source
@@ -481,7 +565,8 @@ and `POLLY_SOURCE_DIRTY=0` or `1`; neither value is inferred as clean.
 
 The USB artifact is a regular image file containing a GPT and one FAT32 EFI
 System Partition. It boots through `EFI/BOOT/BOOTX64.EFI`, with its own kernel
-and initramfs. Construction uses no loop devices, mounts or physical disk writes.
+and bootstrap plus the separate SquashFS root for current Debian builds.
+Construction uses no loop devices, mounts or physical disk writes.
 The ISO remains optical media; do not assume that copying an ISO file or
 raw-writing the optical ISO is equivalent to writing the USB image.
 
@@ -498,7 +583,8 @@ against the actual base inventory before assembling the exact cached delta.
 `Containerfile.offline-live` clears only the owned Polly runtime namespaces,
 including `usr/share/icons/PollyRabbit` and `usr/share/icons/PollyClassic`;
 `offline-live-overlay.py` rejects any old or unlisted file in those namespaces.
-`verify-live-runtime.py` independently streams the actual ISO initramfs and
+`verify-live-runtime.py` independently streams the actual ISO SquashFS root
+(or the exact legacy initramfs schema) and
 checks every packaged runtime/overlay file's bytes, mode and owner, the origin
 receipt, and unexpected Polly files, including cursor assets outside
 `usr/share/pollyui`. Preserve separate runtime-freeze and media-producer revisions:

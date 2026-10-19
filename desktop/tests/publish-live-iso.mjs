@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ALIAS, DEFAULT_DESTINATION, digest, publish } from '../tools/publish-live-iso.mjs';
+import { ALIAS, DEFAULT_DESTINATION, digest, publish, verifyBundle } from '../tools/publish-live-iso.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'polly-publish-test-'));
@@ -98,4 +98,49 @@ test('unsafe checksum paths and conflicting versioned releases are refused', t =
 test('Windows default destination and stable alias are fixed', () => {
   assert.equal(DEFAULT_DESTINATION, String.raw`D:\temp\PollyOS`);
   assert.equal(ALIAS, 'PollyOS.iso');
+});
+test('versioned compressed RAM layout requires matching actual USB, config and root receipt', t => {
+  const f = fixture(t), directory = f.bundle('compressed');
+  fs.writeFileSync(path.join(directory, 'test.img'), 'synthetic USB, not bootable');
+  fs.writeFileSync(path.join(directory, 'grub.cfg'), 'synthetic embedded config receipt');
+  const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'live-manifest.json')));
+  const origin = JSON.parse(fs.readFileSync(path.join(directory, 'candidate-origin.json')));
+  const root = { kind: 'squashfs-ram-overlay', path: 'boot/root.squashfs',
+    sha256: 'd'.repeat(64), size: 100, mediaIdentity: 'e'.repeat(32),
+    copyToRam: true, writable: 'tmpfs-overlay',
+    bootstrap: { path: 'boot/initramfs.gz', sha256: 'f'.repeat(64), size: 50, uncompressedBytes: 200 } };
+  const freshManifest = { ...manifest, schemaVersion: 2, root,
+    grub: { templateSha256: 'a'.repeat(64), embeddedSha256: digest(path.join(directory, 'grub.cfg')) },
+    usb: { name: 'test.img', sha256: digest(path.join(directory, 'test.img')),
+      size: fs.statSync(path.join(directory, 'test.img')).size } };
+  const freshOrigin = { ...origin, schemaVersion: 2, rootLayout: root,
+    usbSha256: freshManifest.usb.sha256, usbPayloadFilesVerified: 1, bootstrapVerified: true };
+  function write(m = freshManifest, o = freshOrigin) {
+    f.writeJson(directory, 'live-manifest.json', m);
+    f.writeJson(directory, 'candidate-origin.json', o);
+    f.sums(directory);
+  }
+  write();
+  assert.equal(verifyBundle(directory).manifest.root.kind, root.kind);
+  for (const change of [
+    { ...root, copyToRam: false }, { ...root, kind: 'media-backed' },
+    { ...root, path: '../root.squashfs' }, { ...root, size: 0 },
+    { ...root, bootstrap: { ...root.bootstrap, uncompressedBytes: 64 * 1024 * 1024 + 1 } },
+  ]) {
+    write({ ...freshManifest, root: change });
+    assert.throws(() => verifyBundle(directory), /layout|receipt/);
+  }
+  for (const change of [
+    { schemaVersion: 1 }, { bootstrapVerified: false }, { usbSha256: '0'.repeat(64) },
+    { usbPayloadFilesVerified: 0 }, { rootLayout: { ...root, mediaIdentity: '0'.repeat(32) } },
+  ]) {
+    write(freshManifest, { ...freshOrigin, ...change });
+    assert.throws(() => verifyBundle(directory), /receipt/);
+  }
+  write({ ...freshManifest, root: 'initramfs, memory only' });
+  assert.throws(() => verifyBundle(directory), /layout/);
+  write();
+  fs.writeFileSync(path.join(directory, 'test.img'), 'changed USB');
+  f.sums(directory);
+  assert.throws(() => verifyBundle(directory), /USB\/config/);
 });

@@ -3,17 +3,16 @@
 import argparse
 import gzip
 import hashlib
-import io
 import json
-import os
 import re
 import runpy
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import shutil
 import stat
 import subprocess
 import tarfile
 import tempfile
+import uuid
 
 
 def run(*args):
@@ -36,10 +35,14 @@ def main():
     parser.add_argument("--source-dirty", choices=["0", "1"], required=True)
     parser.add_argument("--runtime-image", required=True)
     parser.add_argument("--distribution", choices=["alpine3.24", "debian13"], default="alpine3.24")
+    parser.add_argument("--legacy-initramfs", action="store_true",
+                        help="Explicit historical full-root initramfs; never an automatic fallback")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     version = (repo / "desktop/VERSION").read_text().strip()
     debian = args.distribution == "debian13"
+    compressed_root = debian and not args.legacy_initramfs
+    root_tools = runpy.run_path(str(repo / "desktop/tools/live-root.py"))
     image_name = f"pollydesktop-{version}" + ("-debian13" if debian else "")
     if not re.fullmatch(r"\d+\.\d+\.\d+-alpha\.\d+", version):
         raise ValueError("Invalid Live development version")
@@ -56,7 +59,8 @@ def main():
         boot = image / "boot"
         boot.mkdir(parents=True)
         (image / "polly-live.marker").write_text(version + "\n")
-        inode = 0
+        root_layout = "initramfs, memory only"
+        media_id = uuid.uuid4().hex
         files = 0
         total = 0
 
@@ -117,77 +121,57 @@ def main():
                     if versions.get(package, versions.get(package + ":amd64")) != pinned:
                         raise ValueError("Live startup package pin mismatch: " + package)
 
-            with (boot / "initramfs.gz").open("wb") as raw:
-                with gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=6, mtime=0) as cpio:
-                    def entry(name, mode, uid=0, gid=0, size=0, data=None, major=0, minor=0):
-                        nonlocal inode, files, total
-                        inode += 1
-                        encoded = name.encode() + b"\0"
-                        fields = [inode, mode, uid, gid, 1, 0, size, 0, 0, major, minor, len(encoded), 0]
-                        header = ("070701" + "".join(f"{value:08x}" for value in fields)).encode()
-                        cpio.write(header + encoded)
-                        cpio.write(b"\0" * (-(len(header) + len(encoded)) % 4))
-                        if data is not None:
-                            remaining = size
-                            while remaining:
-                                block = data.read(min(1024 * 1024, remaining))
-                                if not block:
-                                    raise ValueError("Truncated export entry: " + name)
-                                cpio.write(block)
-                                remaining -= len(block)
-                        cpio.write(b"\0" * (-size % 4))
-                        files += 1
-                        total += size
+            if compressed_root:
+                with archive.extractfile("init") as source:
+                    if source.read() != (repo / "desktop/release/live/init").read_bytes():
+                        raise ValueError("Compressed RAM root needs this source's mount-preserving /init")
+                root = staging / "root"
+                files, total = root_tools["extract_root"](archive, root)
+                squashfs = boot / "root.squashfs"
+                subprocess.run(["mksquashfs", str(root), str(squashfs), "-noappend",
+                                "-comp", "gzip", "-processors", "1", "-no-progress", "-quiet"],
+                               check=True, timeout=600)
+                release = kernel_name.removeprefix("boot/vmlinuz-")
+                with archive.extractfile("boot/config-" + release) as source:
+                    config = source.read().decode()
+                root_layout = root_tools["build_bootstrap"](
+                    root, staging, boot, repo, release, config, media_id, squashfs)
+                (image / "polly").mkdir()
+                (image / "polly" / (media_id + ".marker")).write_text(root_layout["sha256"] + "\n")
+                shutil.rmtree(root)
+            else:
+                files, total = write_legacy_initramfs(archive, boot, debian)
 
-                    entry(".", stat.S_IFDIR | 0o755)
-                    for member in archive:
-                        name = member.name.removeprefix("./").rstrip("/")
-                        path = PurePosixPath(name)
-                        if not name or name == ".":
-                            continue
-                        if path.is_absolute() or ".." in path.parts:
-                            raise ValueError("Unsafe export path: " + name)
-                        if path.parts[0] in {"boot", "dev", "proc", "sys", "run", "tmp"}:
-                            continue
-                        if name in {".dockerenv", "etc/machine-id", "var/lib/dbus/machine-id",
-                                    "etc/hosts", "etc/hostname", "etc/resolv.conf"}:
-                            continue
-                        if member.isdir():
-                            entry(name, stat.S_IFDIR | member.mode, member.uid, member.gid)
-                        elif member.issym():
-                            encoded = member.linkname.encode()
-                            entry(name, stat.S_IFLNK | member.mode, member.uid, member.gid,
-                                  len(encoded), io.BytesIO(encoded))
-                        elif member.isfile() or member.islnk():
-                            source = archive.extractfile(member)
-                            if source is None:
-                                raise ValueError("Unreadable export entry: " + name)
-                            size = archive.getmember(member.linkname).size if member.islnk() else member.size
-                            entry(name, stat.S_IFREG | member.mode, member.uid, member.gid, size, source)
-                            source.close()
-                        else:
-                            raise ValueError("Unexpected export node: " + name)
-                    entry("dev", stat.S_IFDIR | 0o755)
-                    entry("dev/console", stat.S_IFCHR | 0o600, major=5, minor=1)
-                    entry("dev/null", stat.S_IFCHR | 0o666, major=1, minor=3)
-                    hosts = b"127.0.0.1 localhost polly-live\n::1 localhost\n"
-                    entry("etc/hosts", stat.S_IFREG | 0o644, size=len(hosts), data=io.BytesIO(hosts))
-                    hostname = b"polly-live\n"
-                    entry("etc/hostname", stat.S_IFREG | 0o644, size=len(hostname), data=io.BytesIO(hostname))
-                    resolver = b"/run/polly-network/resolv.conf" if debian else b"# Populated by guest-only DHCP or iwd/openresolv in memory.\n"
-                    entry("etc/resolv.conf", (stat.S_IFLNK | 0o777) if debian else (stat.S_IFREG | 0o644),
-                          size=len(resolver), data=io.BytesIO(resolver))
-                    entry("TRAILER!!!", 0)
+        # The source is a template; fingerprint the actual embedded configuration too.
+        cfg_source = repo / ("desktop/release/debian/live-grub.cfg" if debian else "desktop/release/live/grub.cfg")
+        cfg = staging / "grub.cfg"
+        configuration = cfg_source.read_text()
+        if debian:
+            configuration = configuration.replace("@POLLY_MEDIA_ID@", media_id)
+            if not compressed_root:
+                configuration = configuration.replace(
+                    "polly_prepare_media", "polly_legacy_media")
+                start = configuration.index("function polly_legacy_media {")
+                end = configuration.index('\nmenuentry ', start)
+                configuration = (configuration[:start] +
+                                 "function polly_legacy_media {\n"
+                                 "    search --no-floppy --file --set=root /polly-live.marker\n}\n" +
+                                 configuration[end:])
+                configuration = configuration.replace(
+                    " polly.media_uuid=$polly_media_uuid polly.media_id=" + media_id, "")
+        cfg.write_text(configuration)
+        if debian:
+            run("grub-script-check", str(cfg))
+        grub_receipt = {"templateSha256": digest(cfg_source), "embeddedSha256": digest(cfg)}
 
         efi = staging / "BOOTX64.EFI"
-        cfg = repo / ("desktop/release/debian/live-grub.cfg" if debian else "desktop/release/live/grub.cfg")
         resources = []
         if debian:
             assets = runpy.run_path(str(repo / "desktop/release/live/boot-assets.py"))
             resources = assets["write_theme"](staging / "grub-theme")
             resources.append("boot/grub/themes/polly/theme.txt=" + str(repo / "desktop/release/live/grub-theme.txt"))
         run("grub-mkstandalone", "-O", "x86_64-efi", "--locales=", "--fonts=unicode" if debian else "--fonts=",
-            "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal" +
+            "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal probe halt" +
             (" all_video efi_gop gfxterm gfxmenu png font" if debian else ""),
             "-o", str(efi), "boot/grub/grub.cfg=" + str(cfg), *resources)
         fat = boot / "efiboot.img"
@@ -206,7 +190,10 @@ def main():
                            check=True, timeout=180, stdout=log, stderr=subprocess.STDOUT)
         # Build only regular image files; never attach a loop device or open a physical disk.
         usb = staging / f"{image_name}-x86_64-uefi-usb.img"
-        payload = sum(file.stat().st_size for file in (efi, boot / "vmlinuz", boot / "intel-ucode.img", boot / "initramfs.gz"))
+        boot_files = [boot / name for name in ("vmlinuz", "intel-ucode.img", "initramfs.gz")]
+        if compressed_root:
+            boot_files.append(boot / "root.squashfs")
+        payload = sum(file.stat().st_size for file in (efi, *boot_files))
         partition_mib = max(128, (payload + 64 * 1024 * 1024 + 1024 * 1024 - 1) // (1024 * 1024))
         sectors = partition_mib * 2048
         with usb.open("wb") as target:
@@ -220,7 +207,10 @@ def main():
         run("mmd", "-i", str(filesystem), "::/EFI", "::/EFI/BOOT", "::/boot")
         run("mcopy", "-i", str(filesystem), str(efi), "::/EFI/BOOT/BOOTX64.EFI")
         run("mcopy", "-i", str(filesystem), str(image / "polly-live.marker"), "::/")
-        for file in (boot / "vmlinuz", boot / "intel-ucode.img", boot / "initramfs.gz"):
+        if compressed_root:
+            run("mmd", "-i", str(filesystem), "::/polly")
+            run("mcopy", "-i", str(filesystem), str(image / "polly" / (media_id + ".marker")), "::/polly/")
+        for file in boot_files:
             if file.stat().st_size >= 2 ** 32:
                 raise ValueError("Boot payload exceeds FAT32 individual-file limit")
             run("mcopy", "-i", str(filesystem), str(file), "::/boot/")
@@ -230,11 +220,19 @@ def main():
         filesystem.unlink()
         run("sfdisk", "--verify", str(usb))
         manifest = {
+            "schemaVersion": 2 if compressed_root else 1,
             "version": version, "architecture": "x86_64", "firmware": "UEFI (unsigned)",
             "distribution": args.distribution, "kernel": kernel_name,
             "stage": "development-live-image", "sourceRevision": args.source_revision,
             "sourceDirty": args.source_dirty == "1", "runtimeImage": args.runtime_image,
-            "root": "initramfs, memory only", "automaticLogin": "temporary uid 1000 polly",
+            "root": root_layout, "grub": grub_receipt,
+            "bootFiles": [{"path": "boot/" + file.name, "sha256": digest(file), "size": file.stat().st_size}
+                          for file in boot_files],
+            "imageToolPackages": subprocess.check_output(
+                ["dpkg-query", "-W", "-f=${binary:Package}=${Version}\\n",
+                 "busybox-static", "squashfs-tools", "kmod", "xz-utils", "util-linux"],
+                text=True, timeout=10).splitlines() if compressed_root else [],
+            "automaticLogin": "temporary uid 1000 polly",
             "minimumGuestMemoryMiB": 4096, "files": files, "uncompressedPayloadBytes": total,
             "iso": {"name": iso.name, "sha256": digest(iso), "size": iso.stat().st_size},
             "usb": {"name": usb.name, "sha256": digest(usb), "size": usb.stat().st_size,
@@ -246,6 +244,7 @@ def main():
                 for file in sorted([
                     *(repo / "desktop/release/live").iterdir(),
                     repo / "desktop/tools/build-live-image.py", repo / "desktop/tools/build-live.sh",
+                    repo / "desktop/tools/live-root.py",
                     repo / "desktop/release/Containerfile.live",
                     repo / "desktop/system/login.pam", repo / "desktop/system/polly-lock.pam",
                     repo / "desktop/system/elogind-polly.conf", repo / "desktop/system/iwd-main.conf",
@@ -260,7 +259,7 @@ def main():
         with (staging / "boot-layout.txt").open("w") as report:
             subprocess.run(["xorriso", "-indev", str(iso), "-report_el_torito", "plain"],
                            check=True, timeout=30, stdout=report, stderr=subprocess.STDOUT)
-        sums = [f"{digest(file)}  {file.name}" for file in (iso, usb, staging / "live-manifest.json")]
+        sums = [f"{digest(file)}  {file.name}" for file in (iso, usb, staging / "live-manifest.json", cfg)]
         (staging / "SHA256SUMS").write_text("\n".join(sums) + "\n")
         shutil.rmtree(image)
         efi.unlink()
@@ -283,6 +282,47 @@ def main():
         if publication is not None:
             shutil.rmtree(publication)
         raise
+
+
+def write_legacy_initramfs(archive, boot, debian):
+    inode = files = total = 0
+    with (boot / "initramfs.gz").open("wb") as raw, gzip.GzipFile(
+            filename="", fileobj=raw, mode="wb", compresslevel=6, mtime=0) as cpio:
+        def entry(name, mode, uid=0, gid=0, data=b"", major=0, minor=0):
+            nonlocal inode, files, total
+            inode += 1
+            encoded = name.encode() + b"\0"
+            fields = [inode, mode, uid, gid, 1, 0, len(data), 0, 0, major, minor, len(encoded), 0]
+            header = ("070701" + "".join(f"{value:08x}" for value in fields)).encode()
+            cpio.write(header + encoded + b"\0" * (-(110 + len(encoded)) % 4))
+            cpio.write(data + b"\0" * (-len(data) % 4))
+            files += 1
+            total += len(data)
+
+        helpers = runpy.run_path(str(Path(__file__).with_name("live-root.py")))
+        members = helpers["export_members"](archive)
+        entry(".", stat.S_IFDIR | 0o755)
+        for name, member in members.items():
+            if name == "." or helpers["excluded"](name):
+                continue
+            if member.isdir():
+                entry(name, stat.S_IFDIR | member.mode, member.uid, member.gid)
+            elif member.issym():
+                entry(name, stat.S_IFLNK | member.mode, member.uid, member.gid, member.linkname.encode())
+            elif member.isfile() or member.islnk():
+                with archive.extractfile(member) as source:
+                    entry(name, stat.S_IFREG | member.mode, member.uid, member.gid, source.read())
+            else:
+                raise ValueError("Unexpected export node: " + name)
+        entry("dev", stat.S_IFDIR | 0o755)
+        entry("dev/console", stat.S_IFCHR | 0o600, major=5, minor=1)
+        entry("dev/null", stat.S_IFCHR | 0o666, major=1, minor=3)
+        entry("etc/hosts", stat.S_IFREG | 0o644, data=b"127.0.0.1 localhost polly-live\n::1 localhost\n")
+        entry("etc/hostname", stat.S_IFREG | 0o644, data=b"polly-live\n")
+        resolver = b"/run/polly-network/resolv.conf" if debian else b"# Populated by guest-only DHCP or iwd/openresolv in memory.\n"
+        entry("etc/resolv.conf", (stat.S_IFLNK | 0o777) if debian else (stat.S_IFREG | 0o644), data=resolver)
+        entry("TRAILER!!!", 0)
+    return files, total
 
 
 if __name__ == "__main__":

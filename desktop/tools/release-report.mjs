@@ -4,6 +4,7 @@ import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateRuntimeContract } from './package-contract.mjs';
+import { validateLiveLayout } from './live-layout.mjs';
 
 const checksum = /^[0-9a-f]{64}$/;
 const revision = /^[0-9a-f]{40}$/;
@@ -83,7 +84,8 @@ export async function inspectRelease(directory) {
         checksum.test(item.trackedDiffSha256), 'Invalid dependency source fingerprint');
   }
   if (live) {
-    requireValue(manifest.stage === 'development-live-image' && manifest.root === 'initramfs, memory only',
+    validateLiveLayout(manifest);
+    requireValue(manifest.stage === 'development-live-image',
       'Unexpected Live artifact contract');
     for (const medium of [manifest.iso, manifest.usb].filter(Boolean)) {
       requireValue(typeof medium.name === 'string' && checksum.test(medium.sha256), 'Invalid boot media identity');
