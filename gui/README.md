@@ -200,6 +200,16 @@ closed-owner collection; it does not qualify a hardware/compositor backend.
 
 ## Input typography and selection foreground
 
+`createTextInput` blinks its focused insertion caret every 530 ms. Focus, edits,
+navigation, and pointer placement restore the visible phase; appearance-only
+refreshes preserve the blink clock. Selected ranges retain their existing
+steady caret, and active IME preedit keeps its requested cursor steady.
+Inactive windows hide it.
+The animation uses the existing rAF pump, changes only caret color, and stops
+after blur, detachment, or owner closure; it adds no perpetual timer to headless
+tests. `gui/tests/textinput-blink.mjs` covers the phases with explicit frame
+timestamps and can run with the existing playground `--test` entry.
+
 `measureText(text, size, weight, family)` and, where present,
 `layoutText(text, size, weight, family)` accept an optional fourth literal family
 name. Each supporting function exposes readonly/nonconfigurable

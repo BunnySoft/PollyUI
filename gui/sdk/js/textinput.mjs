@@ -64,6 +64,50 @@ export function createTextInput(opts = {}) {
   root.appendChild(caret);
   root.appendChild(underline);
 
+  let blinkFrame = null, blinkTime = null, caretOn = true, blinkGeneration = 0;
+  function scheduleBlink() {
+    const generation = blinkGeneration;
+    blinkFrame = requestAnimationFrame(timestamp => {
+      if (generation === blinkGeneration) blink(timestamp);
+    });
+  }
+  function focusedInput() {
+    if (!st.focused || owner.activeElement !== root || root.ownerDocument !== owner || surface?.closed) return false;
+    for (let node = root; node; node = node.parentNode) {
+      if (node.style?.display === 'none') return false;
+      if (node === owner.body) return true;
+    }
+    return false;
+  }
+  function activeOwner() {
+    const view = owner.defaultView ?? surface;
+    return !view || (!view.closed && view.state.active && !view.state.minimized);
+  }
+  function paintCaret() {
+    const visible = focusedInput() && activeOwner() && caretOn &&
+      (!st.composition || st.composition.cursor >= 0);
+    const next = visible ? color : 'transparent';
+    if (caret.style.backgroundColor !== next) caret.style.backgroundColor = next;
+  }
+  function blink(timestamp) {
+    blinkFrame = null;
+    if (!focusedInput() || selRange()) { paintCaret(); return; }
+    if (!activeOwner()) { caretOn = false; blinkTime = null; }
+    else if (blinkTime === null || st.dragging || st.composition) { caretOn = true; blinkTime = timestamp; }
+    else if (timestamp - blinkTime >= 530) { caretOn = !caretOn; blinkTime = timestamp; }
+    paintCaret();
+    scheduleBlink();
+  }
+  function resetCaret(reset = true) {
+    blinkGeneration++;
+    if (reset) { caretOn = true; blinkTime = null; }
+    if (blinkFrame !== null) cancelAnimationFrame(blinkFrame);
+    blinkFrame = null;
+    paintCaret();
+    // rAF does not keep a headless test alive and only caret color changes repaint.
+    if (focusedInput() && !selRange()) scheduleBlink();
+  }
+
   const displayIndex = (value, i) => displayed(value.slice(0, i)).length;
   const xOf = (i, value = st.value) => textGeometry(displayed(value), fontSize, fontFamily).caret(displayIndex(value, i));
 
@@ -85,13 +129,13 @@ export function createTextInput(opts = {}) {
       left: padding + range.x, top: y, width: range.width, height, backgroundColor: color,
     }));
   }
-  function render() {
+  function render(resetBlink = true) {
     const composition = st.composition;
     const value = composition ? st.value.slice(0, composition.start) + composition.text + st.value.slice(composition.end) : st.value;
     const cursor = composition ? composition.start + (composition.cursor < 0 ? composition.text.length : composition.cursor) : st.caret;
     textNode.textContent = displayed(value);
     caret.style.left = String(padding + xOf(cursor, value));
-    caret.style.backgroundColor = st.focused && (!composition || composition.cursor >= 0) ? color : 'transparent';
+    resetCaret(resetBlink);
     const geometry = textGeometry(displayed(value), fontSize, fontFamily);
     const innerWidth = root.offsetWidth - padding * 2 - 2;
     if (innerWidth > 0) {
@@ -294,7 +338,7 @@ export function createTextInput(opts = {}) {
         root.style.height = highlight.style.height = underline.style.height = fontSize + padding * 2;
         caret.style.height = fontSize;
       }
-      render();
+      render(false);
     },
   };
 }
