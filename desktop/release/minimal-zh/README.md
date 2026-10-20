@@ -39,16 +39,17 @@ final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 PollyUI is built CPU-only, but the first end-to-end shell launch does not yet
 stay up. In the Debian minbase test root:
 
-- SDL now reaches the Wayland driver after adding `libwayland-egl`,
-  `libwayland-cursor`, XKB data and DejaVu/fontconfig.
-- PollyUI then exits with
-  `Uncaught SyntaxError: unexpected token in expression: '\x7f'` while loading
-  the shell entry.
-- `live.mjs` is text; the likely cause is an entry/import packaging mismatch,
-  not a WebGL dependency. This remains to be diagnosed.
+- SDL reaches Wayland after adding `libwayland-egl`, `libwayland-cursor`, XKB
+  data and DejaVu/fontconfig.
+- The earlier `unexpected token '\x7f'` was a malformed local init command, not
+  a source defect; the shell now reaches SDL.
+- `SDL_CreateRenderer` then fails with
+  `Window framebuffer support not available` for the layer-shell window.
+  GLES is intentionally absent, so the software renderer path needs work.
+- This remains to be fixed before claiming the PollyUI shell is integrated.
 
-Do not claim the PollyUI shell is integrated until this is resolved and a
-screenshot shows the actual shell.
+Do not claim the PollyUI shell is integrated until a screenshot shows the
+actual shell.
 
 ## Remaining for the real minimal-zh
 
