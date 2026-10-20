@@ -45,11 +45,14 @@ stay up. In the Debian minbase test root:
   a source defect; the shell now reaches SDL.
 - `SDL_CreateRenderer` then fails with
   `Window framebuffer support not available` for the layer-shell window.
-  GLES is intentionally absent, so the software renderer path needs work.
-- This remains to be fixed before claiming the PollyUI shell is integrated.
-
-Do not claim the PollyUI shell is integrated until a screenshot shows the
-actual shell.
+  GLES is intentionally absent.
+- Root cause from the pinned SDL3 source: the Wayland video backend does not
+  provide `CreateWindowFramebuffer`; only X11/Windows/offscreen/dummy do. SDL's
+  software renderer therefore cannot present directly to a Wayland window.
+- Fix options: add a Wayland SHM framebuffer path to SDL (or a PollyUI SHM host),
+  or provide a tested X11 path. This is a real native change, not a flag.
+- Do not claim the PollyUI shell is integrated until a screenshot shows the
+  actual shell.
 
 ## Remaining for the real minimal-zh
 
