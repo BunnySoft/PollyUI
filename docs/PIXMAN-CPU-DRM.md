@@ -192,3 +192,11 @@ Debian minbase + BusyBox；剪贴板粘贴未单独验证。
 
 仍缺 PAM 登录、UID 1000/logind 会话；`systemd-tmpfiles` 和 `/sbin/modprobe`
 辅助程序缺失导致若干标准 unit 失败，但不阻塞 `polly.target`。
+
+后续原型已用 `setpriv` 降到 UID 1000，并通过 `seatd` 打开 seat：
+
+- `POLLY_UID 1000 1000 1000 1000`
+- `Seat opened with backend 'seatd'`
+- 镜像 SHA-256
+  `1d33a93858cf1a0bee9c01f6f5807390aa2d868cc6a1dec5304ff4c6664bc174`
+- 这仍不是 PAM 登录会话，只是显式 UID 降权。

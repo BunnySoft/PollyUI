@@ -1,6 +1,7 @@
 [Unit]
 Description=Polly CPU Shell
-After=systemd-udevd.service
+After=polly-prepare.service
+Requires=polly-prepare.service
 
 [Service]
 Type=simple

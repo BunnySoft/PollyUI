@@ -1,0 +1,12 @@
+[Unit]
+Description=Polly CPU Shell Preparation
+After=systemd-udevd.service
+Before=polly.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mini-prepare.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=polly.target

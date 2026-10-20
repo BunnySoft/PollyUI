@@ -6,7 +6,7 @@
 |---|---|---|---|---|---:|---|
 | **micro** | Alpine 3.24 + musl + BusyBox | Pixman + `drm_dumb` + `tinywl` | 无 Rime；一个 Wayland 演示应用 | 25–50 MB | **26 MB 原型已构建/已启动** |
 | **thin** | Debian 13 + BusyBox | Pixman + `drm_dumb` | WQY 字体；一个应用；无 systemd/PAM/Rime | 150–220 MB | **169 MB 原型已构建/已启动** |
-| **minimal-zh** | Debian 13 + systemd/PAM | Pixman + `drm_dumb` | WQY + Rime Luna + PollyUI/PollyWM | 300–400 MB | **systemd + CPU shell（236 MB 测试镜像）**；PAM/UID 1000 未完成 |
+| **minimal-zh** | Debian 13 + systemd/PAM | Pixman + `drm_dumb` | WQY + Rime Luna + PollyUI/PollyWM | 300–400 MB | **systemd + UID 1000 + CPU shell（236 MB 测试镜像）**；PAM 登录未完成 |
 | **standard** | Debian 13 + systemd/PAM | GLES2 + Mesa | 完整应用、Noto、Rime、PollyUI | 约 577 MB | 已构建/已启动 |
 | **full** | Debian 13 + systemd/PAM | GLES2 + Mesa + 厂商固件 | 完整硬件覆盖 | 约 726 MB | 已构建/已启动 |
 
