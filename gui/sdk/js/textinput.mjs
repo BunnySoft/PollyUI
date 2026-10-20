@@ -81,7 +81,15 @@ export function createTextInput(opts = {}) {
   }
   function activeOwner() {
     const view = owner.defaultView ?? surface;
-    return !view || (!view.closed && view.state.active && !view.state.minimized);
+    if (!view) return true;
+    if (view.closed) return false;
+    if (!('state' in view)) return true;
+    const state = view.state;
+    return state.active && !state.minimized;
+  }
+  function blinkSupported() {
+    const view = owner.defaultView ?? surface;
+    return !view || 'state' in view;
   }
   function paintCaret() {
     const visible = focusedInput() && activeOwner() && caretOn &&
@@ -105,7 +113,7 @@ export function createTextInput(opts = {}) {
     blinkFrame = null;
     paintCaret();
     // rAF does not keep a headless test alive and only caret color changes repaint.
-    if (focusedInput() && !selRange()) scheduleBlink();
+    if (focusedInput() && !selRange() && blinkSupported()) scheduleBlink();
   }
 
   const displayIndex = (value, i) => displayed(value.slice(0, i)).length;

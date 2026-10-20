@@ -91,6 +91,19 @@ check(password.root.childNodes[2].style.backgroundColor === 'transparent' &&
   password.root.childNodes[1].textContent === '\u2022'.repeat(6) && password.value === 'secret',
   'password caret blinks without exposing the value');
 password.root.blur();
+const legacySurface = { closed: false, setCursor() {} };
+const legacy = createTextInput({ document, window: legacySurface, value: 'legacy host' });
+document.body.appendChild(legacy.root);
+legacy.root.focus();
+host.render(11000);
+host.render(11530);
+check(legacy.root.childNodes[2].style.backgroundColor !== 'transparent',
+  'a legacy Host without native state retains its steady focused caret');
+legacySurface.closed = true;
+host.render(12060);
+legacy.root.blur();
+check(legacy.root.childNodes[2].style.backgroundColor === 'transparent',
+  'legacy Host blur retires the caret without requiring a state getter');
 const originalFrame = globalThis.requestAnimationFrame;
 let callbacks = 0;
 try {

@@ -205,6 +205,9 @@ navigation, and pointer placement restore the visible phase; appearance-only
 refreshes preserve the blink clock. Selected ranges retain their existing
 steady caret, and active IME preedit keeps its requested cursor steady.
 Inactive windows hide it.
+Legacy window Hosts without a native `state` capability retain their steady
+document-focused caret rather than starting an unobservable animation loop;
+an available native state getter is still consulted and errors are propagated.
 The animation uses the existing rAF pump, changes only caret color, and stops
 after blur, detachment, or owner closure; it adds no perpetual timer to headless
 tests. `gui/tests/textinput-blink.mjs` covers the phases with explicit frame
