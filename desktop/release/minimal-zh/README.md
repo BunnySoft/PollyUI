@@ -38,17 +38,18 @@ final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
 The PollyUI shell now renders on the Pixman-only stack:
 
-- **202 MB** test image, SHA-256
-  `c6517818edeb24021fd64a3bef301088d127e9c9a4e26c97020ff94fe8003a6d`
+- **224 MB** test image, SHA-256
+  `c69a9cda05733e8c6043af0acaa6caba339ff5aa26c35a6567362c4ba45a7671`
 - QEMU/KVM + `virtio-gpu-pci`, 1280x800
 - PollyWM modeset, PollyUI shell window, taskbar and live welcome UI visible
+- WQY Micro Hei font and the 44 MB Rime data tree are installed
 - SDL software presentation uses the local Wayland SHM framebuffer patch
 - Layer-shell windows use `SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN=false`
   only when `PU_WEBGL2` is not compiled
 
 This is still a **prototype**, not the final minimal-zh:
 
-- no WQY/Rime
+- Rime data is present, but no IME service/input-method process is wired
 - no systemd/PAM/UID 1000 session
 - no decorator (`Window decorations disabled`), no `/usr/bin/logger`
 - test image is Debian minbase + BusyBox, not the live/systemd contract
