@@ -34,29 +34,30 @@ Prerequisite for PollyWM: build the Pixman prefix with
 Both scripts use `localhost/polly-debian-sdk` and Podman volumes. They check the
 final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
-## CPU-only shell proof (2026-10-20)
+## CPU-only shell + Chinese IME proof (2026-10-20)
 
-The PollyUI shell now renders on the Pixman-only stack:
+The PollyUI shell now renders and performs Chinese input on the Pixman-only
+stack:
 
-- **226 MB** test image, SHA-256
-  `63c9e7587958672bf5a54ef1ec3f55df9f1d20c05bdfe57dd7987cd3dbd4d3e5`
+- **236 MB** test image, SHA-256
+  `69cbc9a303d950d079b68409c7fc468ffd8287ed0b6da8721137079111375d66`
 - QEMU/KVM + `virtio-gpu-pci`, 1280x800
 - PollyWM modeset, PollyUI shell window, taskbar and live welcome UI visible
+- udev + libinput + `/dev/shm` are installed; QEMU PS/2 keyboard reaches PollyWM
+- Typing `nihao` opens the Rime candidate list (`你好`, `您好`, `逆號`, ...);
+  Space commits the first candidate
 - WQY Micro Hei font and the 44 MB Rime data tree are installed
-- `Input-method protocol ready` and `Input-method engine and protocol initialized`
+- `Input-method protocol ready` / `Input-method engine and protocol initialized`
 - SDL software presentation uses the local Wayland SHM framebuffer patch
 - Layer-shell windows use `SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN=false`
   only when `PU_WEBGL2` is not compiled
 
 This is still a **prototype**, not the final minimal-zh:
 
-- IME protocol/engine starts, but a QEMU QMP keyboard test did not reach the
-  shell: this minbase root starts PollyWM with `WLR_LIBINPUT_NO_DEVICES=1` and
-  has no libinput/udev seat path. Chinese candidate/clipboard interaction is
-  therefore **not yet verified end-to-end**.
 - no systemd/PAM/UID 1000 session
 - no decorator (`Window decorations disabled`), no `/usr/bin/logger`
 - test image is Debian minbase + BusyBox, not the live/systemd contract
+- clipboard paste was not separately exercised after the IME commit
 
 The SDL patch is experimental and is not yet a supported SDK/runtime input.
 

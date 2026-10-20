@@ -167,13 +167,14 @@ PollyWM 的 `--shell` 运行：
 - SDL Wayland SHM framebuffer 补丁（`desktop/patches/sdl-wayland-shm-framebuffer.patch`）
 - `PU_WEBGL2=OFF`、`PU_WEBGPU=OFF`、`PU_METAL=OFF`
 - layer-shell 窗口在 `PU_WEBGL2` 未编译时不再请求 OpenGL
-- 测试镜像：**226 MB**
-- SHA-256：`63c9e7587958672bf5a54ef1ec3f55df9f1d20c05bdfe57dd7987cd3dbd4d3e5`
+- 测试镜像：**236 MB**
+- SHA-256：`69cbc9a303d950d079b68409c7fc468ffd8287ed0b6da8721137079111375d66`
 - QEMU virtio-gpu 1280x800，实际显示 PollyUI shell、任务栏和 Live 欢迎页
 - WQY Micro Hei + 44 MB Rime data 已安装
-- `Input-method protocol ready` / `Input-method engine and protocol initialized`
-- 截图：`dist/minimal-zh-cpu-shell-wqy/screen.png`
+- udev + libinput + `/dev/shm` 已启用；`nihao` 出现候选列表，空格提交“你好”
+- 截图：`dist/minimal-zh-cpu-shell-zh/candidates.png`、
+  `dist/minimal-zh-cpu-shell-zh/committed.png`
 - 说明：`desktop/release/minimal-zh/README.md`
 
-仍是原型：IME 协议/引擎已启动但未做完整中文候选/粘贴验证；无 systemd/PAM/
-UID 1000 会话，无 decorator，测试镜像为 Debian minbase + BusyBox。
+仍是原型：无 systemd/PAM/UID 1000 会话，无 decorator，测试镜像为
+Debian minbase + BusyBox；剪贴板粘贴未单独验证。
