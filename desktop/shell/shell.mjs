@@ -447,6 +447,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
 
   function desktopCatalog() {
+    if (applicationForWindow(applications, SETTINGS_APPLICATION_ID)) return applications;
     return [{ id: SETTINGS_APPLICATION_ID, name: 'Settings', genericName: 'System settings',
       comment: 'Appearance, displays, Wi-Fi, audio and keyboard', keywords: ['preferences', 'desktop'] },
     ...applications.filter(entry => entry.id !== SETTINGS_APPLICATION_ID)];

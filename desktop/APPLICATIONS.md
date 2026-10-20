@@ -44,6 +44,20 @@ display-confirmation/shortcut-recording layers stay authoritative behind
 authenticated scalar IPC; this does not migrate every OS service or establish
 an application sandbox.
 
+### Foot terminal entries
+
+`foot` starts a standalone terminal emulator. `foot --server` keeps a shared
+terminal process running; `footclient` asks that server to open a terminal
+window. The server/client pair is optional and needs a matching server socket.
+They are separate launch modes, not three applications every user needs.
+
+Polly's installed desktop entries expose only the ordinary Foot terminal in
+Applications/Start. `foot-server.desktop` and `footclient.desktop` use
+`NoDisplay=true`; their binaries are not removed from existing systems.
+The current Micro image starts standalone Foot and does not run a foot server
+or package a footclient executable. Its terminal entry uses original Polly
+artwork, not the generic process-monitor icon.
+
 ## Confirmed P0 target, not the current implementation
 
 The [storage design](../docs/POLLYOS-STORAGE-DESIGN.md) now takes priority:

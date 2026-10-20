@@ -1,4 +1,16 @@
-# Polly Thin (prototype)
+# Polly Thin (historical prototype)
+
+The current product name for the former Thin target is **Compact**: the Mini
+(formerly Micro) UI Shell stack on a compact Debian/glibc
+base, with Chinese fonts and an input method included by default. No `-zh`
+suffix is needed. The build and 169 MB measurements below are the historical
+`tinywl` demo, not that new Chinese desktop; they are kept reproducible rather
+than relabelled as completed work. The `thin` directory, commands and artifact
+names below remain unchanged. Compact targets basic GOP/simpledrm display
+without vendor editions; full driver coverage belongs to Standard.
+`bash tools/build.sh --os compact --plan` reports the missing recipe;
+`--build` stops before external commands instead of relabelling this demo.
+See `docs/SKU-SIZES.md`.
 
 **Not a full PollyOS Debian desktop.** Thin is a Debian minbase userspace with a
 BusyBox PID 1 and a Pixman kiosk, used to fill the 150–220 MB tier.

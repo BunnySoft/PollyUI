@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PollyOS SKU / Feature / Component Matrix</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; color: #23354e; background: #f4f7fb; font: 15px/1.6 system-ui, sans-serif; }
+nav { position: sticky; top: 0; z-index: 2; padding: 12px 28px; background: #fff; border-bottom: 1px solid #dbe4ef; }
+nav strong { margin-right: 24px; } nav a { margin-right: 18px; }
+main { max-width: 1500px; margin: auto; padding: 24px 28px 60px; }
+h1 { font-size: 30px; margin: 0 0 14px; } h2 { margin-top: 36px; scroll-margin-top: 90px; }
+p { max-width: 1100px; } a { color: #2467a5; } code { overflow-wrap: anywhere; font-size: 0.9em; }
+.table-scroll { overflow-x: auto; margin: 20px 0; border: 1px solid #dbe4ef; border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 850px; background: white; font-size: 14px; }
+th, td { padding: 12px 16px; border: 1px solid #dbe4ef; vertical-align: middle; }
+thead th { color: #fff; background: #243c5a; text-align: left; }
+tbody th { text-align: left; min-width: 180px; background: #f2f6fc; font-weight: 600; }
+td { text-align: center; min-width: 135px; }
+td[colspan] { background: #edf3fb; }
+.yes { background: #ebf7ef !important; font-size: 19px; }
+.no { background: #fff1f0 !important; } .tbd { background: #fff8e7 !important; }
+@media print { nav { display: none; } main { padding: 0; } .table-scroll { overflow: visible; } table { min-width: 0; } }
+</style>
+</head>
+<body>
+<nav><strong>PollyOS SKU Matrix</strong><a href="#1-feature-targets">Features</a><a href="#2-component-selection">Components</a><a href="#3-current-mini-delivery-status">Delivery</a><a href="SKU-MATRIX.md">Markdown source</a></nav>
+<main>
+<!-- Generated from SKU-MATRIX.md. Edit the Markdown source and run node desktop/tools/render-sku-matrix.mjs. -->
+<h1 id="sku-feature-component-matrix">SKU / Feature / Component Matrix</h1>
+<p><a href="SKU-MATRIX.html">HTML view with merged cells</a>. After editing this source, regenerate the HTML with <code>node desktop/tools/render-sku-matrix.mjs</code> from the repository root.</p>
+<p>Updated: 2026-10-20. Current product names: <strong>Mini / Compact / Standard</strong>. Chinese fonts and input are included from Compact upward. There is no <code>-zh</code> suffix or separate Full tier.</p>
+<p>Mini is the former Alpine Micro desktop. Compact is the Debian Chinese lightweight target, using basic GOP/simpledrm display rather than vendor-specific editions. Standard carries the full existing driver/firmware selection. Historical Micro/Thin/full/minimal-zh artifact identities remain unchanged. Use <code>bash tools/build.sh --os --help</code> for the canonical product build entry.</p>
+<p>This document records confirmed product boundaries and implementation status; it is not an executable build configuration. <strong>Target inclusion, source availability, packaging, service startup, and actual usability are distinct states.</strong> See <a href="SKU-DELIVERY.md">delivery records</a> for image identities and historical artifacts, and <a href="SKU-SIZES.md">stack and sizes</a> for size evidence.</p>
+<h2 id="1-feature-targets">1. Feature Targets</h2>
+<p>Legend: <strong>✅ Included · ❌ Excluded · ❔ TBD</strong>. In this target matrix, ✅ does not mean a validated image. ❔ means undecided, not implicitly supported.</p>
+<div class="table-scroll"><table><thead><tr><th scope="col">Feature</th><th scope="col">Mini</th><th scope="col">Compact</th><th scope="col">Standard</th></tr></thead><tbody><tr><th scope="row" class="">Product role</th><td class="">Smallest Alpine graphical desktop</td><td class="">Lightweight Debian Chinese desktop</td><td class="">General-purpose hardware desktop</td></tr>
+<tr><th scope="row" class="">UI Shell</th><td class="yes" colspan="3">✅</td></tr>
+<tr><th scope="row" class="">Window decorations and basic application launchers</th><td class="yes">✅</td><td class="tbd" colspan="2">❔</td></tr>
+<tr><th scope="row" class="">Basic Latin text and keyboard input</th><td class="yes" colspan="3">✅</td></tr>
+<tr><th scope="row" class="">Chinese fonts</th><td class="no">❌</td><td class="yes" colspan="2">✅</td></tr>
+<tr><th scope="row" class="">Chinese input method</th><td class="no">❌</td><td class="yes" colspan="2">✅</td></tr>
+<tr><th scope="row" class="">Canvas 2D</th><td class="">CPU path retained</td><td class="" colspan="2">Shared implementation retained</td></tr>
+<tr><th scope="row" class="">WebGL2 / 3D</th><td class="no">❌</td><td class="tbd">❔</td><td class="">Existing recipe includes WebGL2; new product qualification pending</td></tr>
+<tr><th scope="row" class="">WebGPU</th><td class="no">❌</td><td class="tbd" colspan="2">❔</td></tr>
+<tr><th scope="row" class="">Software 3D runtime</th><td class="no">❌</td><td class="tbd">❔</td><td class="">Existing Mesa/LLVM closure retained; not separately qualified</td></tr>
+<tr><th scope="row" class="">Vendor GPU acceleration</th><td class="no" colspan="2">❌</td><td class="">Driver-specific; requires validation</td></tr>
+<tr><th scope="row" class="">Display drivers</th><td class="">GOP/simpledrm + virtio</td><td class="">Basic GOP/simpledrm path</td><td class="">General-purpose driver set</td></tr>
+<tr><th scope="row" class="">Firmware</th><td class="">Minimum required set</td><td class="tbd">Basic set; inventory TBD</td><td class="">General-purpose firmware set</td></tr>
+<tr><th scope="row" class="">Vendor-specific product editions</th><td class="no" colspan="2">❌</td><td class="no">❌; driver selection is internal, not extra product tiers</td></tr></tbody></table></div>
+<p>Retaining Canvas 2D does not establish full browser API conformance or performance qualification. GPU drivers, GPU composition, WebGL2, and WebGPU are independent capabilities; one does not imply the others. Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software 3D runtimes.</p>
+<h2 id="2-component-selection">2. Component Selection</h2>
+<div class="table-scroll"><table><thead><tr><th scope="col">Component</th><th scope="col">Mini</th><th scope="col">Compact</th><th scope="col">Standard</th></tr></thead><tbody><tr><th scope="row" class="">Distribution / libc</th><td class="">Alpine / musl</td><td class="" colspan="2">Debian / glibc</td></tr>
+<tr><th scope="row" class="">Init and session</th><td class="">BusyBox / UID 1000 / seatd; no login</td><td class="tbd">New-tier design TBD</td><td class="">Existing full-system design; alignment pending</td></tr>
+<tr><th scope="row" class="">Window manager / Wayland compositor</th><td class="" colspan="3">PollyWM / wlroots</td></tr>
+<tr><th scope="row" class="">Composition renderer</th><td class="">Pixman</td><td class="">Basic CPU/Pixman path</td><td class="">General-purpose graphics path</td></tr>
+<tr><th scope="row" class="">UI execution and layout</th><td class="" colspan="3">QuickJS + Yoga</td></tr>
+<tr><th scope="row" class="">UI rendering</th><td class="">Skia raster-only</td><td class="">Skia; CPU recipe pending</td><td class="">Skia; existing standard-effects4 recipe</td></tr>
+<tr><th scope="row" class="">JS system interface</th><td class="" colspan="3">SysRT / FFI</td></tr>
+<tr><th scope="row" class="">Linux UI Host</th><td class="" colspan="3">SDL3 / Wayland</td></tr>
+<tr><th scope="row" class="">UI buffer presentation</th><td class="">CPU pixels via Wayland SHM</td><td class="">CPU / SHM target; integration pending</td><td class="">Existing paired graphics path</td></tr>
+<tr><th scope="row" class="">Fonts and text</th><td class="">DejaVu Sans + Mono; Fontconfig / FreeType / HarfBuzz / ICU</td><td class="tbd">Add Chinese fonts; inventory TBD</td><td class="">Chinese support retained; existing broad fonts</td></tr>
+<tr><th scope="row" class="">Input method engine</th><td class="">Not compiled</td><td class="">Reuse Rime path; integration pending</td><td class="">Rime</td></tr>
+<tr><th scope="row" class="">GPU / 3D components</th><td class="no">❌ Mesa / LLVM / WebGL2 / WebGPU</td><td class="">❔; no vendor acceleration</td><td class="">Existing Mesa/LLVM closure; WebGPU not enabled by this recipe</td></tr></tbody></table></div>
+<p>A SKU name does not automatically imply audio, networking, PAM/login, installation, persistence, or updates. These have implementations in the existing full system, but their required scope in the new tiers remains to be defined. The Decorator and minimum application set must also be explicitly specified, packaged, and started. Mini's existing Alpine recipe integrates the basic application set below; corresponding choices for the other new tiers are not finalized. Including a Shell or copying JS resources does not establish their delivery.</p>
+<p>The UI Host creates application windows, receives input, and submits rendered buffers to PollyWM over Wayland. It is not the compositor or a graphics-card driver. Wayland SHM submits CPU-rendered pixels through shared memory; a GPU presentation backend is a separate build/runtime choice. Shared Host source does not imply identical SDK binaries, build options, or delivery readiness.</p>
+<h2 id="3-current-mini-delivery-status">3. Current Mini Delivery Status</h2>
+<p>The current <strong>65.29 MB</strong> Mini image was rebuilt with explicit Mini identity, branding, filenames and boot reports. SHA-256: <code>92389a08e6833c595b30fca7da2f248e905edef9d1655cc27a55558125faa899</code>. Delivery: <code>D:\temp\PollyOS\mini-92389a08e683\mini.iso</code>. The previous 60.87 MB image and its limited physical-machine observation remain historical evidence, not physical qualification of this new build. The new <code>--os mini</code> entry selects the same Alpine recipe used for this build. This build used its direct shell entry because the host had no Node.js; no host packages were installed. The old 65.29 MB Micro ISO, SHA-256 <code>3e2090a252234ab7cb85d03a4fff295710d875fdcb3c6c9ec8861a2548b03eb2</code>, is preserved and has not been relabelled.</p>
+<div class="table-scroll"><table><thead><tr><th scope="col">Feature / Component</th><th scope="col">Current status</th><th scope="col">Evidence or gap</th></tr></thead><tbody><tr><th scope="row" class="">PollyWM</th><td class="">Running</td><td class="">Actual DRM/Pixman startup records in QEMU</td></tr>
+<tr><th scope="row" class="">UEFI GOP / simpledrm display</th><td class="">QEMU passed; new physical retest pending</td><td class="">Standard VGA + USB test; only the previous 60.87 MB Micro image has limited P1000 user-reported success</td></tr>
+<tr><th scope="row" class="">Virtio display / keyboard</th><td class="">QEMU passed</td><td class="">Separate boot report for the same ISO</td></tr>
+<tr><th scope="row" class="">UI Shell / wallpaper</th><td class="">Integrated</td><td class="">Startup calls shared <code>createDesktopShell</code></td></tr>
+<tr><th scope="row" class="">Desktop bar</th><td class="">Visible in QEMU; application-menu pointer click exercised</td><td class="">Actual panel dimensions are logged. The old physical missing-bar report still requires a retest; no invented hardware-specific cause or fix</td></tr>
+<tr><th scope="row" class="">Welcome window / text field</th><td class="">Delivered</td><td class="">Actual keyboard and pointer input exercised</td></tr>
+<tr><th scope="row" class="">Input caret blink</th><td class="">Included from main commit <code>8a064d5a</code></td><td class="">Shared 530 ms rAF behavior; visible/hidden phases observed in both ISO profiles; shared pixel/edit/IME regressions passed</td></tr>
+<tr><th scope="row" class="">Decorator / window title bars</th><td class="">Integrated; QEMU ready</td><td class="">Shared windowless renderer; maximize, restore, minimize, switch, and close exercised</td></tr>
+<tr><th scope="row" class="">Files / Settings / Processes</th><td class="">Packaged and registered; QEMU launch/close passed</td><td class="">Home directory listing, owned Settings handshake, and live process rows observed; not exhaustive application qualification</td></tr>
+<tr><th scope="row" class="">Foot terminal</th><td class="">Standalone terminal packaged; QEMU launch, shell input, and exit passed</td><td class="">Separate terminal artwork; Foot Server/Client menu entries hidden; no foot server started</td></tr>
+<tr><th scope="row" class="">Application icons / menu entries</th><td class="">Updated</td><td class="">Processes uses activity-monitor artwork; Foot uses terminal artwork; registered Settings no longer duplicated</td></tr>
+<tr><th scope="row" class="">Canvas 2D</th><td class="">Implementation and CPU path retained</td><td class="">Dedicated qualification and performance checks on this ISO / physical hardware pending</td></tr>
+<tr><th scope="row" class="">Chinese / input method</th><td class="no">❌ Excluded</td><td class="">Build and packaging boundaries agree</td></tr>
+<tr><th scope="row" class="">3D / WebGL2 / WebGPU</th><td class="no">❌ Excluded</td><td class="">Compiled out; installing a graphics driver alone cannot restore them</td></tr>
+<tr><th scope="row" class="">Login / system services</th><td class="">UID 1000 via seatd; no authenticated login; incomplete services</td><td class="">Ordinary-user desktop preserves Files' refusal of root/setid operations; no PAM/logind, installer, audio core, or network-management service qualification</td></tr>
+<tr><th scope="row" class="">Multiple outputs / hotplug / suspend-resume</th><td class="">Not qualified</td><td class="">Single-display startup success does not cover them</td></tr></tbody></table></div>
+<p>This image provides the basic interactive desktop and applications, <strong>not a complete production system</strong>. Closing the welcome window leaves the desktop running. User observations and automated QEMU evidence are tracked separately; visible output is not proof of a fully verified physical driver chain.</p>
+<h2 id="4-other-tier-delivery-boundaries">4. Other Tier Delivery Boundaries</h2>
+<div class="table-scroll"><table><thead><tr><th scope="col">SKU</th><th scope="col">Delivery status under the new definition</th></tr></thead><tbody><tr><th scope="row" class="">Compact</th><td class="">New Debian Chinese Shell + basic-display recipe not integrated; <code>--os compact --plan</code> is blocked and <code>--build</code> fails before external commands. Historical <code>thin</code> and minimal-zh images are not Compact deliveries</td></tr>
+<tr><th scope="row" class="">Standard</th><td class="">New <code>standard.yaml</code> selects existing <code>standard-effects4</code> and internal <code>full</code> hardware; <code>--os standard</code> delegates to guarded config/lock assembly. No new Standard media or inherited boot qualification</td></tr></tbody></table></div>
+<p>Historical filenames, checksums, build entry points, and failure records are preserved. New configurations must select existing, paired component variants. Missing implementations or dependencies must block execution explicitly; renaming, runtime switches, or deleting files do not replace a proper build.</p>
+</main>
+</body>
+</html>

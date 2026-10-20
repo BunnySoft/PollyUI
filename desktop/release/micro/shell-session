@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+export HOME=/home/polly USER=polly LOGNAME=polly PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export LANG=en_US.UTF-8 XDG_RUNTIME_DIR=/run/polly
+export WLR_BACKENDS=drm,libinput WLR_RENDERER=pixman LIBSEAT_BACKEND=seatd
+export SEATD_SOCK=/run/seatd.sock
+export SDL_VIDEODRIVER=wayland SDL_RENDER_DRIVER=software PU_RENDERER=raster
+export LD_LIBRARY_PATH=/usr/lib/pollyui:/usr/local/lib:/usr/lib:/lib
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/polly/bus
+export POLLY_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"
+export XDG_CURRENT_DESKTOP=Polly XDG_SESSION_TYPE=wayland
+export POLLY_DECORATOR_RUNTIME=/usr/bin/pollyui
+dbus-daemon --session --fork --nopidfile --address="$DBUS_SESSION_BUS_ADDRESS"
+cd /usr/share/pollyui
+echo "MICRO_SESSION_UID=$(id -u)"
+product=$(cat /etc/polly-product)
+case "$product" in mini|micro) ;; *) echo "Unknown Alpine Shell product: $product" >&2; exit 1 ;; esac
+exec /usr/bin/pollywm --decorator /usr/share/pollyui/desktop/tools/run-decorator.sh \
+    --shell /usr/bin/pollyui --desktop --no-legacy-storage --app-id org.pollyui.shell \
+    desktop/release/micro/shell.mjs "$product"

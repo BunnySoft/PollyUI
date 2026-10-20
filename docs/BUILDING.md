@@ -8,12 +8,64 @@
 
 配置驱动的 SKU、纯 JS 工具安装、只读 `--plan`、显式 `--build`、
 依赖锁和当前极简版阻断条件，集中见 [YAML 配置构建说明](CONFIGURED-BUILDS.md)。
-尺寸档位（micro/thin/minimal-zh/standard/full）的合同、体积依据和当前状态见
-[尺寸 SKU 阶梯](SKU-SIZES.md)。可启动的 micro 原型构建入口见
+当前产品档位 **Mini / Compact / Standard** 的合同、体积依据和状态见
+[SKU 技术栈与尺寸](SKU-SIZES.md)和[功能/组件矩阵](SKU-MATRIX.md)。
+Mini 沿用原 Alpine Micro；Compact 是 Debian 中文轻量档，仅基础通用显示；
+Standard 带完整驱动/固件，不再另设厂商分版产品或 Full 档。历史脚本、配置和
+产物目录不随产品展示名改写。可启动的 micro 原型构建入口见
 [desktop/release/micro](../desktop/release/micro/README.md)，thin 原型见
 [desktop/release/thin](../desktop/release/thin/README.md)，minimal-zh 的 CPU native
 进展见 [desktop/release/minimal-zh](../desktop/release/minimal-zh/README.md)。
-旧 `--sku/--skus` 和默认标准版语义不变；配置文件不是已经构建的 minimal ISO。
+旧 `--sku/--skus` 是内部硬件选择，默认 `full` 语义不变；配置文件不是已经构建的 ISO。
+
+<a id="current-product-builds"></a>
+### 新产品构建入口
+
+Node.js 22+；实际构建在 Linux/WSL + Podman 执行。`--os` 必须是第一个参数，
+不能混用普通 native 构建参数或 `--live`。`--plan` 只读，不创建输出目录、
+运行容器或编译器，也不接收仅用于 build 的锁/runtime 参数。需要读取锁的计划仍可
+使用既有 `--live --config ... --plan --lock ...`。`--build` 必须显式给输出目录。产品名只接受
+`mini | compact | standard`，不自动把旧名字映射为新的交付。
+
+```sh
+bash tools/build.sh --os --help
+bash tools/build.sh --os mini --plan
+bash tools/build.sh --os compact --plan
+bash tools/build.sh --os standard --plan
+
+# Mini：复用已接通的 Alpine/musl 原生依赖构建，生成 mini.iso / mini.json。
+# 需要现有配对 SDK 源码；不因重新命名而自动获得实机资格。
+PU_BUILD_JOBS=2 bash tools/build.sh --os mini /absolute/output/mini --build
+# 若宿主没有 Node，可直接调用同一 Mini 配方；不需要因此安装或修改宿主工具。
+MICRO_PRODUCT=mini MICRO_WORK=/absolute/output/mini PU_BUILD_JOBS=2 \
+  sh desktop/release/micro/build-shell.sh
+MICRO_PRODUCT=mini MICRO_WORK=/absolute/output/mini \
+  MICRO_DISPLAY=simpledrm sh desktop/release/micro/test-shell.sh --desktop
+MICRO_PRODUCT=mini MICRO_WORK=/absolute/output/mini \
+  MICRO_DISPLAY=virtio sh desktop/release/micro/test-shell.sh --desktop
+
+# Standard：既有受控 Debian 组装；锁与原生 bundle 必须是本次合法输入。
+bash tools/build.sh --os standard /absolute/output/standard --build \
+  --lock "$LOCK_DIR" --runtime-bundle "$RUNTIME_BUNDLE" \
+  --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
+```
+
+| 产品 | 实际构建路径 | 当前边界 |
+|---|---|---|
+| Mini | `desktop/release/micro/build-shell.sh`，显式 `MICRO_PRODUCT=mini` | Alpine、无中文/IME/3D；构建新名称/品牌/报告，不改名旧 ISO |
+| Compact | 新 Debian CPU/中文/GOP 配方尚缺 | plan 为 blocked，build 在外部动作前报错；不借旧 thin/minimal-zh 冒成功 |
+| Standard | `configs/standard.yaml` → 既有 `build-live-skus.mjs` | `standard-effects4` + 内部 `full`，保留原包集合/驱动与所有锁、ABI、clean-source 校验 |
+
+Mini 仍兼容 `MICRO_BUILDER`、`MICRO_SHELL_BUILDER`、`MICRO_SDK` 和
+`PU_BUILD_JOBS`。旧 Micro 直接构建默认仍输出 `micro-shell.*`；历史 Thin 脚本、
+`standard-{vm,intel,nvidia,amd,full,basic}.yaml`、`minimal-zh-*.yaml` 和
+`--live --sku/--skus` 不变。`full` 仍是底层硬件集合标识，不是第四个产品。
+Standard 的新配置名写入真实计划/manifest/媒体名，但包集合并未因此减小；
+新构建必须重新核验，原锁不能只改 configSha 或绕过签名/包验证。
+入口不会发布、改稳定 alias 或自动执行 QEMU。本次已用同一配方的直接 shell
+入口真实重建 Mini 并完成双路径验证，交付在 `D:\temp\PollyOS\mini-92389a08e683\`；
+宿主缺少 Node 的失败日志单独保留，没有安装宿主包。之前交付的 Micro ISO 路径、
+SHA 与实机反馈仍按原身份记录。
 
 | 目标 | 平台与入口 | 产物 |
 | --- | --- | --- |

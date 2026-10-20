@@ -744,6 +744,12 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (strcmp(renderer, "auto") && strcmp(renderer, "gl") && strcmp(renderer, "raster")) {
         SDL_Log("PU_RENDERER must be auto, gl or raster"); return NULL;
     }
+#if defined(PU_SKIA_RASTER_ONLY)
+    if (strcmp(renderer, "gl") == 0) {
+        SDL_Log("GLES rendering is not built in this raster-only target"); return NULL;
+    }
+    renderer = "raster";
+#endif
 #endif
     if (!ensure_video()) return NULL;
 

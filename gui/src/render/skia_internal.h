@@ -12,7 +12,9 @@
 #define POLLYUI_RENDER_SKIA_INTERNAL_H
 
 #include "include/core/SkSurface.h"
+#ifndef PU_SKIA_RASTER_ONLY
 #include "include/gpu/GrDirectContext.h"
+#endif
 
 // BGRA8888 + premul raster; or a GPU-backed surface (GL/ANGLE on Windows, Metal
 // on Apple). Backend handles are opaque void* so this struct compiles anywhere.
@@ -23,7 +25,9 @@ struct PuSurface {
 
     // GPU-backed (true => pu_surface_present must be called to show a frame).
     bool gl = false;
+#ifndef PU_SKIA_RASTER_ONLY
     sk_sp<GrDirectContext> grctx;
+#endif
 
     // Windows GL/ANGLE backend state (HWND + EGL handles, all opaque here).
     void *hwnd        = nullptr;

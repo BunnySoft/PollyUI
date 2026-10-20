@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Foot Client
+Exec=footclient
+TryExec=footclient
+Terminal=false
+NoDisplay=true
+Categories=System;TerminalEmulator;

@@ -1,0 +1,10 @@
+ARG MICRO_BASE=localhost/polly-micro-builder
+FROM ${MICRO_BASE}
+
+RUN apk add --no-cache --no-scripts \
+      cmake git clang18 gn kmod pax-utils py3-elftools \
+      fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev \
+      zlib-dev harfbuzz-dev icu-dev dbus dbus-dev pipewire-dev \
+      libarchive-dev openssl-dev libffi-dev wlr-protocols font-dejavu eudev \
+      xkeyboard-config
+RUN apk add --no-cache --no-scripts curl-dev nodejs file patchelf foot seatd

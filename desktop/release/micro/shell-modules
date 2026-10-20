@@ -1,0 +1,13 @@
+virtio_pci
+virtio_gpu
+simpledrm
+virtio_input
+evdev
+xhci_pci
+ehci_pci
+ohci_pci
+uhci_hcd
+usbhid
+hid_generic
+atkbd
+i8042

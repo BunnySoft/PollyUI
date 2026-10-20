@@ -2,9 +2,21 @@
 # Runs inside the Alpine builder. The working directory is /work.
 set -eu
 
+variant=${MICRO_VARIANT:-demo}
+case "$variant" in demo|shell) ;; *) echo "Unknown Micro variant: $variant" >&2; exit 2 ;; esac
+product=${MICRO_PRODUCT:-micro}
+case "$product" in mini|micro) ;; *) echo "Unknown Alpine Shell product: $product" >&2; exit 2 ;; esac
 KREL=$(basename /lib/modules/*)
 ROOT=/work/initroot
 rm -rf /work/build /work/prefix "$ROOT" /work/iso
+
+backends=drm
+if [ "$variant" = shell ]; then
+    backends=drm,libinput
+    if ! grep -q polly-effects-sha256 /work/src/meson.options; then
+        python3 /repo/desktop/release/debian/apply-wlroots-effects.py /work/src
+    fi
+fi
 
 python3 - <<'PY'
 from pathlib import Path
@@ -24,11 +36,15 @@ PY
 
 meson setup /work/build /work/src --prefix=/work/prefix --libdir=lib --buildtype=release \
     --wrap-mode=nofallback -Dexamples=true -Dxwayland=disabled \
-    -Dbackends=drm -Drenderers= -Dallocators= \
+    -Dbackends="$backends" -Drenderers= -Dallocators= \
     -Dpolly-effects-sha256=7b58c4a0c4c8a0cfac4ab8016f1f3590b463d961405102fbe133e0054fcebf0e \
     >/work/wlroots-setup.log 2>&1
-ninja -C /work/build >/work/wlroots-build.log 2>&1
+ninja -C /work/build -j "${PU_BUILD_JOBS:-2}" >/work/wlroots-build.log 2>&1
 ninja -C /work/build install >/work/wlroots-install.log 2>&1
+
+if [ "$variant" = shell ]; then
+    sh /src/build-shell-inside.sh
+fi
 
 wayland-scanner client-header /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml /work/xdg-shell-client-protocol.h
 wayland-scanner private-code /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml /work/xdg-shell-protocol.c
@@ -83,6 +99,10 @@ for binary in /work/build/tinywl/tinywl /work/color-client /bin/busybox; do
 done
 cp -L /lib/ld-musl-x86_64.so.1 "$ROOT/lib/" 2>/dev/null || true
 
+if [ "$variant" = shell ]; then
+    LD_LIBRARY_PATH=/work/prefix/lib python3 /src/install-shell.py "$ROOT" "$KREL"
+fi
+
 cat > "$ROOT/init" <<'EOF'
 #!/bin/sh
 /bin/mount -t devtmpfs devtmpfs /dev
@@ -106,6 +126,9 @@ echo "MICRO: starting client"
 WAYLAND_DISPLAY=wayland-0 /bin/color-client &
 while :; do /bin/sleep 3600; done
 EOF
+if [ "$variant" = shell ]; then
+    cp /src/shell-init "$ROOT/init"
+fi
 chmod 755 "$ROOT/init"
 
 (cd "$ROOT" && find . -print0 | cpio --null -o --format=newc 2>/dev/null | gzip -1 > /work/initramfs.gz)
@@ -122,4 +145,18 @@ menuentry "Polly Micro" {
     initrd /boot/initramfs.gz
 }
 EOF
-grub-mkrescue -o /work/micro.iso /work/iso >/work/grub.log 2>&1
+image=micro.iso
+if [ "$variant" = shell ]; then
+    image=micro-shell.iso
+    cp /src/shell-grub.cfg /work/iso/boot/grub/grub.cfg
+    if [ "$product" = mini ]; then
+        image=mini.iso
+        sed 's/Polly Micro Shell/Polly Mini Shell/' /src/shell-grub.cfg > /work/iso/boot/grub/grub.cfg
+    fi
+    cp /usr/share/grub/ascii.pf2 /work/iso/boot/grub/ascii.pf2
+    grub-script-check /work/iso/boot/grub/grub.cfg
+fi
+grub-mkrescue -o "/work/$image" /work/iso >/work/grub.log 2>&1
+if [ "$variant" = shell ]; then
+    python3 /src/install-shell.py --report "/work/$image" "$KREL"
+fi

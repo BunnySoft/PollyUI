@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test ../tests/live-config.mjs ../tests/live-profiles.mjs ../tests/publish-live-iso.mjs ../tests/live-sku-build.mjs"
+    "test": "node --test ../tests/build-os.mjs ../tests/live-config.mjs ../tests/live-profiles.mjs ../tests/publish-live-iso.mjs ../tests/live-sku-build.mjs"
   },
   "dependencies": {
     "yaml": "2.8.1"

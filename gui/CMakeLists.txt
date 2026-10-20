@@ -26,6 +26,13 @@ add_library(pollyui-engine STATIC
 target_include_directories(pollyui-engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${SKIA_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(pollyui-engine PUBLIC qjs yogacore polly-execution)
+option(PU_SKIA_RASTER_ONLY "Build Linux Skia surfaces without Ganesh GPU support" OFF)
+if (PU_SKIA_RASTER_ONLY)
+    if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "PU_SKIA_RASTER_ONLY currently requires the Linux host")
+    endif()
+    target_compile_definitions(pollyui-engine PRIVATE PU_SKIA_RASTER_ONLY)
+endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sdk/webgl.js")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sdk/webgl.js" WEBGL_SCRIPT HEX)
 string(REGEX REPLACE "(..)" "0x\\1," WEBGL_SCRIPT "${WEBGL_SCRIPT}")
@@ -75,6 +82,9 @@ if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "D
     endif()
 endif()
 include(cmake/WebGPU.cmake)
+if (PU_SKIA_RASTER_ONLY AND (PU_WEBGL2 OR PU_WEBGPU))
+    message(FATAL_ERROR "PU_SKIA_RASTER_ONLY requires PU_WEBGL2=OFF and PU_WEBGPU=OFF")
+endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_source_files_properties(src/host/drag.c src/host/drag_js.c src/host/sdl/drag_wayland.c
         PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wpedantic;-Werror")

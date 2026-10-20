@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Foot Server
+Exec=foot --server
+TryExec=foot
+Terminal=false
+NoDisplay=true
+Categories=System;TerminalEmulator;

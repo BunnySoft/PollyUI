@@ -543,6 +543,12 @@ registration, not a title, executable-name or desktop-file-suffix guess; an
 ambiguous runtime identity keeps the fallback instead of choosing arbitrarily.
 Managed bundles use the already-validated manifest ID for this association.
 
+Processes uses a monitor/activity-trace icon, distinct from the original Foot
+terminal tile. The standalone `foot.desktop` entry registers the terminal PNG
+and its actual `foot` Wayland app ID. Foot Server and Foot Client are retained
+as `NoDisplay=true` helper entries, not normal Applications/Start menu items;
+the executables are not uninstalled from systems that use them.
+
 Classic/XP Start headers receive one immutable local display profile at production
 startup, using real uid/euid and a bounded, identity-checked local passwd record.
 They show the display name and actual username/UID, or explicit unavailable

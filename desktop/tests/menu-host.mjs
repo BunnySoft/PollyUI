@@ -1638,9 +1638,11 @@ scenario('Launcher pins: limit errors keep the stored order and stale held Apps 
   assert.deepEqual(f.saved.snapshot.launchers.applications, []);
 }, groupedWindows);
 
-scenario('Launcher pins: registered Settings pin merges its runtime windows and both Apps entries share one pin identity', f => {
+scenario('Launcher pins: registered Settings appears once and merges its runtime windows under one pin identity', f => {
   const menu = f.shell.showApplications(1);
-  click(find(menu, 'shell-app-launcher-org.pollyui.settings'));
+  assert.equal(menu.document.getElementById('shell-app-launcher-org.pollyui.settings'), null,
+    'a registered Settings entry replaces the synthetic fallback rather than adding a duplicate');
+  click(find(menu, 'shell-app-launcher-polly-settings.desktop'));
   assert.deepEqual(f.saved.snapshot.launchers.applications, ['polly-settings.desktop']);
   assert.match(find(menu, 'shell-app-launcher-polly-settings.desktop').getAttribute('aria-label'), /Unpin/);
   const list = find(f.surface('panel'), 'shell-window-list');

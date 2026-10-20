@@ -1,5 +1,23 @@
 # 用 YAML 配置生成 Live SKU
 
+## 当前产品命名与入口
+
+当前仅三档 **Mini / Compact / Standard**：Mini 复用 Alpine Micro（无中文、
+IME 和 3D），Compact 是 Debian 中文 CPU 桌面（只基础 GOP/simpledrm，不按
+显卡厂商分版），Standard 带完整驱动/固件。统一使用
+`bash tools/build.sh --os <product> --plan|--build`，完整命令见
+[新产品构建入口](BUILDING.md#current-product-builds)。
+
+新增 `desktop/release/debian/configs/standard.yaml`，其配置名为 `standard`，
+底层硬件仍为 `full`，原生变体仍为 `standard-effects4`。这只是新构建身份与
+原有组件集合的显式绑定，不是把旧 full ISO 改名；原包闭包、锁和来源校验保持。
+该配方仍含原 WebGL2/Mesa/LLVM，不能称为已实现新的精简 native。
+Mini 不使用这个 Debian YAML/锁，Compact 新配方缺失时明确 blocked；
+不存在已接通的 `compact-intel` 等厂商分版配置。
+
+下文九份早期 YAML 及其路径保持兼容，不能从历史名称推断新的产品档位。
+文中的 minimal-zh 阻断专指正式配置构建，不否认独立实验镜像。
+
 该入口提供**配置、计划和执行通路**，不把配置文件当作已构建的产品。
 实现及非编译复核最初保留在独立分支；用户后续明确要求合入，现已进入 `main`。
 实现会话只运行 Windows 上的 Node.js 测试、Git Bash 入口和模拟后端；

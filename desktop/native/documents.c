@@ -4,6 +4,7 @@
 #include <dbus/dbus.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <spawn.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -109,12 +111,14 @@ static JSValue document_mime_type(JSContext *ctx, JSValueConst self, int argc, J
         if (output_fd >= 0) close(output_fd);
         return JS_ThrowInternalError(ctx, "Cannot retain MIME document: %s", strerror(error));
     }
-    posix_spawn_file_actions_t actions;
-    int error = posix_spawn_file_actions_init(&actions);
-    bool ready = !error;
+    int error = 0;
     pid_t pid = -1;
     char *args[] = { "/usr/bin/file", "--brief", "--mime-type", "--dereference", "--", "/proc/self/fd/3", NULL };
     char *environment[] = { "LC_ALL=C", "PATH=/usr/bin:/bin", NULL };
+#ifdef __GLIBC__
+    posix_spawn_file_actions_t actions;
+    error = posix_spawn_file_actions_init(&actions);
+    bool ready = !error;
     if (!error) error = posix_spawn_file_actions_adddup2(&actions, source, 3);
     if (!error) error = posix_spawn_file_actions_adddup2(&actions, output_fd, 1);
     if (!error) error = posix_spawn_file_actions_adddup2(&actions, output_fd, 2);
@@ -122,6 +126,23 @@ static JSValue document_mime_type(JSContext *ctx, JSValueConst self, int argc, J
     if (!error) error = posix_spawn_file_actions_addclosefrom_np(&actions, 4);
     if (!error) error = posix_spawn(&pid, args[0], &actions, NULL, args, environment);
     if (ready) posix_spawn_file_actions_destroy(&actions);
+#else
+    /* musl has no closefrom spawn action; close descriptors only in the child. */
+    pid = fork();
+    if (pid == 0) {
+        int input = open("/dev/null", O_RDONLY);
+        if (input < 0 || dup2(input, 0) < 0 || dup2(source, 3) < 0 ||
+            dup2(output_fd, 1) < 0 || dup2(output_fd, 2) < 0) _exit(126);
+#ifdef SYS_close_range
+        if (syscall(SYS_close_range, 4u, UINT_MAX, 0) < 0) _exit(126);
+#else
+        _exit(126);
+#endif
+        execve(args[0], args, environment);
+        _exit(127);
+    }
+    if (pid < 0) error = errno;
+#endif
     close(source); close(output_fd);
     if (error) {
         close(pipes[0]);

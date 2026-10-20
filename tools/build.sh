@@ -10,12 +10,31 @@
 #   ./tools/build.sh --skia-root DIR # matching Skia source/header directory
 #   ./tools/build.sh --run           # launch the demo afterward
 #   ./tools/build.sh --run gui/examples/playground/gallery.mjs   # run with a JS app
+#   ./tools/build.sh --os mini OUTPUT --build
+#   ./tools/build.sh --os compact --plan
+#   ./tools/build.sh --os standard --plan
+#   ./tools/build.sh --os --help    # current Mini/Compact/Standard product entry
 #   ./tools/build.sh --live OUTPUT --sku amd --runtime-bundle DIR --runtime-image ID --tools-image ID
 #   ./tools/build.sh --live --help   # Live SKU help, no native build or input requirements
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
+
+for argument in "$@"; do
+  if [[ "$argument" == --os ]]; then
+    if [[ "${1:-}" != --os ]]; then
+      echo "--os must be first and cannot be combined with native or legacy --live options" >&2
+      exit 2
+    fi
+    shift
+    if ! command -v node >/dev/null 2>&1; then
+      echo "--os requires Node.js 22+ on the build host; use the documented direct Mini shell entry if Node is unavailable." >&2
+      exit 1
+    fi
+    exec node "$repo/desktop/tools/build-os.mjs" "$@"
+  fi
+done
 
 for argument in "$@"; do
   if [[ "$argument" == --live ]]; then
@@ -26,7 +45,7 @@ for argument in "$@"; do
     shift
     for option in "$@"; do
       case "$option" in
-        --clean|--run|--metal|--desktop-services|--skia-dir|--skia-root|--live)
+        --clean|--run|--metal|--desktop-services|--skia-dir|--skia-root|--live|--os)
           echo "--live cannot be combined with native build options: $option" >&2; exit 2 ;;
       esac
     done

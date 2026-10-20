@@ -41,7 +41,7 @@
 /* PuSurface struct, shared with the per-GPU-API backends (e.g. skia_metal.mm). */
 #include "render/skia_internal.h"
 
-#if defined(_WIN32) || defined(__linux__)
+#if (defined(_WIN32) || defined(__linux__)) && !defined(PU_SKIA_RASTER_ONLY)
 /* Ganesh GL: ANGLE on Windows, a host-owned GLES context on Linux. */
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"   /* GrDirectContexts::MakeGL */
@@ -227,7 +227,7 @@ static sk_sp<SkSurface> make_raster(int w, int h) {
 }
 
 /* Wrap the window's default framebuffer (FBO 0) as a Skia GPU surface. */
-#if defined(_WIN32) || defined(__linux__)
+#if (defined(_WIN32) || defined(__linux__)) && !defined(PU_SKIA_RASTER_ONLY)
 static void rewrap_gl(PuSurface *s, int w, int h) {
     if (w < 1) w = 1;
     if (h < 1) h = 1;
@@ -265,7 +265,7 @@ PuSurface *pu_surface_create(int width, int height) {
 int pu_surface_valid(const PuSurface *s) { return s && s->surface ? 1 : 0; }
 
 PuSurface *pu_surface_create_current_gl(PuGlGetProc get_proc, void *user, int width, int height) {
-#if defined(__linux__)
+#if defined(__linux__) && !defined(PU_SKIA_RASTER_ONLY)
     if (!get_proc) { PU_GLLOG("Missing GL procedure resolver"); return nullptr; }
     auto interface = GrGLMakeAssembledGLESInterface(user, get_proc);
     if (!interface || !interface->validate()) {
@@ -285,7 +285,7 @@ PuSurface *pu_surface_create_current_gl(PuGlGetProc get_proc, void *user, int wi
     return s;
 #else
     (void)get_proc; (void)user; (void)width; (void)height;
-    PU_GLLOG("Borrowed GLES contexts are only enabled on Linux");
+    PU_GLLOG("Borrowed GLES contexts are not built in this target");
     return nullptr;
 #endif
 }
@@ -411,7 +411,7 @@ void pu_surface_present(PuSurface *s) {
 #if defined(PU_METAL_BACKEND)
     if (s->metal) { pu_metal_present(s); return; }
 #endif
-#if defined(_WIN32) || defined(__linux__)
+#if (defined(_WIN32) || defined(__linux__)) && !defined(PU_SKIA_RASTER_ONLY)
     if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
 #endif
 #if defined(_WIN32)
@@ -434,7 +434,7 @@ void pu_surface_destroy(PuSurface *s) {
         if (g_egl.DestroySurface && s->egl_surface) g_egl.DestroySurface(s->egl_display, s->egl_surface);
     }
 #endif
-#if defined(__linux__)
+#if defined(__linux__) && !defined(PU_SKIA_RASTER_ONLY)
     if (s->grctx) s->grctx->abandonContext();
 #endif
     delete s; // sk_sp releases the surface
@@ -461,7 +461,7 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
          * the bottom). Using the WM_SIZE size keeps render target == layout ==
          * window; the swapchain catches up on the swap pumped from WM_SIZE. */
         rewrap_gl(s, width, height);
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(PU_SKIA_RASTER_ONLY)
         rewrap_gl(s, width, height);
 #endif
         return;

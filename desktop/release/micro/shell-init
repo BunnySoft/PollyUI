@@ -1,0 +1,52 @@
+#!/bin/sh
+set -eu
+
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mkdir -p /dev/shm /dev/pts /run /tmp /root
+mount -t tmpfs -o mode=1777 tmpfs /dev/shm
+mount -t devpts -o mode=0620,ptmxmode=0666 devpts /dev/pts
+chmod 1777 /tmp
+chmod 755 /run
+chmod 700 /root
+while read -r module; do
+    case "$module" in ''|\#*) continue ;; esac
+    if ! /sbin/modprobe "$module"; then
+        echo "MICRO: required boot module failed: $module" >&2
+        exit 1
+    fi
+done </etc/micro-modules
+/sbin/udevd --daemon
+/sbin/udevadm trigger --action=add
+/sbin/udevadm settle --timeout=10
+
+cards=0
+for card in /sys/class/drm/card[0-9]*; do
+    case "${card##*/}" in *-*) continue ;; esac
+    [ -e "$card/dev" ] || continue
+    driver=$(readlink -f "$card/device/driver")
+    echo "MICRO_DRM_DRIVER=${driver##*/} CARD=/dev/dri/${card##*/}"
+    cards=$((cards + 1))
+done
+if [ "$cards" -eq 0 ]; then
+    echo "MICRO: no DRM display; generic graphics requires an active UEFI GOP framebuffer" >&2
+    exit 1
+fi
+
+mkdir -p /run/polly
+chown 1000:1000 /run/polly
+chmod 700 /run/polly
+/usr/bin/seatd -g polly &
+seatd_pid=$!
+attempt=0
+while [ ! -S /run/seatd.sock ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 50 ] || ! kill -0 "$seatd_pid" 2>/dev/null; then
+        echo "MICRO: seatd did not publish its device-access socket" >&2
+        exit 1
+    fi
+    sleep 0.1
+done
+echo "MICRO: starting ordinary-user PollyWM and PollyUI Shell"
+exec /bin/su -s /bin/sh polly -c /usr/bin/micro-session

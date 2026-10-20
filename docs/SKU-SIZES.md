@@ -1,6 +1,61 @@
-# PollyOS 尺寸 SKU 阶梯
+# PollyOS SKU 技术栈与尺寸
 
-本文定义按体积划分的产品档位。它们不是同一产品的简单压缩版，而是不同合同、不同构建链的 SKU。
+功能与组件选择、待定能力及当前实现缺口统一见
+[SKU / Feature / Component 矩阵](SKU-MATRIX.md)。本页保留技术栈概览和历史尺寸依据。
+
+## 当前三档产品定义（2026-10-20 调整）
+
+按底座、中文能力和驱动范围分为三档，所有档位都需要 UI Shell：
+
+| SKU | 底座 | 桌面与中文 | 驱动范围 |
+|---|---|---|---|
+| **Mini** | Alpine / musl / BusyBox，沿用原 Micro | PollyWM + PollyUI Shell；CPU UI/Canvas 2D，无 3D、中文字体或输入法 | UEFI GOP/simpledrm + virtio；基础 USB/PS2 输入 |
+| **Compact** | Debian / glibc 精简底座 | 同一套 UI Shell，加中文字体和输入法 | 基础通用 GOP/simpledrm 显示，不按显卡厂商分版 |
+| **Standard** | Debian 通用底座 | 默认保留中文字体和输入法 | 通用驱动和固件集合 |
+
+当前顺序为 **Mini → Compact → Standard**。Mini 就是当前 Alpine Micro；
+Compact 是原 Debian 中文轻量目标（曾称 Thin），不再单独设置厂商驱动分版档；
+完整驱动/固件集合放在 Standard。旧 `micro` / `thin` / `full` 名称保留为历史或兼容接口。
+从 Compact 起默认支持中文，不使用 `-zh` 后缀；Full 不再单列为产品。
+Mini 优先小体积，明确放弃 WebGL2/WebGPU 和软硬件 3D，不为此引入
+Mesa/LLVMpipe、Softpipe 或 Lavapipe；保留 CPU UI 与 Canvas 2D。当前没有已验证、
+符合该档体积目标的通用软件 3D 实现，不把“可以软件渲染”当作必须加入的功能。
+其它档位的 3D 能力需独立定义和验证，不因这次决定自动记为支持。
+这定义的是新目标，不能把旧演示镜像、配置文件或历史 boot 结果自动记作新 SKU
+交付。统一入口为 `tools/build.sh --os mini|compact|standard`，必须显式选择
+`--plan` 或 `--build`；详细命令见 [构建指南](BUILDING.md#current-product-builds)。
+Mini 复用 `desktop/release/micro/build-shell.sh`，新产品输出 `mini.iso` 和 `mini.json`；
+直接调用旧脚本仍默认生成 `micro-shell.*`，不影响已有命令。该配方
+与原 26 MB `tinywl` 演示路径分开。新 Mini 品牌已真实重建，仍为
+**65,286,144 字节（65.29 MB）**，SHA-256
+`92389a08e6833c595b30fca7da2f248e905edef9d1655cc27a55558125faa899`，
+交付在 `D:\temp\PollyOS\mini-92389a08e683\mini.iso`。新文件名、启动品牌及
+`product=mini` 报告来自实际构建，不是旧 ISO 改名；GOP/virtio 双路径交互已复验。
+
+此前 Micro 基本桌面版为
+**65,286,144 字节（65.29 MB）**，包含 Decorator、Files、Settings、Processes、
+File Text 与普通 Foot 终端入口，改用 UID 1000 + seatd；仍无中文/IME/3D。
+同时包含已独立合入 main 的输入光标闪烁修复 `8a064d5a`。
+QEMU 的 GOP 与 virtio 双路径均完成桌面、闪烁、窗口操作及四个基本应用启动/关闭；
+用户实机需使用新镜像复验，旧桌面栏未见的反馈不能自动记为修复。上述实测值属于
+按旧 Micro 名称交付的镜像，不是新 Mini 文件名的重新实测。
+
+此前 GOP 基础显示版为
+**60,866,560 字节（60.87 MB）**，同一镜像的 UEFI 标准 VGA/simpledrm + USB
+键鼠，以及 virtio-gpu + virtio 键盘均已在 QEMU 跑通。2026-10-20 用户反馈
+此前讨论的 Quadro P1000 实体机启动、显示和键鼠输入成功；未采集硬件/驱动日志，
+只作为该机器的基础显示/输入观察，不代表广泛实机资格。
+原 60.05 MB virtio-only Shell 镜像独立保留，不覆盖其历史结果。
+摘要、启动证据与限制见该目录 README。Compact 的 CPU/中文/GOP 配方未接通时
+统一入口明确 blocked，不回退到旧演示。Standard 的 `standard.yaml` 使用已有
+`standard-effects4` + 内部 `full` 硬件集合，仍含原 Mesa/LLVM，不伪称已制作新的精简变体。
+Standard 新配置及入口没有因此自动取得构建或硬件资格。
+
+旧 `thin` / `full` / `minimal-zh` 的文件名、SHA-256、构建入口和现有命令行合同保留，
+仅作兼容和历史记录，不重标原产物。下文记录调整前的原型与体积依据，
+不是新三档产品的实际大小或验收状态。
+
+## 历史原型与体积依据
 
 | SKU | 底座/初始化 | 图形 | 中文/应用 | 目标 ISO | 状态 |
 |---|---|---|---|---|---:|---|
@@ -10,7 +65,7 @@
 | **standard** | Debian 13 + systemd/PAM | GLES2 + Mesa | 完整应用、Noto、Rime、PollyUI | 约 577 MB | 已构建/已启动 |
 | **full** | Debian 13 + systemd/PAM | GLES2 + Mesa + 厂商固件 | 完整硬件覆盖 | 约 726 MB | 已构建/已启动 |
 
-## micro
+### Micro 旧演示原型
 
 **合同**
 
@@ -38,7 +93,7 @@
 - 构建入口：`desktop/release/micro/build.sh`
 - 测试入口：`desktop/release/micro/test-qemu.sh`
 
-## thin
+### Thin 旧演示原型
 
 **合同**
 
@@ -62,7 +117,7 @@
 - 测试入口：`desktop/release/thin/test-qemu.sh`
 - 说明：原型尚未装入 WQY 字体；不是最终中文 thin
 
-## minimal-zh
+### 原 minimal-zh 实验路径
 
 **合同**
 
@@ -128,10 +183,13 @@
 - `thin`：**150–220 MB**，取决于自定义内核与去掉 systemd/Rime 的程度
 - `micro`：**25–50 MB**，Alpine/musl + 单应用
 
-## 关键限制
+## 历史尺寸数据的适用边界
 
-- 20–30 MB 只可能是 micro/kiosk，不可能是 Debian + systemd + Rime + 多应用
-- `minimal-zh` 的 300 MB 地板主要来自 Debian 用户空间、内核、Rime 和字体
+- 原 26 MB 只覆盖无 Shell 的演示镜像；首份 Shell 为 60.05 MB，
+  新增 GOP/simpledrm 和 USB 基础驱动后为 60.87 MB；
+  新增基本桌面应用、Decorator、普通用户会话及光标修复后为 65.29 MB。
+- 原 `minimal-zh` 的 300–400 MB 是特定包集合的估算，不是 Debian 或新 Mini/Compact
+  的体积下限。Debian 档应按同样的内核、模块和运行依赖裁剪粒度重新实测。
 - 所有小尺寸 SKU 都必须单独验证 DRM、输入、字体和恢复，不能从 `standard` 继承结论
 
 ## 相关实验
