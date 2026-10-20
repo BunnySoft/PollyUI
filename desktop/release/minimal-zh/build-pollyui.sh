@@ -19,7 +19,7 @@ cmake -S /workspace -B /build/ui -G Ninja \
   -DSKIA_ROOT=/opt/pollyui-skia -DSKIA_LIB_DIR=/opt/pollyui-skia/out/Release-linux \
   -DSDL3_DIR=/usr/local/lib/cmake/SDL3 \
   -DPU_BUILD_LAUNCHER=ON -DPU_BUILD_DESKTOP=ON -DPU_DESKTOP_SERVICES=ON \
-  -DPU_LAYER_SHELL=ON -DPU_BUILD_IME_ENGINE=OFF -DPU_BUILD_SESSION_AUTH=OFF \
+  -DPU_LAYER_SHELL=ON -DPU_BUILD_IME_ENGINE=ON -DPU_BUILD_SESSION_AUTH=OFF \
   -DPU_WEBGL2=OFF -DPU_WEBGPU=OFF -DPU_METAL=OFF \
   >/build/configure.log 2>&1
 cmake --build /build/ui --target pollyui --parallel 16 >/build/build.log 2>&1

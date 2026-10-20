@@ -167,12 +167,13 @@ PollyWM 的 `--shell` 运行：
 - SDL Wayland SHM framebuffer 补丁（`desktop/patches/sdl-wayland-shm-framebuffer.patch`）
 - `PU_WEBGL2=OFF`、`PU_WEBGPU=OFF`、`PU_METAL=OFF`
 - layer-shell 窗口在 `PU_WEBGL2` 未编译时不再请求 OpenGL
-- 测试镜像：**224 MB**
-- SHA-256：`c69a9cda05733e8c6043af0acaa6caba339ff5aa26c35a6567362c4ba45a7671`
+- 测试镜像：**226 MB**
+- SHA-256：`63c9e7587958672bf5a54ef1ec3f55df9f1d20c05bdfe57dd7987cd3dbd4d3e5`
 - QEMU virtio-gpu 1280x800，实际显示 PollyUI shell、任务栏和 Live 欢迎页
 - WQY Micro Hei + 44 MB Rime data 已安装
+- `Input-method protocol ready` / `Input-method engine and protocol initialized`
 - 截图：`dist/minimal-zh-cpu-shell-wqy/screen.png`
 - 说明：`desktop/release/minimal-zh/README.md`
 
-仍是原型：Rime 只有数据，没有 IME 服务；无 systemd/PAM/UID 1000 会话，
-无 decorator，测试镜像为 Debian minbase + BusyBox。
+仍是原型：IME 协议/引擎已启动但未做完整中文候选/粘贴验证；无 systemd/PAM/
+UID 1000 会话，无 decorator，测试镜像为 Debian minbase + BusyBox。
