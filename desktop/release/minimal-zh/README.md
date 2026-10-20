@@ -34,30 +34,30 @@ Prerequisite for PollyWM: build the Pixman prefix with
 Both scripts use `localhost/polly-debian-sdk` and Podman volumes. They check the
 final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
-## Systemd + UID 1000 proof (2026-10-20)
+## Systemd + PAM + UID 1000 proof (2026-10-20)
 
-The 236 MB prototype boots with **systemd 257 as PID 1** and drops the
-graphical session to **UID 1000**:
+The 236 MB prototype boots with **systemd 257 as PID 1** and opens a PAM
+session for the graphical user at **UID 1000**:
 
 - Kernel: `systemd.unit=polly.target`
 - `Started polly.service` / `Reached target polly.target`
 - `POLLY_UID 1000 1000 1000 1000`
 - `Seat opened with backend 'seatd'`
+- `runuser` opens the PAM session using `/etc/pam.d/runuser`
 - PollyWM Pixman modeset at 1280x800
 - PollyUI shell, taskbar and welcome UI visible
 - Test image SHA-256
-  `1d33a93858cf1a0bee9c01f6f5807390aa2d868cc6a1dec5304ff4c6664bc174`
+  `441855acb8ad06177c06c52ef4c69088bd77ad430c8558b8cd7232cee907be63`
 - Units/scripts: `desktop/release/minimal-zh/systemd/`
 
-Still missing from the systemd contract:
+Still missing from the full contract:
 
-- PAM **login** / logind session; the current drop is `setpriv`, not a PAM login
+- A graphical login/greeter; the session is opened by `runuser` from root
 - `systemd-tmpfiles` and `/sbin/modprobe` helpers are absent, so several
   standard units fail; they do not block `polly.target`
-
-The earlier non-systemd 236 MB image (`69cbc9…`) is the one used for the
-`nihao` / `你好` Chinese input test. The systemd UID 1000 image has not re-run
-that input test.
+- The systemd UID 1000 image has not re-run the `nihao` input test
+- 236 MB is still below the 300–400 MB target; logind/greeter packages are not
+  installed
 
 The earlier non-systemd 236 MB image (`69cbc9…`) is the one used for the
 `nihao` / `你好` Chinese input test. The systemd image has not re-run that input

@@ -1,3 +1,3 @@
 #!/bin/busybox sh
-# Root wrapper: drop to UID 1000 for the graphical session.
-exec /usr/bin/setpriv --reuid=1000 --regid=1000 --init-groups /usr/local/bin/polly-user-session.sh
+# Root wrapper: open a PAM session and drop to UID 1000.
+exec /usr/sbin/runuser -u polly -- /usr/local/bin/polly-user-session.sh

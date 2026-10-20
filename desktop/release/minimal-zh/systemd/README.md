@@ -5,7 +5,7 @@ These files are the minimal systemd layer used by the 236 MB prototype:
 - `init` — BusyBox initramfs PID 1; mounts dev/proc/sys/dev-shm, execs systemd
 - `polly-prepare.service` — root modprobe/udev/seatd preparation
 - `polly.service` — runs `mini-session.sh`
-- `mini-session.sh` — drops to UID 1000 with `setpriv`
+- `mini-session.sh` — opens a PAM session via `runuser` and drops to UID 1000
 - `polly-user-session.sh` — udev + libinput + Pixman PollyWM + CPU PollyUI + Rime IME
 - `polly.target` — `systemd.unit=polly.target`
 
@@ -33,6 +33,7 @@ Verified:
 - `Started polly.service` / `Reached target polly.target`
 - `POLLY_UID 1000 1000 1000 1000`
 - `Seat opened with backend 'seatd'`
+- PAM session opened by `runuser` using `/etc/pam.d/runuser`
 - PollyWM Pixman modeset at 1280x800
 - PollyUI shell, taskbar and welcome UI visible
 - Rime IME protocol/engine ready; `nihao` candidates and `你好` commit tested
