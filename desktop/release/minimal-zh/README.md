@@ -48,7 +48,9 @@ The 236 MB prototype also boots with **systemd 257 as PID 1**:
 
 Still missing from the systemd contract:
 
-- PAM login / UID 1000 / logind session; `polly.service` currently runs as root
+- PAM login / UID 1000 / logind session. A `User=polly` +
+  `PAMName=polly-shell` attempt did not produce a session (no UID log, no
+  shell); the verified image still runs `polly.service` as root.
 - `systemd-tmpfiles` and `/sbin/modprobe` helpers are absent, so several
   standard units fail; they do not block `polly.target`
 
