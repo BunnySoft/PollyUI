@@ -50,8 +50,10 @@ The PollyUI shell now renders on the Pixman-only stack:
 
 This is still a **prototype**, not the final minimal-zh:
 
-- IME protocol/engine starts, but Chinese candidate/clipboard interaction is not
-  yet exercised end-to-end
+- IME protocol/engine starts, but a QEMU QMP keyboard test did not reach the
+  shell: this minbase root starts PollyWM with `WLR_LIBINPUT_NO_DEVICES=1` and
+  has no libinput/udev seat path. Chinese candidate/clipboard interaction is
+  therefore **not yet verified end-to-end**.
 - no systemd/PAM/UID 1000 session
 - no decorator (`Window decorations disabled`), no `/usr/bin/logger`
 - test image is Debian minbase + BusyBox, not the live/systemd contract
