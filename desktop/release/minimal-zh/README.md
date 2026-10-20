@@ -34,6 +34,28 @@ Prerequisite for PollyWM: build the Pixman prefix with
 Both scripts use `localhost/polly-debian-sdk` and Podman volumes. They check the
 final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
+## Systemd boot proof (2026-10-20)
+
+The 236 MB prototype also boots with **systemd 257 as PID 1**:
+
+- Kernel: `systemd.unit=polly.target`
+- `Started polly.service` / `Reached target polly.target`
+- PollyWM Pixman modeset at 1280x800
+- PollyUI shell, taskbar and welcome UI visible
+- Test image SHA-256
+  `aa6ac58afb38feee14e06b9f7cdd956d9676471292b6e76a15beda20dfbbb11b`
+- Units/scripts: `desktop/release/minimal-zh/systemd/`
+
+Still missing from the systemd contract:
+
+- PAM login / UID 1000 / logind session; `polly.service` currently runs as root
+- `systemd-tmpfiles` and `/sbin/modprobe` helpers are absent, so several
+  standard units fail; they do not block `polly.target`
+
+The earlier non-systemd 236 MB image (`69cbc9…`) is the one used for the
+`nihao` / `你好` Chinese input test. The systemd image has not re-run that input
+test.
+
 ## CPU-only shell + Chinese IME proof (2026-10-20)
 
 The PollyUI shell now renders and performs Chinese input on the Pixman-only

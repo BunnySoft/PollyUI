@@ -178,3 +178,17 @@ PollyWM 的 `--shell` 运行：
 
 仍是原型：无 systemd/PAM/UID 1000 会话，无 decorator，测试镜像为
 Debian minbase + BusyBox；剪贴板粘贴未单独验证。
+
+## 11. Systemd 启动
+
+同一 CPU shell 原型已用 **systemd 257 作为 PID 1** 启动：
+
+- 内核参数：`systemd.unit=polly.target`
+- `Started polly.service`、`Reached target polly.target`
+- 1280x800 Pixman 桌面与 PollyUI shell 可见
+- 镜像：**236 MB**，SHA-256
+  `aa6ac58afb38feee14e06b9f7cdd956d9676471292b6e76a15beda20dfbbb11b`
+- 单元/脚本：`desktop/release/minimal-zh/systemd/`
+
+仍缺 PAM 登录、UID 1000/logind 会话；`systemd-tmpfiles` 和 `/sbin/modprobe`
+辅助程序缺失导致若干标准 unit 失败，但不阻塞 `polly.target`。

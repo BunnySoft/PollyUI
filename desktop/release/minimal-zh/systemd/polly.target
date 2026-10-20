@@ -1,0 +1,5 @@
+[Unit]
+Description=Polly CPU Shell Target
+AllowIsolate=yes
+Requires=polly.service
+After=polly.service

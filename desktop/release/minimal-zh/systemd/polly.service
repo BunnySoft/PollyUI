@@ -1,0 +1,13 @@
+[Unit]
+Description=Polly CPU Shell
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+StandardOutput=journal+console
+StandardError=journal+console
+ExecStart=/usr/local/bin/mini-session.sh
+Restart=no
+
+[Install]
+WantedBy=polly.target
