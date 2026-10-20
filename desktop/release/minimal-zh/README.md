@@ -36,23 +36,22 @@ final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
 ## Current shell integration blocker
 
-PollyUI is built CPU-only, but the first end-to-end shell launch does not yet
-stay up. In the Debian minbase test root:
+A local SDL3 Wayland SHM-framebuffer patch was built and linked into PollyUI;
+the software renderer can now present to the layer-shell window. In the Debian
+minbase test root the shell now loads themes and reaches the compositor
+appearance API, then fails with:
 
-- SDL reaches Wayland after adding `libwayland-egl`, `libwayland-cursor`, XKB
-  data and DejaVu/fontconfig.
-- The earlier `unexpected token '\x7f'` was a malformed local init command, not
-  a source defect; the shell now reaches SDL.
-- `SDL_CreateRenderer` then fails with
-  `Window framebuffer support not available` for the layer-shell window.
-  GLES is intentionally absent.
-- Root cause from the pinned SDL3 source: the Wayland video backend does not
-  provide `CreateWindowFramebuffer`; only X11/Windows/offscreen/dummy do. SDL's
-  software renderer therefore cannot present directly to a Wayland window.
-- Fix options: add a Wayland SHM framebuffer path to SDL (or a PollyUI SHM host),
-  or provide a tested X11 path. This is a real native change, not a flag.
-- Do not claim the PollyUI shell is integrated until a screenshot shows the
-  actual shell.
+```text
+[shell] Application discovery failed: TypeError: not a function
+Uncaught Error: The active compositor does not support paired regional Shell
+backdrops (appearance v8)
+```
+
+The next blocker is therefore **PollyWM's native appearance-v8 capability
+reporting**, not SDL or JS loading. Do not claim the PollyUI shell is integrated
+until this is fixed and a screenshot shows the actual shell.
+
+The SDL patch is experimental and is not yet a supported SDK/runtime input.
 
 ## Remaining for the real minimal-zh
 
