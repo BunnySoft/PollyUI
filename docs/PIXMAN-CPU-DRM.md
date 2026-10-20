@@ -156,20 +156,22 @@ Debian 13 minbase + glibc + BusyBox PID 1，复用同一 Pixman wlroots：
 - 构建入口：`desktop/release/minimal-zh/build-pollywm.sh`
 - 说明：`desktop/release/minimal-zh/README.md`
 
-它仍不是完整 `minimal-zh`：缺 PollyUI shell、WQY/Rime、systemd/PAM、APT lock
+它仍不是完整 `minimal-zh`：缺 WQY/Rime、systemd/PAM、APT lock
 和受支持的 `drm_dumb` 生产路径。
 
-## 10. CPU-only PollyUI
+## 10. CPU-only PollyUI Shell 已启动
 
-PollyUI（layer shell）已用同一套 CPU 选项构建：
+PollyUI（layer shell + desktop services）已用同一套 CPU 选项构建并作为
+PollyWM 的 `--shell` 运行：
 
-```sh
-OUT=$PWD/build/minimal-zh sh desktop/release/minimal-zh/build-pollyui.sh
-```
-
+- SDL Wayland SHM framebuffer 补丁（`desktop/patches/sdl-wayland-shm-framebuffer.patch`）
 - `PU_WEBGL2=OFF`、`PU_WEBGPU=OFF`、`PU_METAL=OFF`
-- `ldd` 不含 GBM/EGL/GLES/LLVM；只额外依赖 SDL3
-- 构建入口：`desktop/release/minimal-zh/build-pollyui.sh`
+- layer-shell 窗口在 `PU_WEBGL2` 未编译时不再请求 OpenGL
+- 测试镜像：**202 MB**
+- SHA-256：`c6517818edeb24021fd64a3bef301088d127e9c9a4e26c97020ff94fe8003a6d`
+- QEMU virtio-gpu 1280x800，实际显示 PollyUI shell、任务栏和 Live 欢迎页
+- 截图：`dist/minimal-zh-cpu-shell/screen.png`
+- 说明：`desktop/release/minimal-zh/README.md`
 
-还没有把 PollyUI 作为 PollyWM 的 `--shell` 与 JS/assets 一起打包运行，也还没有
-WQY/Rime/systemd/PAM。
+仍是原型：无 WQY/Rime，无 systemd/PAM/UID 1000 会话，无 decorator，
+测试镜像为 Debian minbase + BusyBox。

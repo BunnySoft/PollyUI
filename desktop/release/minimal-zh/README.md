@@ -34,27 +34,33 @@ Prerequisite for PollyWM: build the Pixman prefix with
 Both scripts use `localhost/polly-debian-sdk` and Podman volumes. They check the
 final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 
-## Current shell integration blocker
+## CPU-only shell proof (2026-10-20)
 
-A local SDL3 Wayland SHM-framebuffer patch was built and linked into PollyUI;
-the patch is recorded at `desktop/patches/sdl-wayland-shm-framebuffer.patch`.
-With `--desktop`, the shell now gets past SDL software presentation, theme
-loading, application discovery and the appearance-v8 capability check.
+The PollyUI shell now renders on the Pixman-only stack:
 
-The next failure is in the **layer-shell native window** path:
+- **202 MB** test image, SHA-256
+  `c6517818edeb24021fd64a3bef301088d127e9c9a4e26c97020ff94fe8003a6d`
+- QEMU/KVM + `virtio-gpu-pci`, 1280x800
+- PollyWM modeset, PollyUI shell window, taskbar and live welcome UI visible
+- SDL software presentation uses the local Wayland SHM framebuffer patch
+- Layer-shell windows use `SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN=false`
+  only when `PU_WEBGL2` is not compiled
 
-```text
-Custom Wayland window failed: Could not initialize OpenGL / GLES library
-Uncaught InternalError: Cannot create native window
-```
+This is still a **prototype**, not the final minimal-zh:
 
-The shell's layer-shell window still requires an EGL/GLES surface despite the
-base renderer being raster. The next fix is to make that custom Wayland window
-path use the SHM software buffer (or provide a tested GLES-less layer-shell
-path). Do not claim the PollyUI shell is integrated until this is fixed and a
-screenshot shows the actual shell.
+- no WQY/Rime
+- no systemd/PAM/UID 1000 session
+- no decorator (`Window decorations disabled`), no `/usr/bin/logger`
+- test image is Debian minbase + BusyBox, not the live/systemd contract
 
 The SDL patch is experimental and is not yet a supported SDK/runtime input.
+
+## Previous issues (resolved for the prototype)
+
+- SDL Wayland had no `CreateWindowFramebuffer`; the local patch adds it.
+- `--desktop` is required for application discovery.
+- Layer-shell creation previously forced an OpenGL window; the build now
+  selects it only when `PU_WEBGL2` is enabled.
 
 ## Remaining for the real minimal-zh
 

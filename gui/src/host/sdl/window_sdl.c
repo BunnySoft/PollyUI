@@ -598,6 +598,11 @@ static int create_native(PuWindow *w, const PuWindowConfig *config,
             return 0;
         }
         SDL_PropertiesID props = SDL_CreateProperties();
+#ifdef PU_WEBGL2
+        const bool layer_opengl = true;
+#else
+        const bool layer_opengl = false;
+#endif
         bool ok = props &&
             SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title) &&
             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width) &&
@@ -606,7 +611,7 @@ static int create_native(PuWindow *w, const PuWindowConfig *config,
             SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, config->layer && config->layer->transparent != 0) &&
             SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WAYLAND_WL_SURFACE_POINTER,
                 pu_layer_surface(w->layer_surface)) &&
-            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
+            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, layer_opengl);
         if (ok) w->win = SDL_CreateWindowWithProperties(props);
         if (props) SDL_DestroyProperties(props);
         if (!w->win) {
