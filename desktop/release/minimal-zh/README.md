@@ -37,7 +37,8 @@ final `ldd` and fail if GBM/EGL/GLES/LLVM appears.
 ## Current shell integration blocker
 
 A local SDL3 Wayland SHM-framebuffer patch was built and linked into PollyUI;
-the software renderer can now present to the layer-shell window. In the Debian
+the patch is recorded at `desktop/patches/sdl-wayland-shm-framebuffer.patch`.
+The software renderer can now present to the layer-shell window. In the Debian
 minbase test root the shell now loads themes and reaches the compositor
 appearance API, then fails with:
 

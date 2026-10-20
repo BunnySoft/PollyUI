@@ -1,0 +1,102 @@
+--- a/src/video/wayland/SDL_waylandwindow.h
++++ b/src/video/wayland/SDL_waylandwindow.h
+@@ -35,6 +35,11 @@
+     SDL_Window *sdlwindow;
+     SDL_VideoData *waylandData;
+     struct wl_surface *surface;
++    Wayland_SHMPool *shm_pool;
++    struct wl_buffer *shm_buffer;
++    void *shm_pixels;
++    int shm_width;
++    int shm_height;
+     struct wl_callback *gles_swap_frame_callback;
+     struct wl_event_queue *gles_swap_frame_event_queue;
+     struct wl_surface *gles_swap_frame_surface_wrapper;
+@@ -255,6 +260,10 @@
+ extern void *Wayland_GetWindowICCProfile(SDL_VideoDevice *_this, SDL_Window *window, size_t *size);
+ extern void Wayland_AcceptDragAndDrop(SDL_Window *window, bool accept);
+ 
++extern bool Wayland_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window, SDL_PixelFormat *format, void **pixels, int *pitch);
++extern bool Wayland_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window, const SDL_Rect *rects, int numrects);
++extern void Wayland_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window);
++
+ extern bool Wayland_SetWindowHitTest(SDL_Window *window, bool enabled);
+ extern bool Wayland_FlashWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_FlashOperation operation);
+ extern bool Wayland_SyncWindow(SDL_VideoDevice *_this, SDL_Window *window);
+--- a/src/video/wayland/SDL_waylandvideo.c
++++ b/src/video/wayland/SDL_waylandvideo.c
+@@ -667,6 +667,9 @@
+     device->GetWindowICCProfile = Wayland_GetWindowICCProfile;
+     device->GetDisplayForWindow = Wayland_GetDisplayForWindow;
+     device->DestroyWindow = Wayland_DestroyWindow;
++    device->CreateWindowFramebuffer = Wayland_CreateWindowFramebuffer;
++    device->UpdateWindowFramebuffer = Wayland_UpdateWindowFramebuffer;
++    device->DestroyWindowFramebuffer = Wayland_DestroyWindowFramebuffer;
+     device->SetWindowHitTest = Wayland_SetWindowHitTest;
+     device->FlashWindow = Wayland_FlashWindow;
+ #ifdef SDL_USE_LIBDBUS
+--- a/src/video/wayland/SDL_waylandwindow.c
++++ b/src/video/wayland/SDL_waylandwindow.c
+@@ -3385,4 +3385,62 @@
+     window->internal = NULL;
+ }
+ 
++
++bool Wayland_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++                                     SDL_PixelFormat *format, void **pixels, int *pitch)
++{
++    SDL_WindowData *data = window->internal;
++    int w = data->current.pixel_width > 0 ? data->current.pixel_width : window->w;
++    int h = data->current.pixel_height > 0 ? data->current.pixel_height : window->h;
++    if (w <= 0 || h <= 0) {
++        SDL_SetError("Invalid Wayland framebuffer size");
++        return false;
++    }
++    Wayland_DestroyWindowFramebuffer(_this, window);
++    data->shm_pool = Wayland_AllocSHMPool(w * h * 4);
++    if (!data->shm_pool) return false;
++    data->shm_buffer = Wayland_AllocBufferFromPool(data->shm_pool, w, h, &data->shm_pixels);
++    if (!data->shm_buffer) {
++        Wayland_ReleaseSHMPool(data->shm_pool);
++        data->shm_pool = NULL;
++        return false;
++    }
++    data->shm_width = w;
++    data->shm_height = h;
++    *format = SDL_PIXELFORMAT_ARGB8888;
++    *pixels = data->shm_pixels;
++    *pitch = w * 4;
++    return true;
++}
++
++bool Wayland_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
++                                     const SDL_Rect *rects, int numrects)
++{
++    SDL_WindowData *data = window->internal;
++    if (!data->shm_buffer || !data->surface) return false;
++    wl_surface_attach(data->surface, data->shm_buffer, 0, 0);
++    for (int i = 0; i < numrects; i++) {
++        const SDL_Rect *r = &rects[i];
++        if (r->w > 0 && r->h > 0)
++            wl_surface_damage_buffer(data->surface, r->x, r->y, r->w, r->h);
++    }
++    wl_surface_commit(data->surface);
++    return true;
++}
++
++void Wayland_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window)
++{
++    SDL_WindowData *data = window->internal;
++    if (data->shm_buffer) {
++        wl_buffer_destroy(data->shm_buffer);
++        data->shm_buffer = NULL;
++    }
++    if (data->shm_pool) {
++        Wayland_ReleaseSHMPool(data->shm_pool);
++        data->shm_pool = NULL;
++    }
++    data->shm_pixels = NULL;
++    data->shm_width = data->shm_height = 0;
++}
++
+ #endif // SDL_VIDEO_DRIVER_WAYLAND
