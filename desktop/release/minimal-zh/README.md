@@ -55,9 +55,11 @@ Still missing from the full contract:
 - A graphical login/greeter; the session is opened by `runuser` from root
 - `systemd-tmpfiles` and `/sbin/modprobe` helpers are absent, so several
   standard units fail; they do not block `polly.target`
-- The systemd UID 1000 image has not re-run the `nihao` input test
 - 236 MB is still below the 300–400 MB target; logind/greeter packages are not
   installed
+
+Chinese input was re-tested on this PAM/UID 1000 image: `nihao` opens the Rime
+candidate list and Space commits `你好`.
 
 The earlier non-systemd 236 MB image (`69cbc9…`) is the one used for the
 `nihao` / `你好` Chinese input test. The systemd image has not re-run that input
