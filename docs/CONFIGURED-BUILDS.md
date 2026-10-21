@@ -208,6 +208,11 @@ keyring 路径与 SHA256，不接受 lock 自带 keyring。其 digest 来自现�
 stock 证据并与导出 keyring 字节相符；容器 keyring 更新后也会失败关闭，
 必须经来源审查更新该源码策略，不能自动采信新 keyring。
 
+Standard 的 runtime 根显式包含 `gpgv`，SDK 也显式安装它。离线预检在安装
+platform 包之前执行，不能依赖之后才安装的验签器；APT 自身使用 `sqv` 也不
+代表这个预检脚本已经具有 `gpgv`。冻结运行包必须记录其真实版本和依赖，
+不能临时联网补装后仍声称沿用旧 runtime 的完整包清单。
+
 之后各阶段只安装已认证的本地 archive，`--no-download --no-install-recommends
 --no-remove`；最终检查实际 dpkg 全量集合严格等于锁。
 配置路径的 platform/live `podman build` 也显式使用 `--network=none`，

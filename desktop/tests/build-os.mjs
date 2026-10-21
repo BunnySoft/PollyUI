@@ -56,6 +56,8 @@ test('Standard new configuration preserves the real full hardware/package contra
   const configuration = await loadConfig(configFile);
   assert.equal(configuration.name, 'standard');
   assert.equal(configuration.hardware, 'full');
+  assert.ok(packageStages(configuration).runtime.includes('gpgv'),
+    'The actual configured runtime must provide its pinned-signature verifier before offline preflight');
   assert.deepEqual(packageStages(configuration), packageStages(legacyConfig('full')));
   const plan = await runCLI(['standard', '--plan']);
   assert.equal(plan.debian.configuration.name, 'standard');
