@@ -250,13 +250,35 @@ actual paired GLES compile capability, isolated video decoder, new effects
 scripts/resources or an exact match to the current source byte inventory.
 Generic/legacy hardware entries are not relabeled as this product. Existing
 clean-Git, frozen-runtime, signed offline-lock and media-integrity gates remain
-unchanged. Source and development bundles remain dirty until an explicit local
-commit is authorized; neither a synthetic clean label nor an automatic commit
-is an acceptable media-build input.
+unchanged. After explicit user authorization, the local implementation and
+necessary packaging fixes were committed without a push. The delivered native
+runtime and media use actual clean Linux commit
+`7ac24471ce488246cafe7699308091b09e497966`, not a synthetic clean label.
 
-No new effects media is delivered: existing
-Full/Standard ISO files do not contain stages 1-7 until a new source-bound
-runtime/media build is made.
+New Standard media is delivered at
+`D:\temp\PollyOS\standard-effects-902838e30046\`, separately from every old image.
+Its optical SHA256 is
+`902838e3004639abe82f94dd73077f950098bc4d4be428dc9ceb9ac896d80f95`;
+USB SHA256 is
+`9fbfc057a787b104638d2539ac293f014e8df6e58ba7e57db1d6f74b8214075d`.
+Both pass actual UEFI ordinary-user DRM/PAM/input boot lanes; the USB lane also
+passes emulated e1000e DHCP/DNS and HDA enumeration. The unchanged stock
+kernel/bootstrap/root additionally boots GPU mode with actual GLES and virtio
+DRM/KMS after normal systemd/PAM, using direct-kernel test transport. This is
+separate from the UEFI lanes and from the interactive native effect fixtures.
+It is not physical-GPU, audible sound, real Wi-Fi, performance or simultaneous
+all-effects-on-physical-hardware qualification. See
+[delivery records](SKU-DELIVERY.md) for exact sizes, source and retained failures.
+
+The final SDK is `localhost/polly-effects-standard-linux-sdk-f687df90:dev`
+(`6a2c6fa27f52b75d4597e7595a857d1bc45a159aaf4072c9e480491b18457b98`).
+It preserves the qualified cube dependency and genuinely rebuilds the pinned
+video prefix from LF recipe bytes rather than relabeling CRLF SDK artifacts.
+The actual final installed decoder passes the original pixel/protocol suite.
+Canonical offline assembly also required explicit runtime `gpgv`, a verified
+canonical APT cache under `--no-download`, and building the optional PAM helper
+in fresh packaging trees. The source-approved keyring and package freeze were
+not weakened; 411 final packages and 129 signed additions are bound to the lock.
 
 ## Ownership and compatibility
 

@@ -1,4 +1,4 @@
-# 尺寸 SKU 交付记录（2026-10-20）
+# 尺寸 SKU 交付记录（2026-10-21）
 
 本文件汇总本轮尺寸 SKU 阶梯的实测产物。所有 ISO 都是 unsigned x86_64 UEFI
 开发镜像，不代表通用物理机或安全启动资格；有限实机用户反馈单独记录。
@@ -14,7 +14,52 @@ Standard 带完整驱动/固件。中文从 Compact 起默认包含，不再单�
 下面的 26/169 MB 演示镜像不含新要求的 UI Shell，不能算新 Mini/Compact
 已经交付。新定义与旧记录的边界见 [SKU 技术栈与尺寸](SKU-SIZES.md)。
 
-## Standard/full：Wi-Fi、音频扩展版（当前交付）
+## Standard：完整桌面特效版（当前交付）
+
+本次真实执行规范产品 `--os standard` 配置/锁构建，不是旧 Full 媒体改名。
+内部硬件集合仍为 `full`；Mini、Compact 和全部历史镜像保持原身份。
+
+| 项目 | 实测结果 |
+|---|---|
+| ISO | **882,157,568 字节，882.16 MB / 841.29 MiB** |
+| ISO 文件 | `pollydesktop-0.1.0-alpha.8-debian13-full-standard-75821a5de677-x86_64-uefi-live.iso` |
+| ISO SHA-256 | `902838e3004639abe82f94dd73077f950098bc4d4be428dc9ceb9ac896d80f95` |
+| USB 原始镜像 | **934,281,216 字节，934.28 MB / 891.00 MiB** |
+| USB 文件 | `pollydesktop-0.1.0-alpha.8-debian13-full-standard-75821a5de677-x86_64-uefi-usb.img` |
+| USB SHA-256 | `9fbfc057a787b104638d2539ac293f014e8df6e58ba7e57db1d6f74b8214075d` |
+| 交付目录 | `D:\temp\PollyOS\standard-effects-902838e30046\`；制作 USB 使用 `.img` |
+| 原生与媒体来源 | 干净 Linux checkout：`7ac24471ce488246cafe7699308091b09e497966`；同一真实提交、LF 字节、`sourceDirty=false`，源码 Git bundle 随包保留 |
+| 特效 | 全局普通窗口透明度、真实 2D 预览、Flip 3D、Canvas Aurora、原创兔子形象、本地静音视频壁纸、四工作区立方体及独立 Settings 控件 |
+| 默认与 GPU 模式 | 默认 Pixman/raster；3D 特效需从 `Advanced startup` 选择 `GPU acceleration (automatic selection)`。这是启动会话选择，不是无缝热切换 |
+| 解码边界 | 独立 FFmpeg 9.0.2 LGPL-only 辅助进程，H264/VP8/VP9、MOV/Matroska；无音频、网络协议、GPL/nonfree 或硬件解码；GUI/Shell 不链接 FFmpeg |
+| 配对 SDK | wlroots effects ABI4，补丁 `04e9b87e8956a3eaff4feae9fb4ef06b91c2ccb871dc5e883a68a81dce2bdab6`；实际 LF 配方重建视频前缀，未改写旧 SDK |
+| 依赖与构建 | 411 个最终包、129 个新增归档；固定官方 keyring、真实签名/索引/归档核验和 file-only APT 解算；配置媒体组装断网，不升级冻结原生依赖 |
+| ISO UEFI | 首次通过 UID 1000 PAM/logind、真实 DRM/KMS、中文提交、剪贴板和工作区切换；4 GiB、2 vCPU、无可写客机磁盘和网络 |
+| USB UEFI | 首次通过同一桌面/输入检查；模拟 e1000e 的 DHCP、网关 ping、系统 DNS，以及 HDA 播放/采集设备枚举通过 |
+| GPU 模式 | 同一未修改媒体的原始 kernel/bootstrap/root，经 direct-kernel 测试传输启动正常 systemd/PAM，会话实际使用 GLES、virtio DRM/KMS；不是 headless 输出或绕过 systemd 的注入启动 |
+| 特效交互证据 | 独立原生 GLES fixture 通过真实 Settings、立方体相邻面同屏、深度选择、确认/取消、锁屏、输出移除和 Shell 新 PID；Flip 3D 回归保留零 idle / 3 帧有界过渡 |
+| 边界 | GPU 客机使用 llvmpipe，不是物理 P1000 加速；未实机验证 Wi-Fi、声音/录音、多屏、恢复或性能，未做全部特效在实机同时启用的验收 |
+
+Windows 端已独立复核两份媒体 SHA256。目录内保留媒体 manifest、原始来源、
+解析计划、锁、SBOM、运行包来源/版本和 ISO/USB/GLES 日志与截图。
+GLES direct-kernel 场景不冒充 UEFI 验收；独立光盘/USB 场景提供 UEFI 证据。
+实际安装后的解码器另外通过原始 MP4/WebM 像素、暂停、循环、时间戳、
+单帧 credit、畸形/超限拒绝和非循环 EOF 检查。
+
+实现阶段的 208 项源测试、19 项定向 Release 回归，以及构建入口/离线适配器
+检查不等于整个仓库测试全绿。全量 Release 构建还暴露既有
+`desktop/tests/decoration-frame.c` 在 `NDEBUG` 下的 assert 副作用警告；
+未为本轮修复无关测试或放宽 `-Werror`。打包按实际启用的产品目标构建，
+包含 PAM helper。
+
+构建失败单独保留：portable Node 缺 ICU 数据、缺 `gpgv`、APT hash 文件名缓存、
+Windows CRLF 导致冻结字节不匹配，以及两个旧工具镜像缺少 SquashFS/readelf。
+分别补齐真实依赖/缓存、采用干净 Linux checkout 和已有完整工具镜像后通过，
+未跳过签名、clean-source 或逐字节校验，未覆盖旧交付或固定 alias。
+SDK、完整构建目录和带归档的离线锁仍保留在本机 Podman 环境；
+Windows 目录不冒充包含所有 OCI/SDK 输入的离线重建包。本轮本地提交未推送。
+
+## 此前 Standard/full：Wi-Fi、音频扩展版
 
 在下节 P1000/有线/常用命令版本之上重新组装，保留 `sku=full` 内部身份。
 Mini 和 Compact 不变；本轮复用同一份已冻结、配对的原生 runtime，没有重新编译应用，

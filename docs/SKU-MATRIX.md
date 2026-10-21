@@ -3,7 +3,7 @@
 [HTML view with merged cells](SKU-MATRIX.html). After editing this source, regenerate
 the HTML with `node desktop/tools/render-sku-matrix.mjs` from the repository root.
 
-Updated: 2026-10-20. Current product names: **Mini / Compact / Standard**.
+Updated: 2026-10-21. Current product names: **Mini / Compact / Standard**.
 Chinese fonts and input are included from Compact upward. There is no `-zh` suffix
 or separate Full tier.
 
@@ -30,14 +30,18 @@ not implicitly supported.
 |---|---|---|---|
 | Product role | Smallest Alpine graphical desktop | Lightweight Debian Chinese desktop | General-purpose hardware desktop |
 | UI Shell | ✅ | ✅ | ✅ |
-| Window decorations and basic application launchers | ✅ | ❔ | ❔ |
+| Window decorations and basic application launchers | ✅ | ❔ | ✅ |
 | Basic Latin text and keyboard input | ✅ | ✅ | ✅ |
 | Chinese fonts | ❌ | ✅ | ✅ |
 | Chinese input method | ❌ | ✅ | ✅ |
 | Canvas 2D | CPU path retained | Shared implementation retained | Shared implementation retained |
-| WebGL2 / 3D | ❌ | ❔ | Existing recipe includes WebGL2; new product qualification pending |
+| WebGL2 / 3D | ❌ | ❔ | WebGL2 built; native GLES effects and stock GPU/KMS VM startup verified, not browser API conformance |
 | WebGPU | ❌ | ❔ | ❔ |
-| Software 3D runtime | ❌ | ❔ | Existing Mesa/LLVM closure retained; not separately qualified |
+| Software 3D runtime | ❌ | ❔ | Mesa/LLVM retained; llvmpipe GLES verified in isolated guests, no performance claim |
+| Global window opacity and real 2D previews | ❔ | ❔ | ✅; included in the current configured Standard media |
+| Flip 3D and workspace cube | ❌ | ❔ | ✅; requires the paired GLES session |
+| Procedural wallpaper and original desktop companion | ❔ | ❔ | ✅; bounded lifecycle and Settings controls |
+| Local video wallpaper | ❔ | ❔ | ✅; isolated muted local-file decoder, no per-frame JS pixels |
 | Vendor GPU acceleration | ❌ | ❌ | Driver-specific; requires validation |
 | Display drivers | GOP/simpledrm + virtio | Basic GOP/simpledrm path | General-purpose driver set |
 | Firmware | Minimum required set | Basic set; inventory TBD | General-purpose firmware set |
@@ -56,7 +60,7 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 | Distribution / libc | Alpine / musl | Debian / glibc | Debian / glibc |
 | Init and session | BusyBox / UID 1000 / seatd; no login | New-tier design TBD | systemd / PAM / logind; current full image uses UID 1000 |
 | Window manager / Wayland compositor | PollyWM / wlroots | Same implementation | Same implementation |
-| Composition renderer | Pixman | Basic CPU/Pixman path | General-purpose graphics path |
+| Composition renderer | Pixman | Basic CPU/Pixman path | Pixman default; paired GLES GPU startup option |
 | UI execution and layout | QuickJS + Yoga | Same implementation | Same implementation |
 | UI rendering | Skia raster-only | Skia; CPU recipe pending | Skia; existing standard-effects4 recipe |
 | JS system interface | SysRT / FFI | Same implementation | Same implementation |
@@ -69,13 +73,14 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 | Wired Ethernet firmware | Minimum necessary set | Basic set TBD | Common Intel/Realtek/USB Ethernet modules plus Realtek firmware; DHCP/DNS service |
 | Wi-Fi drivers and firmware | Not integrated in current image | TBD | Intel/Realtek/Qualcomm Atheros/Broadcom-Cypress/MediaTek open-driver paths and firmware; iwd |
 | Audio drivers and hardware configuration | Not integrated in current image | TBD | HDA/Realtek/HDMI/USB, Intel SOF/SST, AMD ACP and Cirrus paths; SOF/Intel/Cirrus firmware, ALSA UCM/topology and existing PipeWire core |
+| Video decoding | Not added to current image | TBD | Separate FFmpeg 9.0.2 LGPL-only H264/VP8/VP9 helper; no audio/network/GPL/nonfree/hardware decoding |
 
 A SKU name does not automatically imply audio, networking, PAM/login,
 installation, persistence, or updates. These have implementations in the
 existing full system, but their required scope in the new tiers remains to be
 defined. The Decorator and minimum application set must also be explicitly
 specified, packaged, and started. Mini's existing Alpine recipe integrates the basic application
-set below; corresponding choices for the other new tiers are not finalized.
+set below; current Standard also includes it, while Compact integration is not finalized.
 Including a Shell or copying JS resources does not establish their delivery.
 
 The UI Host creates application windows, receives input, and submits rendered
@@ -127,7 +132,7 @@ visible output is not proof of a fully verified physical driver chain.
 | SKU | Delivery status under the new definition |
 |---|---|
 | Compact | New Debian Chinese Shell + basic-display recipe not integrated; `--os compact --plan` is blocked and `--build` fails before external commands. Historical `thin` and minimal-zh images are not Compact deliveries |
-| Standard | New `standard.yaml` selects `standard-effects4` and internal `full` hardware. The Wi-Fi/audio-expanded Full-profile ISO is 865.88 MB and USB image 918.55 MB; their actual identity remains `full`, built through frozen-runtime profile assembly, not the new configured product entry |
+| Standard | Current canonical `--os standard` media includes the complete selected effects: ISO 882.16 MB, USB 934.28 MB; SHA prefixes `902838e30046` / `9fbfc057a787`. Clean source, signed offline lock and exact payload checks pass; UEFI optical/USB and separate stock GLES/KMS guest startup pass. Physical hardware remains unqualified; historical Full images are unchanged |
 
 The current Full image is at `D:\temp\PollyOS\full-wifi-audio-0f142c34a948\`.
 ISO SHA-256: `0f142c34a9488d6f770c52f30184bf6d847e011d83cdd5ac608b3fe3675dce9d`.
