@@ -72,6 +72,18 @@ def seed(root, sku, *, marked=True):
 
 
 class HardwareProfiles(unittest.TestCase):
+    def test_common_runtime_may_already_have_non_hardware_utilities(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            status = root / "var/lib/dpkg/status"
+            status.parent.mkdir(parents=True)
+            status.write_text("\n\n".join(
+                f"Package: {name}\nStatus: install ok installed\nArchitecture: amd64\n"
+                "Version: 1.0\nInstalled-Size: 1"
+                for name in ("bash", "coreutils", "file", "ca-certificates", "curl", "git",
+                             "alsa-ucm-conf", "alsa-topology-conf")) + "\n")
+            profiles["clean_runtime"](root)
+
     def test_six_package_sets_missing_forbidden_and_legacy_full(self):
         for sku in SKUS:
             with self.subTest(sku=sku), tempfile.TemporaryDirectory() as temporary:

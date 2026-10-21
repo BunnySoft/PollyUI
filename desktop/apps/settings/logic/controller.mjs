@@ -1,5 +1,10 @@
 import { parseAppearance, parseAbout, settingsPage } from './desktop/client/settings-contract.mjs';
 import { preflightBodyFont } from './desktop/shared/ui/body-font.mjs';
+import { transparencyMode, windowOpacityPercent } from './desktop/shared/ui/transparency.mjs';
+import { windowSwitcherStyle, windowSwitcherMotion } from './desktop/shared/ui/window-switcher.mjs';
+import { wallpaperPreferences } from './desktop/shared/ui/procedural-wallpaper.mjs';
+import { companionPreferences } from './desktop/shared/ui/companion.mjs';
+import { workspaceCubePreferences } from './desktop/shared/ui/workspace-cube.mjs';
 
 function activeAppearance(value) {
   const appearance = parseAppearance(value);
@@ -55,6 +60,13 @@ export function createSettingsController({ client, page = 'appearance', changed 
       return command('SelectTheme', id);
     },
     reload: () => command('ReloadThemes'), restore: () => command('RestoreThemes'),
+    setTransparency: mode => command('SetTransparency', transparencyMode(mode)),
+    setWindowOpacity: percent => command('SetWindowOpacity', windowOpacityPercent(percent)),
+    setSwitcherStyle: style => command('SetSwitcherStyle', windowSwitcherStyle(style)),
+    setSwitcherMotion: value => command('SetSwitcherMotion', windowSwitcherMotion(value)),
+    setWallpaper: value => command('SetWallpaper', JSON.stringify(wallpaperPreferences(value))),
+    setCompanion: value => command('SetCompanion', JSON.stringify(companionPreferences(value))),
+    setWorkspaceCube: value => command('SetWorkspaceCube', JSON.stringify(workspaceCubePreferences(value))),
     managed: page => command('OpenManagedPage', settingsPage(page, true)),
     fail: failure => { if (!state.closed) { state.unavailable = true; error(failure); changed(); } },
     close() { if (!state.closed) { state.closed = true; serial++; client.close(); } },

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_session_status_v1">
-  <interface name="polly_session_status_v1" version="2">
+  <interface name="polly_session_status_v1" version="4">
     <description summary="connection-bound service readiness">
       Only the trusted Shell and the separately spawned input-method connection
       may bind this global. The Shell may query status, but cannot mark a service
@@ -82,6 +82,44 @@
         The compositor logout shortcut asks its trusted Shell to display the
         same confirmation flow as its user menu. No application is closed here.
       </description>
+    </event>
+    <request name="watch_background" since="3">
+      <description summary="observe an owned background's actual scene visibility">
+        Only the current trusted Shell may watch its own background-layer
+        surface. Updates reflect enabled output intersection and scene opaque
+        occlusion, including session-lock coverage. Translucent foreground
+        surfaces do not count as opaque coverage. This grants no pixels, focus,
+        input, lock control or authority over other clients. At most 64 watches
+        may exist per connection.
+      </description>
+      <arg name="id" type="new_id" interface="polly_background_activity_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+    <request name="watch_overlay" since="4">
+      <description summary="observe an owned non-focus-stealing desktop overlay">
+        Only the current trusted Shell may observe its own mapped top/overlay
+        layer with keyboard interactivity none and exclusive zone -1. Uses the
+        same bounded watch pool and activity states as watch_background.
+        This does not grant input, focus, foreign pixels or session-lock control.
+      </description>
+      <arg name="id" type="new_id" interface="polly_background_activity_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+  <interface name="polly_background_activity_v1" version="1">
+    <description summary="bounded connection-owned background activity">
+      An initial state is followed only by changes. Inactive surfaces may
+      become active again; retired targets never do. Destroying the watch
+      releases its listeners, not the surface.
+    </description>
+    <enum name="state">
+      <entry name="inactive" value="0"/>
+      <entry name="active" value="1"/>
+      <entry name="retired" value="2"/>
+    </enum>
+    <request name="destroy" type="destructor"/>
+    <event name="activity">
+      <arg name="state" type="uint" enum="state"/>
     </event>
   </interface>
 </protocol>

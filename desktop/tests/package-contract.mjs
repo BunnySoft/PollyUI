@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installedInventory, requiredRuntimeFiles, runtimeSource, sourceInventory, validateRuntimeContract,
-  validateFrozenRuntime } from '../tools/package-contract.mjs';
+  validateFrozenRuntime, validateStandardEffectsRuntime } from '../tools/package-contract.mjs';
 
 const repo = fileURLToPath(new URL('../..', import.meta.url));
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -60,6 +60,52 @@ try {
   const check = (candidate = manifest, provenance = inputs, pins = packages, inventory = sbom) =>
     validateRuntimeContract(candidate, provenance, pins, inventory);
   check();
+  const videoRecipe = JSON.parse(readFileSync(path.join(repo, 'desktop/release/debian/video-codecs.json'), 'utf8'));
+  const videoBuildInfo = { schemaVersion: 1, ffmpegVersion: videoRecipe.version, license: videoRecipe.license,
+    network: false, audio: false, decoders: videoRecipe.decoders, demuxers: videoRecipe.demuxers };
+  const videoRecord = { ...videoRecipe, buildInfo: videoBuildInfo,
+    sourceArchiveSha256: digest('fixture-source-archive'), configureSha256: digest('fixture-build-arguments') };
+  const videoHelper = { path: 'usr/lib/pollyui/polly-video-decoder', mode: '0755', size: 32, sha256: digest('fixture-decoder') };
+  const videoLibraries = [['avformat', 63], ['avcodec', 63], ['avutil', 61], ['swscale', 10]].map(([name, abi]) =>
+    ({ path: `usr/lib/pollyui/video/lib${name}.so.${abi}`, size: 16, sha256: digest('fixture-' + name) }));
+  const videoNoticeRoot = 'usr/share/licenses/pollyui/pollyui-video-codecs/';
+  const videoNotices = ['COPYING.LGPLv2.1', 'LICENSE.md', 'README.md', 'video-codecs.json',
+    videoRecipe.archive, videoRecipe.archive + '.asc', 'ffmpeg-devel.asc', 'configure-arguments.json'].map(name =>
+    ({ path: videoNoticeRoot + name, size: 16, sha256: name === 'video-codecs.json' ?
+      inputs.sourceFiles.find(file => file.path === 'desktop/release/debian/video-codecs.json').sha256 :
+      name === videoRecipe.archive ? videoRecord.sourceArchiveSha256 :
+        name === 'configure-arguments.json' ? videoRecord.configureSha256 : digest(name) }));
+  const videoFiles = [videoHelper, ...videoLibraries, ...videoNotices];
+  const videoManifest = { ...manifest, files: [...files, ...videoFiles],
+    runtimeContract: { ...manifest.runtimeContract, videoCodecs: videoRecord,
+      installFiles: [...installFiles, ...videoFiles],
+      bundledLibraries: [...manifest.runtimeContract.bundledLibraries, ...videoLibraries.map(library =>
+        ({ binary: videoHelper.path, soname: path.posix.basename(library.path), path: library.path, sha256: library.sha256 }))] } };
+  const videoSbom = { packages: [...sbom.packages, { name: 'FFmpeg-local-video', versionInfo: videoRecipe.version,
+    licenseDeclared: videoRecipe.license, sourceInfo: 'Official release SHA-512: ' + videoRecipe.sha512 }] };
+  check(videoManifest, inputs, packages, videoSbom);
+  const standardInputs = { ...inputs, configuration: { PU_DESKTOP_VIDEO: 'ON', wlrootsGles2: 'true' } };
+  const standardManifest = { ...videoManifest,
+    runtimeContract: { ...videoManifest.runtimeContract, wlrootsEffects: { abi: 4 } } };
+  validateStandardEffectsRuntime(standardManifest, standardInputs, sources);
+  for (const configuration of [{ PU_DESKTOP_VIDEO: 'OFF', wlrootsGles2: 'true' },
+    { PU_DESKTOP_VIDEO: 'ON', wlrootsGles2: 'false' }, {}])
+    assert.throws(() => validateStandardEffectsRuntime(standardManifest, { ...inputs, configuration }, sources),
+      /Standard requires the complete/);
+  assert.throws(() => validateStandardEffectsRuntime(standardManifest, standardInputs, sources.slice(1)),
+    /exact current source/);
+  assert.throws(() => validateStandardEffectsRuntime({ ...standardManifest,
+    runtimeContract: { ...standardManifest.runtimeContract, installFiles: installFiles } }, standardInputs, sources),
+  /Standard desktop-effects payload/);
+  assert.throws(() => check({ ...videoManifest, runtimeContract: { ...videoManifest.runtimeContract,
+    videoCodecs: undefined } }, inputs, packages, videoSbom), /local-video source\/license/);
+  for (const patch of [{ gpl: true }, { network: true }, { audio: true }, { license: 'GPL-3.0-only' }])
+    assert.throws(() => check({ ...videoManifest, runtimeContract: { ...videoManifest.runtimeContract,
+      videoCodecs: { ...videoRecord, ...patch } } }, inputs, packages, videoSbom), /local-video source\/license/);
+  assert.throws(() => check({ ...videoManifest, runtimeContract: { ...videoManifest.runtimeContract,
+    videoCodecs: { ...videoRecord, buildInfo: { ...videoBuildInfo, network: true } } } }, inputs, packages, videoSbom),
+  /local-video capabilities/);
+  assert.throws(() => check(videoManifest, inputs, packages, sbom), /Local-video SBOM/);
   assert.throws(() => check({ files }), /legacy packages/);
   for (const name of ['usr/share/pollyui/sysrt/sdk/js/files.mjs', 'usr/bin/polly-settings',
     'usr/share/pollyui/desktop/shell/desktop-shortcuts.mjs',

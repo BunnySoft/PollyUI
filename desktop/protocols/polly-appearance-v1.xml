@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="9">
+  <interface name="polly_appearance_v1" version="10">
     <description summary="separate trusted appearance publisher and renderer">
       This private global is restricted to compositor-owned Shell and decorator
       connections. The Shell publishes themes but cannot render. The decorator
@@ -222,6 +222,31 @@
       <arg name="taskbar" type="object" interface="wl_surface"/>
       <arg name="configuration" type="array"/>
     </request>
+    <request name="get_window_opacity" since="10">
+      <description summary="query compositor-owned ordinary-window group opacity">
+        Shell publisher only. Replies through window_opacity_status with serial
+        zero. Trusted Shell surfaces and security roles do not acquire opacity.
+      </description>
+    </request>
+    <request name="set_window_opacity" since="10">
+      <description summary="apply bounded global ordinary-window group opacity">
+        Shell publisher only. Percent is an integer from 50 through 100.
+        Nonzero serials increase strictly on this resource. Group composition
+        and current output caches are prepared before acknowledgement. Failure
+        restores the previous policy; input regions and focus are not changed.
+        New surface resource pressure may reset the policy to 100, explicitly
+        reported by a serial-zero status rather than silently losing output.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="percent" type="uint"/>
+    </request>
+    <event name="window_opacity_status" since="10">
+      <arg name="serial" type="uint"/>
+      <arg name="supported" type="uint"/>
+      <arg name="percent" type="uint"/>
+      <arg name="accepted" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
   </interface>
   <interface name="polly_theme_manager_v1" version="1">
     <description summary="read-only appearance subscription for opt-in applications">

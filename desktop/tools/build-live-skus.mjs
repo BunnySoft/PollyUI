@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSkus, hardwareProfile } from './live-profiles.mjs';
-import { sourceInventory, validateFrozenRuntime } from './package-contract.mjs';
+import { sourceInventory, validateFrozenRuntime, validateStandardEffectsRuntime } from './package-contract.mjs';
 import { inspectRelease } from './release-report.mjs';
 import { verifyBundle } from './publish-live-iso.mjs';
 import { legacyConfig, loadConfig, resolvePlan, validateLock, verifyLockFiles, configIdentity,
@@ -139,6 +139,8 @@ export async function buildSkus(options, backend = {}) {
     if (plan.configuration.nativeVariant !== 'standard-effects4') throw new Error('Unavailable native variant');
   }
   const sourceFiles = inventory(root);
+  if (options.resolvedPlan?.configuration.name === 'standard')
+    validateStandardEffectsRuntime(runtime, inputs, sourceFiles);
   fs.mkdirSync(options.output, { recursive: true });
   const common = path.join(options.output, 'common'), source = path.join(common, 'source');
   fs.mkdirSync(source, { recursive: true });

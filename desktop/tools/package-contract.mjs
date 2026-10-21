@@ -23,6 +23,11 @@ export const requiredRuntimeFiles = [
     'desktop/shared/native-files.mjs', 'desktop/shared/theme-resources.mjs',
     'desktop/shell/desktop-shortcuts.mjs', 'desktop/shell/desktop-interactions.mjs',
     'desktop/shell/desktop-view.mjs', 'desktop/shell/desktop-icon-resources.mjs',
+    'desktop/shell/companion.mjs', 'desktop/shared/ui/companion.mjs',
+    'desktop/shared/ui/animation.mjs', 'desktop/shared/ui/procedural-wallpaper.mjs',
+    'desktop/shared/ui/video-wallpaper.mjs', 'desktop/shared/ui/workspace-cube.mjs',
+    'desktop/shared/ui/window-switcher.mjs', 'desktop/shell/video-wallpaper.mjs',
+    'desktop/resources/companions/polly-rabbit.mjs', 'desktop/resources/companions/polly-rabbit.png',
     'desktop/apps/settings/main.mjs', 'desktop/apps/settings/runtime.mjs',
     'desktop/apps/settings/app.mjs', 'desktop/apps/settings/logic/controller.mjs',
     'desktop/apps/settings/network-client.mjs', 'desktop/client/settings-network-contract.mjs',
@@ -94,6 +99,23 @@ export function installedInventory(root, build, sources) {
     return { path: name, size: info.size, sha256,
       ...(source && sourceHashes.has(source) ? { source } : {}) };
   });
+}
+
+export function validateStandardEffectsRuntime(manifest, inputs, sources) {
+  assert.ok(inputs?.configuration?.PU_DESKTOP_VIDEO === 'ON' &&
+    inputs.configuration.wlrootsGles2 === 'true' && manifest.runtimeContract?.videoCodecs?.buildInfo &&
+    manifest.runtimeContract?.wlrootsEffects?.abi === 4,
+  'Standard requires the complete paired GLES desktop-effects runtime with native local-video decoding');
+  assert.ok(Array.isArray(sources) && createHash('sha256').update(JSON.stringify(sources)).digest('hex') ===
+    inputs.build?.sourceSha256Before, 'Standard effects runtime must match the exact current source byte inventory');
+  const installed = new Set(manifest.runtimeContract.installFiles.map(file => file.path));
+  for (const name of ['usr/lib/pollyui/polly-video-decoder', ...requiredRuntimeFiles])
+    assert.ok(installed.has(name), 'Standard desktop-effects payload is missing: ' + name);
+  const names = new Set(inputs.sourceFiles.map(file => file.path));
+  for (const name of ['desktop/compositor/workspace-cube.c', 'desktop/compositor/window-previews.c',
+    'desktop/compositor/window-opacity.c', 'desktop/native/video-decoder.c',
+    'desktop/native/video-client.c', 'desktop/protocols/polly-shortcuts-v1.xml'])
+    assert.ok(names.has(name), 'Standard desktop-effects source input is missing: ' + name);
 }
 
 export function validateRuntimeContract(manifest, inputs, packages, sbom) {
@@ -190,6 +212,41 @@ export function validateRuntimeContract(manifest, inputs, packages, sbom) {
     ...(manifest.debian ? [['usr/bin/pollywm', 'libwlroots-0.19-polly-effects4.so'], ['usr/bin/pollywm', 'libinput.so.10']] : []),
   ]) assert.ok(contract.bundledLibraries.some(library => library.binary === binary && library.soname === soname),
     'Runtime resolves a required bundled library outside the relocated package: ' + soname);
+  const videoHelper = 'usr/lib/pollyui/polly-video-decoder';
+  if (contract.videoCodecs || payload.has(videoHelper)) {
+    const video = contract.videoCodecs;
+    assert.ok(video?.schemaVersion === 1 && video.name === 'ffmpeg' && video.version === '9.0.2' &&
+      video.license === 'LGPL-2.1-or-later' && video.gpl === false && video.nonfree === false &&
+      video.network === false && video.audio === false && video.hardwareAcceleration === false &&
+      /^[0-9a-f]{128}$/.test(video.sha512) && hashPattern.test(video.sourceArchiveSha256) &&
+      hashPattern.test(video.configureSha256), 'Missing admitted local-video source/license identity');
+    assert.deepEqual(video.decoders, ['h264', 'vp8', 'vp9'], 'Unexpected local-video decoder inventory');
+    assert.deepEqual(video.demuxers, ['mov', 'matroska'], 'Unexpected local-video demuxer inventory');
+    assert.deepEqual(video.buildInfo, { schemaVersion: 1, ffmpegVersion: video.version,
+      license: video.license, network: false, audio: false, decoders: video.decoders, demuxers: video.demuxers },
+    'Installed local-video capabilities differ from the admitted recipe');
+    assert.ok(installed.has(videoHelper) && payload.get(videoHelper)?.mode === '0755',
+      'Native local-video helper is missing or not executable');
+    const notice = 'usr/share/licenses/pollyui/pollyui-video-codecs/';
+    for (const name of ['COPYING.LGPLv2.1', 'LICENSE.md', 'README.md', 'video-codecs.json',
+      video.archive, video.archive + '.asc', 'ffmpeg-devel.asc', 'configure-arguments.json'])
+      assert.ok(payload.has(notice + name), 'Missing local-video source/license input: ' + name);
+    assert.equal(payload.get(notice + video.archive).sha256, video.sourceArchiveSha256,
+      'Local-video source archive differs from its retained identity');
+    assert.equal(payload.get(notice + 'configure-arguments.json').sha256, video.configureSha256,
+      'Local-video configure arguments differ from the retained build');
+    assert.ok(inputs.sourceFiles.some(file => file.path === 'desktop/release/debian/video-codecs.json' &&
+      file.sha256 === payload.get(notice + 'video-codecs.json').sha256),
+    'Local-video SDK recipe differs from runtime build inputs');
+    for (const component of ['avcodec', 'avformat', 'avutil', 'swscale'])
+      assert.ok(contract.bundledLibraries.some(library => library.binary === videoHelper &&
+        library.soname.startsWith('lib' + component + '.so.') &&
+        library.path === 'usr/lib/pollyui/video/' + library.soname),
+      'Local-video library resolves outside its private runtime closure: ' + component);
+    assert.ok(sbom.packages.some(pkg => pkg.name === 'FFmpeg-local-video' && pkg.versionInfo === video.version &&
+      pkg.licenseDeclared === video.license && pkg.sourceInfo === 'Official release SHA-512: ' + video.sha512),
+    'Local-video SBOM differs from source/license identity');
+  }
   if (manifest.debian) {
     for (const name of ['usr/bin/pollywm', 'usr/lib/pollyui/libwlroots-0.19-polly-effects4.so'])
       assert.ok(processed.has(name), 'Missing Debian private ELF relocation: ' + name);

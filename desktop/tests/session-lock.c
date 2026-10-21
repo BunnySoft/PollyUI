@@ -1,6 +1,7 @@
 #include "server.h"
 #include "session-lock.h"
 #include "cursor.h"
+#include "window-opacity.h"
 #include <drm_fourcc.h>
 #include <signal.h>
 #include <string.h>
@@ -90,6 +91,7 @@ int main(int argc, char **argv)
     CHECK(background);
     for (int i = 0; i < 20; i++) tick(&desktop);
     CHECK(!black_at(&desktop, 20, 20));
+    CHECK(pu_desktop_set_window_opacity(&desktop, 75));
     CHECK(setenv("WAYLAND_DISPLAY", "lock-test", 1) == 0);
     pid_t public = fork();
     CHECK(public >= 0);
@@ -108,6 +110,7 @@ int main(int argc, char **argv)
     wlr_seat_pointer_notify_button(desktop.seat, 1, BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
     CHECK(pu_session_lock_spawn(&desktop, crash));
     CHECK(pu_session_lock_active(&desktop) && black_at(&desktop, 20, 20));
+    CHECK(desktop.window_opacity_percent == 75);
     CHECK(locked_effect_pixels(&desktop));
     CHECK(desktop.seat->pointer_state.button_count == 0);
     CHECK(!pu_cursor_timer_active(&desktop) && !strcmp(pu_cursor_selected(&desktop), "default"));

@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory(prefix="polly-effects-gles-") as temporary:
     source = Path(temporary) / "wlroots-0.19.3"
     effects.apply(source)
     shaders = source / "render/gles2/shaders"
-    result = subprocess.run([sys.argv[1], str(shaders / "common.vert"), str(shaders / "quad.frag")],
+    result = subprocess.run([sys.argv[1], str(shaders / "common.vert"), str(shaders / "quad.frag"),
+                            str(shaders / "projected.vert"), str(shaders / "projected.frag")],
                             env=dict(os.environ, LIBGL_ALWAYS_SOFTWARE="true", EGL_PLATFORM="surfaceless"),
                             timeout=30)
     raise SystemExit(result.returncode)

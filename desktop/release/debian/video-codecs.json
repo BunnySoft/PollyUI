@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "ffmpeg",
+  "version": "9.0.2",
+  "archive": "ffmpeg-9.0.2.tar.xz",
+  "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+  "sha512": "7756f8434371b9bc1d01cf578bf49014e058b0869c3c1df05030f5f4035f1def64b2e7dba3cf340da4dc8dd9239dd5f894530c9e45793ac27876807079aa546a",
+  "signatureSha512": "40aa5a40fd8abab7f2b29ec2a0ae8c85e5e9543cfd5035ae83e63ce0688650f9b127f62efc5eccf80e39275a548f0edb0866eb21f7544d81ce0731aebadbbf46",
+  "keySha512": "96b3754d1454162792758e7185b65f2d6dba8a62ad49232b27c8ef7f56148bc7cbe2147b06265625e2616fa96b9170d5bf265c117ddee5f863f0db30d091fafe",
+  "keyUrl": "https://ffmpeg.org/ffmpeg-devel.asc",
+  "signerFingerprint": "FCF986EA15E6E293A5644F10B4322F04D67658D8",
+  "decoders": ["h264", "vp8", "vp9"],
+  "demuxers": ["mov", "matroska"],
+  "parsers": ["h264", "vp8", "vp9"],
+  "license": "LGPL-2.1-or-later",
+  "network": false,
+  "gpl": false,
+  "nonfree": false,
+  "hardwareAcceleration": false,
+  "audio": false
+}

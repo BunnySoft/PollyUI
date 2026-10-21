@@ -54,6 +54,7 @@ struct PuDesktopView {
     struct PuDecoration *decoration;
     struct PuWorkspace *workspace;
     uint64_t workspace_window;
+    uint64_t preview_revision;
     /* Policy may lead the presented mode until a matching configure is committed. */
     bool maximized, fullscreen, geometry_pending, geometry_reuse;
     enum PuDesktopTile tile;
@@ -106,6 +107,7 @@ struct PuDesktop {
     struct PuDecoratorProcess *decorator;
     struct PuWorkspaces *workspaces;
     struct PuShortcuts *shortcuts;
+    struct PuWorkspaceCube *cube;
     struct PuOutputControl *output_control;
     struct PuDataDevice *data_device;
     struct PuInputMethod *input_method;
@@ -129,6 +131,8 @@ struct PuDesktop {
     uint64_t backdrop_epoch;
     bool failed, stopping;
     bool live_startup, live_splash, live_ready;
+    uint32_t window_opacity_percent;
+    char window_opacity_error[192];
     const char *socket_name;
     struct wl_event_source *sigint, *sigterm;
     struct wl_event_source *private_process_exit;

@@ -70,7 +70,7 @@ test('strict legacy byte records migrate known Unicode preferences and reject in
   const bytes = legacy([['desktop.theme', 'bigsur'], ['desktop.theme.files', 'disabled'],
     ['desktop.workspaces.v1', JSON.stringify(workspace)], ['unknown', 'left untouched']]);
   assert.deepEqual(migrateShellConfiguration(bytes), { ...defaultShellConfiguration(),
-    theme: { id: 'bigsur', filesEnabled: false }, workspace });
+    theme: { id: 'bigsur', filesEnabled: false, transparency: 'theme', windowOpacityPercent: 100 }, workspace });
   for (const bad of [bytes.slice(0, -1), encodeUtf8('PUST1\n999999999999999999999\nx\n'),
     legacy([['desktop.audio.v1', '{"version":2}']]), legacy([['desktop.theme.files', 'off']]),
     legacy([['desktop.theme', 'xp'], ['desktop.theme', 'lion']])])
@@ -88,8 +88,35 @@ test('invalid existing JSON never reads legacy or writes a replacement, and clos
   }
 });
 
-test('v1/v2/v3 migrate atomically to v4 once preserving all old fields, bindings and launcher pins', () => {
-  const populated = { ...defaultShellConfiguration(), theme: { id: 'bigsur', filesEnabled: false },
+test('v4 adds default transparency once; strict mode changes persist without migrating ten-action bindings again', () => {
+  const shortcuts = fixtureShortcuts.map(({ action, key, modifiers }) => ({ action, key, modifiers }));
+  let bytes = encodeUtf8(JSON.stringify({ ...defaultShellConfiguration(), version: 4,
+    theme: { id: 'modern', filesEnabled: false }, shortcuts })), writes = 0;
+  const files = { read: () => bytes, close() {}, write(next) { bytes = next.slice(); writes++; } };
+  const create = () => createShellConfiguration(files, () => assert.fail('No legacy reread'));
+  let store = create();
+  assert.equal(store.snapshot.version, 5);
+  assert.equal(store.snapshot.theme.transparency, 'theme');
+  assert.deepEqual(store.snapshot.shortcuts, shortcuts);
+  assert.equal(writes, 1);
+  for (const mode of ['opaque', 'transparent', 'theme']) {
+    store.update({ theme: { ...store.snapshot.theme, transparency: mode } });
+    store.close(); store = create();
+    assert.equal(store.snapshot.theme.transparency, mode);
+    assert.deepEqual(store.snapshot.shortcuts, shortcuts);
+  }
+  assert.equal(writes, 4);
+  const before = store.snapshot;
+  for (const transparency of [null, true, 0, '', 'blur', 'TRANSPARENT'])
+    assert.throws(() => store.update({ theme: { ...before.theme, transparency } }));
+  assert.equal(store.snapshot, before);
+  assert.equal(writes, 4);
+  store.close();
+});
+
+test('v1/v2/v3 migrate atomically to v5 once preserving all old fields, bindings and launcher pins', () => {
+  const populated = { ...defaultShellConfiguration(), theme: { id: 'bigsur', filesEnabled: false,
+    transparency: 'theme', windowOpacityPercent: 100 },
     audio: { version: 1, preferredSink: 'speaker', preferredSource: '', devices: [
       { name: 'speaker', class: 'Audio/Sink', volume: 0.4, muted: false }] },
     display: { version: 1, heads: [{ name: 'DP-1', make: 'Fixture', model: 'Display', serialNumber: 'A',
@@ -146,7 +173,7 @@ test('legacy shortcut collisions disable only new defaults and diagnose once aft
     const files = { read: () => bytes, close() {}, write(next) { bytes = next.slice(); writes++; } };
     const create = () => createShellConfiguration(files, () => assert.fail('legacy reread'), value => reports.push(value));
     let store = create();
-    assert.equal(store.snapshot.version, 4);
+    assert.equal(store.snapshot.version, 5);
     if (shortcuts === null) assert.equal(store.snapshot.shortcuts, null);
     else {
       assert.deepEqual(store.snapshot.shortcuts.slice(0, 7), shortcuts);
@@ -206,6 +233,22 @@ test('launcher pins are strict ordered independent snapshots and follow actual p
   assert.deepEqual(store.snapshot.launchers.applications, []);
   assert.deepEqual(store.snapshot.desktop, desktop);
   assert.deepEqual(store.snapshot, JSON.parse(decodeUtf8(bytes)));
+  store.close();
+});
+
+test('global window opacity is bounded and survives unrelated theme changes and restarts', () => {
+  let bytes = encodeUtf8(JSON.stringify(defaultShellConfiguration()));
+  const files = { read: () => bytes, close() {}, write(next) { bytes = next.slice(); } };
+  let store = createShellConfiguration(files, () => assert.fail('legacy reread'));
+  store.update({ theme: { ...store.snapshot.theme, windowOpacityPercent: 75 } });
+  store.update({ theme: { ...store.snapshot.theme, id: 'bigsur', transparency: 'opaque' } });
+  store.close();
+  store = createShellConfiguration(files, () => assert.fail('legacy reread'));
+  assert.equal(store.snapshot.theme.windowOpacityPercent, 75);
+  const before = store.snapshot;
+  for (const windowOpacityPercent of [0, 49, 101, 75.5, '75', null, true, NaN])
+    assert.throws(() => store.update({ theme: { ...before.theme, windowOpacityPercent } }));
+  assert.equal(store.snapshot, before);
   store.close();
 });
 

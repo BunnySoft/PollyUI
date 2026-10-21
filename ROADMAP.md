@@ -383,6 +383,22 @@ remain preserved separately, never combined to manufacture an acceptance pass.
 
 ## Beta candidates: animated desktop and desktop icons
 
+On 2026-10-21 the user selected global window opacity, procedural wallpaper,
+desktop companions, video wallpaper, real 2D/3D window previews and workspace
+cube effects for sequential implementation, with Standard as the required
+delivery SKU. The [overall implementation plan](docs/DESKTOP-EFFECTS-PLAN.md)
+records the current sequence and acceptance boundaries. This supersedes the
+unselected status of BD-01 through BD-03 below, but does not mark them delivered
+or change any historical image receipt.
+
+The selected effects now have source implementations and real native fixtures,
+including independent Settings, bounded local-video decoding and an interactive
+four-workspace GLES cube. Existing media is unchanged. The canonical Standard
+entry requires the complete paired runtime and exact current source identity;
+clean source, a trusted APT lock and newly booted media remain separate delivery
+requirements. The candidate table below describes its original selection state,
+not the newer implementation status.
+
 Recorded at the user's request on 2026-10-12. These are **Beta candidates**,
 not a frozen Beta scope or current Alpha release gates. The user subsequently
 selected BD-04 and BD-05 for design and implementation (now integrated in

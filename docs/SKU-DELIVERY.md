@@ -14,6 +14,81 @@ Standard 带完整驱动/固件。中文从 Compact 起默认包含，不再单�
 下面的 26/169 MB 演示镜像不含新要求的 UI Shell，不能算新 Mini/Compact
 已经交付。新定义与旧记录的边界见 [SKU 技术栈与尺寸](SKU-SIZES.md)。
 
+## Standard/full：Wi-Fi、音频扩展版（当前交付）
+
+在下节 P1000/有线/常用命令版本之上重新组装，保留 `sku=full` 内部身份。
+Mini 和 Compact 不变；本轮复用同一份已冻结、配对的原生 runtime，没有重新编译应用，
+也没有改换 NVIDIA 驱动路线。
+
+| 项目 | 实测结果 |
+|---|---|
+| ISO | **865,880,064 字节，865.88 MB**；`pollydesktop-0.1.0-alpha.8-debian13-full-x86_64-uefi-live.iso` |
+| ISO SHA-256 | `0f142c34a9488d6f770c52f30184bf6d847e011d83cdd5ac608b3fe3675dce9d` |
+| USB 原始镜像 | **918,552,576 字节，918.55 MB**；`pollydesktop-0.1.0-alpha.8-debian13-full-x86_64-uefi-usb.img` |
+| USB SHA-256 | `aa335a2a73fccf85758a40be2103ed3e9488f6a4688dc158590d7614e8699c29` |
+| 交付目录 | `D:\temp\PollyOS\full-wifi-audio-0f142c34a948\`；制作 USB 使用 `.img` |
+| Wi-Fi | 保留 Intel、Realtek，新增 Qualcomm/Atheros、Broadcom/Cypress、MediaTek 固件；核验对应 PCIe/USB 开源内核路径，iwd 已启用 |
+| 音频 | HDA/Realtek/HDMI/USB、Intel SOF/SST、AMD ACP 和 Cirrus 内核路径；补入 Intel/Cirrus 固件、ALSA UCM/topology，沿用已有 PipeWire 核心 |
+| 其他常用模块 | NVMe、AHCI、USB 控制器/存储、HID 键鼠；合计核验 53 个必需模块路径、63 个命令入口 |
+| 新增包 | `firmware-atheros`、`firmware-brcm80211`、`firmware-mediatek`、`firmware-intel-sound`、`firmware-cirrus` 均为 `20250410-2`；`alsa-ucm-conf=1.2.14-1`、`alsa-topology-conf=1.2.5.1-3` |
+| 冻结运行库 | 原生提交仍为 `798dd0cfd255fe24a15fb2e6b7710deb15dd1830`；libasound/Mesa/PipeWire 等原有版本和应用字节未升级 |
+| 媒体 / 测试来源 | 干净的独立构建提交 `ddfe9ec1afb4ee6a1693d7a99ed7ad3d058edd87`，源码 Git bundle 和补丁随包保留；本轮未推送主线 |
+| ISO 启动 | 首轮中文提交检查未收到回执；保留失败日志和截图。未改参数、超时或门槛的第二轮通过 UID 1000 桌面、中文提交、剪贴板和工作区检查；不宣称修复了该既有偶发问题 |
+| USB 启动 | 首轮通过同一桌面检查及模拟 e1000e DHCP、网关 ping、系统 DNS |
+| 模拟音频 | 同一 USB 客机中，UID 1000 的 `aplay -l` 和 `arecord -l` 均枚举到 HDA 设备；未向宿主播放或录音，不是可听播放/麦克风采集通过 |
+
+全部 96 个交付文件在 Windows 端独立复核 SHA-256，两份通过回执分别绑定上述
+ISO/USB 字节。新增七个包的 `.deb`、包版本、摘要及目录清单一并留存。
+首轮 ISO 失败位于 `evidence/iso-FIRST/`，同条件复测位于 `evidence/iso-r2/`，
+USB/网络/音频枚举位于 `evidence/usb-wired-audio/`；没有覆盖或隐藏失败。
+
+**尚未实机验证 Wi-Fi 扫描/连接、扬声器播放、麦克风录音或 P1000。**
+部分 Broadcom 设备需额外 STA 驱动或板级 NVRAM，部分笔记本需 OEM 音频配置、
+校准数据或额外 AMD DSP 固件，不能仅凭模块和固件包齐全宣称所有电脑兼容。
+未新增蓝牙栈，也未改变未签名 UEFI、内存运行和无安装器的开发版边界。
+此前 `full-p1000-a734991cc8fb` 目录和固定 `PollyOS.iso` 均保留。
+
+## 此前 Standard/full P1000 开发镜像
+
+本轮按用户的 Full 请求重新编译配对原生 runtime，并以内部 `full` 硬件配置组装。
+产品仍为 Mini / Compact / Standard；本镜像保留真实 `sku=full`，没有把历史镜像
+改名成 Standard，也没有宣称执行了新 `--os standard` 的配置锁构建。
+
+| 项目 | 实测结果 |
+|---|---|
+| ISO | **783,349,760 字节，783.35 MB**；`pollydesktop-0.1.0-alpha.8-debian13-full-x86_64-uefi-live.iso` |
+| ISO SHA-256 | `a734991cc8fbcd5759f4934620cd5131b585a2d75acb4a0dd2fac580eed07ea1` |
+| USB 原始镜像 | **835,715,072 字节，835.72 MB**；`pollydesktop-0.1.0-alpha.8-debian13-full-x86_64-uefi-usb.img` |
+| USB SHA-256 | `6e8dbaddd46c20d609ea727b25d72d13a6d5a2a758256b0beadc63f738b5651c` |
+| 交付目录 | `D:\temp\PollyOS\full-p1000-a734991cc8fb\`；制作 USB 使用 `.img` |
+| 内核 | Debian `6.12.113+deb13-amd64`，完整 stock 模块 |
+| P1000 路线 | Quadro P1000 / GP107 的 Nouveau、GP107 GR 固件、Mesa；不含 NVIDIA 闭源驱动 |
+| 有线网卡载荷 | e1000e、igb、igc、r8169、r8152、asix、ax88179_178a；Realtek 固件、dhcpcd 和 openresolv |
+| 常用命令 | 核验 56 个命令入口；shell/文件/压缩、进程、less/nano/vi、curl/wget、SSH 客户端、rsync、Git、IP/DNS/网卡诊断、Python 和 apt；不新增 SSH server |
+| 普通用户 ping | 目标系统启动时将 ICMP 数据报 socket 限于 GID 1000；不添加 setuid 或 raw-socket 权限，不修改构建宿主 sysctl |
+| ISO 启动 | 本镜像首次 UEFI/QEMU/KVM 启动通过；4 GiB、2 vCPU、只读 ISO、无客机磁盘和网络，UID 1000 PAM/logind、1280x800 DRM/Pixman、中文提交、剪贴板、工作区切换 |
+| USB / 有线启动 | 本镜像首次独立 USB 场景通过，同样的桌面/输入检查；模拟 e1000e 获取 `10.0.2.15`，网关 `10.0.2.2`、系统 DNS `10.0.2.3`、普通用户 ping 和 `example.com A` 查询通过 |
+| 原生来源 | 干净的独立构建提交 `798dd0cfd255fe24a15fb2e6b7710deb15dd1830`；全新 native 构建，wlroots effects ABI4 |
+| 媒体 / 测试来源 | 干净的独立构建提交 `c14c02260f2a4776ef5be8c50ef8c87f21782765`；主仓库本轮 Full 改动未另行提交或推送 |
+| 实机边界 | 新 Full 尚未实机验证 P1000、真实有线网卡、多屏、热插拔、恢复或性能；不继承旧 Micro 的有限实机反馈 |
+
+目录包含媒体 manifest/origin、实际硬件和命令载荷报告、原生来源/包版本/SBOM、
+源码 Git bundle、构建镜像身份、完整校验和、串口日志、截图和首次失败记录。
+原生 runtime 与媒体 producer 来源分别标记，未用媒体提交冒充原生编译提交。
+构建工作区及完整输入仍保留在 Podman Linux 的
+`/home/user/polly-full-p1000-f687df90`；Windows 包不冒充包含全部 OCI/SDK 输入的离线重建包。
+
+此前尝试的失败也保留：工具/硬件分类、DNS 虚拟包名以及 curl/liblzma 版本漂移均已修正，
+冻结原生版本检查未放宽。此前 `r5` 媒体的 USB 并发首轮未收到中文提交回执，
+单独复测通过输入后暴露测试器稀疏地址解析问题，再暴露普通用户 ping 权限问题。
+这些记录位于 `evidence/pre-icmp/`，不是本次最终媒体的首轮结果；
+最终 `r6` 重新生成媒体，分别绑定上述 ISO/USB 摘要通过。
+
+这是 unsigned x86_64 UEFI 内存运行开发镜像，没有磁盘安装器；重启丢失修改，
+公开 Live 凭据不提供个人数据保护。stock Debian 内核未启用 simpledrm，
+不能继承 Mini 的 GOP 桌面保底；P1000 仍依赖其原生 Nouveau DRM/KMS 路径。
+旧镜像和 `PollyOS.iso` 固定入口未改动。
+
 ## 新 Mini 基本桌面（沿用 Micro 配方）
 
 | 项目 | 实测结果 |
@@ -28,8 +103,8 @@ Standard 带完整驱动/固件。中文从 Compact 起默认包含，不再单�
 | 实机边界 | 新 Mini 尚未复验，不继承旧 Micro 实机反馈；旧镜像和入口保留 |
 
 `mini.json`、两份 `mini-*-boot.json`、串口日志、桌面/应用截图与完整摘要同目录交付。
-Compact 未完成正式中文/GOP 配方，构建明确阻断；Standard 新命名配置仅完成
-计划/组装通路回归，本次没有另构建 Standard 媒体。
+Compact 未完成正式中文/GOP 配方，构建明确阻断；Mini 交付时 Standard 新命名配置
+仅完成计划/组装通路回归，本轮独立 Full 媒体见上节。
 
 ## 历史 Micro Shell
 

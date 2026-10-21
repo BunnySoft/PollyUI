@@ -1,4 +1,5 @@
 #include "server.h"
+#include "window-opacity.h"
 #include "private-process.h"
 #include "session-lock.h"
 #include "input-method.h"
@@ -48,6 +49,11 @@ static void shell_disconnected(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, shell_client_destroy);
     desktop->shell_client = NULL;
+    if (!desktop->stopping && desktop->window_opacity_percent != 100 &&
+        !pu_desktop_set_window_opacity(desktop, 100)) {
+        wlr_log(WLR_ERROR, "Cannot restore opaque windows after Shell ownership loss");
+        desktop->failed = true;
+    }
     if (!desktop->session_exit_sealed) desktop->session_exit_pending = false;
     wl_list_remove(&listener->link);
     wl_list_init(&listener->link);

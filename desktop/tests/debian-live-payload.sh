@@ -28,12 +28,19 @@ for module in $modules; do
     modinfo -k "$kernel" -n "$module"
     modprobe --set-version "$kernel" --show-depends --ignore-install "$module" >/dev/null
 done
+if [ "$hardware_sku" = full ]; then
+    python3 -I -B /workspace/desktop/release/debian/standard-hardware.py
+fi
 if [ -e /etc/polly-hardware-profile.json ]; then
-    for source in live-profile.py live-profiles.json basic-kernel.py live-display.py; do
+    for source in live-profile.py live-profiles.json basic-kernel.py live-display.py standard-hardware.py network-sysctl.conf; do
         cmp "/workspace/desktop/release/debian/$source" "/usr/lib/polly-hardware/$source"
         test "$(stat -c '%a:%u:%g:%h' "/usr/lib/polly-hardware/$source")" = 644:0:0:1
     done
     cmp /workspace/desktop/tools/live-root.py /usr/lib/polly-hardware/live-root.py
+fi
+if [ "$hardware_sku" = full ]; then
+    cmp /usr/lib/polly-hardware/network-sysctl.conf /etc/sysctl.d/70-polly-live-network.conf
+    test "$(stat -c '%a:%u:%g:%h' /etc/sysctl.d/70-polly-live-network.conf)" = 644:0:0:1
 fi
 test -r /boot/intel-ucode.img
 test -r /lib/firmware/regulatory.db

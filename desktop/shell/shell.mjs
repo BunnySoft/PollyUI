@@ -5,7 +5,7 @@ import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
-import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
+import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, thumbnailSwitcherView, projectedSwitcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher, applicationForWindow } from './desktop/shell/applications.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { programsPlacement, programCategories, categoryEntries, programCategoryId,
@@ -34,6 +34,14 @@ import { windowTasks, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
 import { createMaterialSource } from './desktop/shell/material-source.mjs';
 import { validateUserProfile } from './desktop/shared/user-profile.mjs';
+import { transparencyMode, transparencyTarget, transparencyCatalog, windowOpacityPercent } from './desktop/shared/ui/transparency.mjs';
+import { windowSwitcherStyle, windowSwitcherGrid, windowSwitcherSize, windowSwitcherMotion,
+  windowProjectionSize, windowProjectionViewport } from './desktop/shared/ui/window-switcher.mjs';
+import { wallpaperPreferences, createProceduralWallpaper } from './desktop/shared/ui/procedural-wallpaper.mjs';
+import { companionPreferences } from './desktop/shared/ui/companion.mjs';
+import { workspaceCubePreferences } from './desktop/shared/ui/workspace-cube.mjs';
+import { createDesktopCompanion } from './desktop/shell/companion.mjs';
+import { createVideoWallpaper } from './desktop/shell/video-wallpaper.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null, displayProfile = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
@@ -110,6 +118,27 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
   let settingsBridge = null, settingsReady = null, settingsStartupError = null, settingsScope = {};
   let appearanceRevision = 0;
+  let previousWindowOpacityChanged = null, windowOpacityChanged = null;
+  let previousCubeChanged = null, cubeChanged = null, cubeError = '', cubeReported = '';
+  let previousBackgroundChanged = null, backgroundChanged = null;
+  const videoWallpaper = createVideoWallpaper({ native,
+    preferences: () => configuration.snapshot.theme.wallpaper ?? { mode: 'theme', reducedMotion: false },
+    active: () => [...bundles.values()].some(bundle => {
+      const surface = bundle.surfaces.wallpaper;
+      if (surface.window.closed || surface.wallpaperWatch === undefined || surface.wallpaperWatch === null) return false;
+      return native.backgroundActivity(surface.wallpaperWatch).active;
+    }),
+    changed: () => {
+      if (!running) return;
+      appearanceRevision++;
+      for (const bundle of bundles.values()) paintDesktop(bundle);
+      repaintMenu();
+    }, report });
+  const companion = createDesktopCompanion({ host, native, theme: () => getDesktopTheme(themeId),
+    preferences: () => configuration.snapshot.theme.companion ?? { enabled: false, reducedMotion: false },
+    hide: () => setCompanion({ ...(configuration.snapshot.theme.companion ??
+      { enabled: false, reducedMotion: false }), enabled: false }),
+    report: message => { report(message); appearanceRevision++; repaintMenu(); } });
   const materialSource = createMaterialSource({
     document() {
       if (!running) throw new Error('Shell material source is stopped');
@@ -235,16 +264,23 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (typeof previousExit === 'function') previousExit(event);
   };
   let themeFilesEnabled = true;
+  let transparency = configuration.snapshot.theme.transparency;
+  let baseCatalog = { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES };
   if (typeof native?.readThemeFiles === 'function') {
     themeFilesEnabled = configuration.snapshot.theme.filesEnabled;
-    try { installThemeCatalog(themeFilesEnabled ? readUserThemeCatalog(native) : BUILTIN_THEME_CATALOG); }
+    try {
+      const catalog = themeFilesEnabled ? readUserThemeCatalog(native) : BUILTIN_THEME_CATALOG;
+      installThemeCatalog(transparencyCatalog(catalog, transparency));
+      baseCatalog = catalog;
+    }
     catch (failure) {
-      installThemeCatalog(BUILTIN_THEME_CATALOG);
+      baseCatalog = BUILTIN_THEME_CATALOG;
+      installThemeCatalog(transparencyCatalog(baseCatalog, transparency));
       error = 'Cannot load user theme files; using packaged themes. ' + String(failure);
       errorKind = 'theme-files';
       report('[shell] ' + error);
     }
-  }
+  } else if (transparency !== 'theme') installThemeCatalog(transparencyCatalog(baseCatalog, transparency));
   const stored = configuration.snapshot.theme.id;
   if (stored !== null) {
     try { getDesktopTheme(stored); themeId = stored; }
@@ -268,6 +304,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
 
   function releaseSurface(surface) {
+    if (surface.kind === 'wallpaper') videoWallpaper.retire(surface.window);
+    stopWallpaper(surface);
     if (surface.backdropFrame !== undefined && surface.backdropFrame !== null)
       cancelAnimationFrame(surface.backdropFrame);
     surface.backdropFrame = null;
@@ -385,6 +423,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
         failure: desktopFailure,
       });
       surface.desktopBinding = bindDesktopInteraction(nativeWindow.document.body, surface.desktopController, desktopFailure);
+      if (typeof nativeWindow.observeState === 'function')
+        surface.listeners.push(nativeWindow.observeState(() => {
+          const bundle = bundles.get(surface.output);
+          if (running && bundle?.surfaces.wallpaper === surface && !nativeWindow.closed) syncWallpaper(bundle);
+        }));
     }
     nativeWindow.onclose = () => {
       releaseMenu(surface);
@@ -477,11 +520,187 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const displaced = shortcuts.some(item => !bundle.identity || outputKey(item.output) !== outputKey(bundle.identity));
     syncShellIcons(theme);
     const imageError = items.map(item => desktopImageErrors.get(item.id)?.message).find(Boolean);
-    const message = desktopStatus || (errorKind === 'application' ? error : '') || imageError ||
+    const video = videoWallpaper.view();
+    const message = surface.wallpaperError || videoWallpaper.snapshot().error || desktopStatus ||
+      (errorKind === 'application' ? error : '') || imageError ||
       (overflow ? overflow + ' shortcut(s) do not fit. Right-click to manage them or enlarge this output.' :
         displaced ? 'Disconnected display shortcuts are shown here temporarily. Move to save their new display.' : '');
-    render(desktopView(theme, themeAsset, surface.desktopController.state, desktopCatalog(), message, desktopImages),
+    render(desktopView(theme, themeAsset, surface.desktopController.state, desktopCatalog(), message, desktopImages,
+      video ? { ...video, outputWidth: surface.window.state?.width || bundle.output.width,
+        outputHeight: surface.window.state?.height || bundle.output.height } : null),
       surface.window.document.body);
+    syncWallpaper(bundle, theme);
+  }
+
+  function stopWallpaper(surface) {
+    surface.wallpaperAnimation?.dispose();
+    surface.wallpaperAnimation = null;
+    if (surface.wallpaperWatch !== undefined && surface.wallpaperWatch !== null) {
+      const watch = surface.wallpaperWatch;
+      surface.wallpaperWatch = null;
+      try { native.releaseBackground(watch); }
+      catch (failure) { report('[shell] Cannot release wallpaper activity: ' + String(failure)); }
+    }
+  }
+
+  function wallpaperFailure(surface, failure) {
+    stopWallpaper(surface);
+    const message = 'Procedural wallpaper unavailable; static theme restored. ' + String(failure);
+    if (surface.wallpaperError !== message) {
+      surface.wallpaperError = message;
+      appearanceRevision++;
+      report('[shell] ' + message);
+      repaintMenu();
+    }
+  }
+
+  function wallpaperSnapshot() {
+    const policy = configuration.snapshot.theme.wallpaper ?? { mode: 'theme', reducedMotion: false };
+    const available = typeof native?.backgroundActivityCapability === 'function' &&
+      native.backgroundActivityCapability() === true;
+    const video = videoWallpaper.snapshot();
+    return { ...policy, ...video, videoAvailable: available && video.videoAvailable,
+    available, reason: available ? '' :
+      'Procedural wallpaper requires compositor-owned background visibility (session status v3).',
+    error: video.error || [...bundles.values()].map(bundle => bundle.surfaces.wallpaper.wallpaperError).find(Boolean) || '' };
+  }
+
+  function wallpaperActivity(surface) {
+    if (!surface.wallpaperAnimation || surface.wallpaperWatch === null || surface.wallpaperWatch === undefined) return;
+    try {
+      const state = native.backgroundActivity(surface.wallpaperWatch);
+      if (state.retired) throw new Error('Background surface retired');
+      surface.wallpaperAnimation.setActive(state.active);
+    } catch (failure) { wallpaperFailure(surface, failure); }
+  }
+
+  function syncWallpaper(bundle, theme = getDesktopTheme(themeId)) {
+    const surface = bundle.surfaces.wallpaper;
+    const policy = configuration.snapshot.theme.wallpaper ?? { mode: 'theme', reducedMotion: false };
+    if (policy.mode === 'theme') {
+      stopWallpaper(surface);
+      surface.wallpaperError = '';
+      return;
+    }
+    if (!running || surface.window.closed || surface.wallpaperError) return;
+    try {
+      const capability = wallpaperSnapshot();
+      if (!capability.available) throw new Error(capability.reason);
+      if (policy.mode === 'video') {
+        surface.wallpaperAnimation?.dispose();
+        surface.wallpaperAnimation = null;
+        if (surface.wallpaperWatch === undefined || surface.wallpaperWatch === null)
+          surface.wallpaperWatch = native.watchBackground(surface.window);
+        return;
+      }
+      const mount = surface.window.document.getElementById('shell-wallpaper-motion');
+      if (!mount) {
+        if (surface.wallpaperAnimation) throw new Error('Wallpaper drawing target was retired');
+        return;
+      }
+      if (!surface.wallpaperAnimation)
+        surface.wallpaperAnimation = createProceduralWallpaper({ document: surface.window.document, mount,
+          onError: failure => wallpaperFailure(surface, failure) });
+      if (surface.wallpaperAnimation.canvas.parentNode !== mount)
+        throw new Error('Wallpaper drawing target was replaced');
+      surface.wallpaperAnimation.update({ theme, width: surface.window.state?.width || bundle.output.width,
+        height: surface.window.state?.height || bundle.output.height, reducedMotion: policy.reducedMotion });
+      if (!surface.wallpaperAnimation) return;
+      if (surface.wallpaperWatch === undefined || surface.wallpaperWatch === null)
+        surface.wallpaperWatch = native.watchBackground(surface.window);
+      wallpaperActivity(surface);
+    } catch (failure) { wallpaperFailure(surface, failure); }
+  }
+
+  function applyWallpaper() {
+    for (const bundle of bundles.values()) {
+      stopWallpaper(bundle.surfaces.wallpaper);
+      bundle.surfaces.wallpaper.wallpaperError = '';
+      paintDesktop(bundle);
+    }
+    videoWallpaper.setTargets([...bundles.values()].map(bundle => bundle.surfaces.wallpaper.window));
+    videoWallpaper.sync();
+  }
+
+  function setWallpaper(value) {
+    if (!running) throw new Error('Shell is not running');
+    const policy = wallpaperPreferences(value);
+    const before = configuration.snapshot.theme.wallpaper;
+    const sameVideo = before?.mode === 'video' && policy.mode === 'video' &&
+      before.video.path === policy.video.path && before.video.loop === policy.video.loop;
+    function applyPublishedPolicy() {
+      if (sameVideo && !videoWallpaper.snapshot().error) {
+        videoWallpaper.sync();
+        for (const bundle of bundles.values()) paintDesktop(bundle);
+      } else {
+        videoWallpaper.reset();
+        applyWallpaper();
+      }
+    }
+    let published = false;
+    try {
+      const capability = wallpaperSnapshot();
+      if (policy.mode !== 'theme' && !capability.available) throw new Error(capability.reason);
+      if (policy.mode === 'video' && !capability.videoAvailable) throw new Error(capability.videoReason);
+      configuration.update({ theme: { ...configuration.snapshot.theme, wallpaper: policy } });
+      published = true;
+      appearanceRevision++;
+      applyPublishedPolicy();
+      if (wallpaperSnapshot().error) throw new Error(wallpaperSnapshot().error);
+      appearanceStatus = policy.mode === 'video' ? 'Local video wallpaper saved. Decoder status is shown below; audio is disabled.' :
+        policy.mode === 'theme' ? 'Static theme wallpaper restored and saved.' :
+        'Aurora wallpaper saved. ' + (policy.reducedMotion ? 'Reduced motion: a still frame.' :
+          'Animation is capped at 30 FPS and pauses when hidden or locked.');
+      error = ''; errorKind = '';
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      if (failure.committed && !published) {
+        appearanceRevision++;
+        applyPublishedPolicy();
+      }
+      appearanceStatus = '';
+      error = (published || failure.committed ? 'Wallpaper preference saved, but application/durability failed: ' :
+        'Could not save wallpaper: ') + String(failure);
+      errorKind = 'wallpaper';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
+  }
+
+  function setCompanion(value) {
+    if (!running) throw new Error('Shell is not running');
+    const policy = companionPreferences(value);
+    let published = false;
+    try {
+      const capability = companion.snapshot();
+      if (policy.enabled && !capability.available) throw new Error(capability.reason);
+      configuration.update({ theme: { ...configuration.snapshot.theme, companion: policy } });
+      published = true;
+      appearanceRevision++;
+      companion.reset();
+      companion.refresh();
+      if (companion.snapshot().error) throw new Error(companion.snapshot().error);
+      appearanceStatus = policy.enabled ? 'Original Polly companion enabled. Drag to move, click to wave; right-click for tips.' :
+        'Desktop companion hidden and saved.';
+      error = ''; errorKind = '';
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      if (failure.committed && !published) {
+        appearanceRevision++;
+        companion.reset();
+        companion.refresh();
+      }
+      appearanceStatus = '';
+      error = (published || failure.committed ? 'Companion preference saved, but application/durability failed: ' :
+        'Could not save companion: ') + String(failure);
+      errorKind = 'settings';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
   }
 
   function syncShellIcons(theme) {
@@ -728,7 +947,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     }
   }
 
-  function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled) {
+  function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled, nextTransparency = transparency) {
     const theme = getDesktopTheme(nextTheme);
     const regional = theme.panel.kind === 'dock' && theme.panel.regionalBackdrop;
     if (regional && (typeof native?.backdropCapability !== 'function' ||
@@ -804,7 +1023,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
         configured = true;
       }
       if (persist) {
-        try { configuration.update({ theme: { id: nextTheme, filesEnabled } }); }
+        try { configuration.update({ theme: { ...configuration.snapshot.theme,
+          id: nextTheme, filesEnabled, transparency: nextTransparency } }); }
         catch (failure) {
           if (!failure.committed) throw failure;
           publicationFailure = failure;
@@ -826,6 +1046,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       throw failure;
     }
     const retained = new Set(plans.flatMap(plan => Object.values(plan.surfaces)));
+    videoWallpaper.setTargets(plans.map(plan => plan.surfaces.wallpaper.window));
     for (const plan of plans) if (plan.surfaces.dock)
       plan.surfaces.dock.backdropAppearance = regional ? appearance : null;
     for (const plan of plans) {
@@ -845,13 +1066,17 @@ export function createDesktopShell({ host = window, configuration, report = cons
     bundles.clear();
     themeId = nextTheme;
     appliedTheme = theme;
-    if (persist) themeFilesEnabled = filesEnabled;
+    if (persist) {
+      themeFilesEnabled = filesEnabled;
+      transparency = nextTransparency;
+    }
     const previousAsset = themeAsset;
     themeAsset = asset;
     themeAssetSource = assetSource;
     try {
       for (const plan of plans) bundles.set(plan.output.id, plan);
       for (const plan of plans) paint(plan, theme);
+      videoWallpaper.sync();
     } finally {
       if (previousAsset && previousAsset !== asset) releaseThemeAsset(previousAsset);
     }
@@ -925,9 +1150,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
     catch (failure) { report('[shell] Cannot release theme resource: ' + String(failure)); }
   }
 
-  function applySelectedTheme(id, filesEnabled = themeFilesEnabled) {
+  function applySelectedTheme(id, filesEnabled = themeFilesEnabled, nextTransparency = transparency) {
     let publicationFailure = null;
-    try { reconcile(id, true, filesEnabled); }
+    try { reconcile(id, true, filesEnabled, nextTransparency); }
     catch (failure) { if (!failure.committed) throw failure; publicationFailure = failure; }
     appearanceRevision++;
     error = '';
@@ -963,7 +1188,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     }
   }
 
-  function replaceThemes(catalog, enabled) {
+  function replaceThemes(catalog, enabled, nextTransparency = transparency) {
     if (!running) throw new Error('Shell is not running');
     const previous = { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES };
     const selected = catalog.themes.some(theme => theme.id === themeId) ? themeId : enabled ? null : DEFAULT_DESKTOP_THEME;
@@ -971,10 +1196,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
     preflightBodyFont(catalog.themes.find(theme => theme.id === selected));
     let installed = false;
     try {
-      installThemeCatalog(catalog); installed = true;
-      applySelectedTheme(selected, enabled);
+      installThemeCatalog(transparencyCatalog(catalog, nextTransparency)); installed = true;
+      applySelectedTheme(selected, enabled, nextTransparency);
+      baseCatalog = catalog;
       } catch (failure) {
       if (installed && !failure.committed) installThemeCatalog(previous);
+      if (failure.committed) baseCatalog = catalog;
       throw failure;
     }
   }
@@ -998,6 +1225,194 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
   function reloadThemes() { return changeThemeFiles(true); }
   function restoreThemes() { return changeThemeFiles(false); }
+
+  function transparencySnapshot() {
+    const theme = baseCatalog.themes.find(theme => theme.id === themeId) ?? getDesktopTheme(themeId);
+    const target = transparencyTarget(theme);
+    let reason = '';
+    if (!target) reason = 'This theme has solid desktop bars. Choose Modern or a Mac-style theme to see transparency.';
+    else if (target === 'Taskbar' &&
+        (typeof native?.shellBackdropCapability !== 'function' || native.shellBackdropCapability() !== true ||
+          typeof native?.configureAppearance !== 'function'))
+      reason = 'The active compositor cannot provide real taskbar backdrops.';
+    else if (theme.panel.regionalBackdrop &&
+        (typeof native?.backdropCapability !== 'function' || native.backdropCapability() !== true ||
+          typeof native?.configureAppearance !== 'function'))
+      reason = 'The active compositor cannot provide real Dock backdrops.';
+    return { mode: transparency, available: !reason, target, reason };
+  }
+
+  function setTransparency(mode) {
+    if (!running) throw new Error('Shell is not running');
+    transparencyMode(mode);
+    try {
+      const capability = transparencySnapshot();
+      if (mode === 'transparent' && !capability.available) throw new Error(capability.reason);
+      replaceThemes(baseCatalog, themeFilesEnabled, mode);
+      appearanceStatus = mode === 'theme' ? 'Theme transparency defaults restored and saved.' :
+        mode === 'opaque' ? 'Desktop bars are opaque; preference saved.' :
+          'Desktop bar transparency applied and saved. Foreground text and icons remain opaque.';
+      return true;
+    } catch (failure) {
+      appearanceStatus = '';
+      error = (failure.committed ? 'Transparency applied and saved, but durability confirmation failed: ' :
+        'Could not apply/save transparency: ') + String(failure);
+      errorKind = 'settings';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
+  }
+
+  function windowOpacitySnapshot() {
+    const available = typeof native?.windowOpacityCapability === 'function' && native.windowOpacityCapability() === true;
+    const state = available ? native.windowOpacityState() : null;
+    return { available, percent: state?.percent ?? null,
+      requestedPercent: configuration.snapshot.theme.windowOpacityPercent,
+      reason: available ? '' : 'The active compositor does not provide global ordinary-window opacity (appearance v10).',
+      error: state?.error ?? '' };
+  }
+
+  function setWindowOpacity(value) {
+    if (!running) throw new Error('Shell is not running');
+    const percent = windowOpacityPercent(value);
+    let previous = null, applied = false;
+    try {
+      previous = windowOpacitySnapshot();
+      if (!previous.available) throw new Error(previous.reason);
+      native.setWindowOpacity(percent);
+      applied = true;
+      configuration.update({ theme: { ...configuration.snapshot.theme, windowOpacityPercent: percent } });
+      appearanceRevision++;
+      error = ''; errorKind = '';
+      appearanceStatus = 'Window opacity applied and saved: ' + percent + '%. Text is faded with its window.';
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      let message = String(failure);
+      if (applied && !failure.committed) {
+        try { native.setWindowOpacity(previous.percent); }
+        catch (rollback) { message += '; previous opacity could not be restored: ' + String(rollback); }
+      }
+      if (failure.committed) appearanceRevision++;
+      appearanceStatus = '';
+      error = (failure.committed ? 'Window opacity applied and saved, but durability confirmation failed: ' :
+        'Could not apply/save window opacity: ') + message;
+      errorKind = 'window-opacity';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
+  }
+
+  function switcherSnapshot() {
+    const available = typeof native?.windowPreviewCapability === 'function' &&
+      native.windowPreviewCapability() === true;
+    const projectionAvailable = typeof native?.windowProjectionCapability === 'function' &&
+      native.windowProjectionCapability() === true;
+    return { style: configuration.snapshot.theme.switcherStyle ?? 'list', available,
+      reason: available ? '' : 'Real window previews are unavailable in this compositor/renderer.',
+      projectionAvailable, projectionReason: projectionAvailable ? '' :
+        'Flip 3D requires a paired GLES graphics session with compatible drivers. Restart in GPU mode; 2D switching remains available.',
+      motion: configuration.snapshot.theme.switcherMotion ?? true };
+  }
+
+  function cubeSnapshot() {
+    const policy = configuration.snapshot.theme.workspaceCube ?? { enabled: false, motion: true };
+    const state = typeof native?.workspaceCubeState === 'function' ? native.workspaceCubeState() : null;
+    const four = typeof native?.workspaces === 'function' && native.workspaces().length === 4;
+    const available = state?.available === true && four;
+    return { ...policy, available, reason: available ? '' : state?.available ?
+      'Workspace cube requires exactly four workspaces. Existing workspace contents are not removed.' :
+      'Workspace cube requires a paired GLES graphics session. Restart in GPU mode; immediate switching remains available.',
+    error: cubeError || state?.error || '' };
+  }
+  function setWorkspaceCube(value) {
+    if (!running) throw new Error('Shell is not running');
+    const policy = workspaceCubePreferences(value);
+    const before = typeof native?.workspaceCubeState === 'function' ? native.workspaceCubeState() : null;
+    let applied = false, published = false;
+    try {
+      const capability = cubeSnapshot();
+      if (policy.enabled && !capability.available) throw new Error(capability.reason);
+      if (typeof native?.configureWorkspaceCube !== 'function') throw new Error(capability.reason);
+      native.configureWorkspaceCube(policy.enabled, policy.motion);
+      applied = true;
+      configuration.update({ theme: { ...configuration.snapshot.theme, workspaceCube: policy } });
+      published = true;
+      appearanceRevision++;
+      cubeError = cubeReported = '';
+      appearanceStatus = policy.enabled ?
+        'Workspace cube saved. Hold the workspace shortcut modifiers to browse; release to choose, Esc to cancel.' :
+        'Immediate workspace switching restored and saved.';
+      error = ''; errorKind = '';
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      if (failure.committed && !published) appearanceRevision++;
+      if (applied && !published && !failure.committed) {
+        try { native.configureWorkspaceCube(before.enabled, before.motion); }
+        catch (rollback) { cubeError = 'Cube rollback failed; native outcome is uncertain: ' + String(rollback); }
+      }
+      appearanceStatus = '';
+      error = (published || failure.committed ? 'Cube policy saved, but durability confirmation failed: ' :
+        'Could not save cube policy: ') + String(failure);
+      errorKind = 'settings';
+      report('[shell] ' + error + (cubeError ? ' ' + cubeError : ''));
+      repaintMenu();
+      return false;
+    }
+  }
+
+  function setSwitcherStyle(value) {
+    if (!running) throw new Error('Shell is not running');
+    const style = windowSwitcherStyle(value);
+    try {
+      const capability = switcherSnapshot();
+      if (style === 'thumbnails' && !capability.available) throw new Error(capability.reason);
+      if (style === 'flip3d' && !capability.projectionAvailable) throw new Error(capability.projectionReason);
+      configuration.update({ theme: { ...configuration.snapshot.theme, switcherStyle: style } });
+      appearanceRevision++;
+      appearanceStatus = 'Window switching saved: ' + { list: 'title list.', thumbnails: '2D window previews.',
+        flip3d: 'native Flip 3D.' }[style] +
+        ' Press Alt+Tab to use it.';
+      error = ''; errorKind = '';
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      if (failure.committed) appearanceRevision++;
+      appearanceStatus = '';
+      error = (failure.committed ? 'Switcher style saved, but durability confirmation failed: ' :
+        'Could not save switcher style: ') + String(failure);
+      errorKind = 'settings';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
+  }
+
+  function setSwitcherMotion(value) {
+    if (!running) throw new Error('Shell is not running');
+    const motion = windowSwitcherMotion(value);
+    try {
+      configuration.update({ theme: { ...configuration.snapshot.theme, switcherMotion: motion } });
+      appearanceRevision++;
+      appearanceStatus = '3D transitions saved: ' + (motion ? 'animated.' : 'still poses.') +
+        ' Applies to the next switcher.';
+      error = ''; errorKind = '';
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      if (failure.committed) appearanceRevision++;
+      appearanceStatus = '';
+      error = (failure.committed ? '3D motion saved, but durability confirmation failed: ' :
+        'Could not save 3D motion: ') + String(failure);
+      errorKind = 'settings';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
+  }
 
   function applicationSearch(current, theme, { style, placeholder, submit, focused }) {
     let record = current.search;
@@ -1288,7 +1703,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
       typeof native?.readThemeFiles === 'function' ? {
         reload: scoped(reloadThemes), restore: scoped(restoreThemes), enabled: themeFilesEnabled,
       } : null,
-      typeof native?.startPower === 'function' ? scoped(() => showPower(current.output)) : null),
+      typeof native?.startPower === 'function' ? scoped(() => showPower(current.output)) : null,
+      false, appearanceStatus, DESKTOP_THEMES, { ...transparencySnapshot(), enabled: true,
+        select: scoped(setTransparency) }, { ...windowOpacitySnapshot(), enabled: true,
+        select: scoped(setWindowOpacity) }, { ...switcherSnapshot(), enabled: true,
+        select: scoped(setSwitcherStyle), setMotion: scoped(setSwitcherMotion) }, { ...wallpaperSnapshot(), enabled: true,
+        select: scoped(setWallpaper) }, { ...companion.snapshot(), enabledControl: true,
+        select: scoped(setCompanion) }, { ...cubeSnapshot(), enabledControl: true,
+        select: scoped(setWorkspaceCube) }),
       current.window.document.body);
   }
 
@@ -1401,7 +1823,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return { version: 1, revision: appearanceRevision, catalogRevision: THEME_REVISION, themeId,
       catalog: { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES },
       themeFilesEnabled, themeFilesAvailable: typeof native?.readThemeFiles === 'function',
-      status: appearanceStatus, error: ['settings', 'theme-files'].includes(errorKind) ? error : '', build: runtimeBuild() };
+      transparency: transparencySnapshot(),
+      windowOpacity: windowOpacitySnapshot(),
+      wallpaper: wallpaperSnapshot(),
+      companion: companion.snapshot(),
+      switcher: switcherSnapshot(),
+      workspaceCube: cubeSnapshot(),
+      status: appearanceStatus, error: ['settings', 'theme-files', 'window-opacity', 'wallpaper'].includes(errorKind) ? error : '', build: runtimeBuild() };
   }
   function aboutSnapshot() {
     return { version: 1, services: serviceMonitor.snapshot(), outputs: bundles.size, themeId, build: runtimeBuild(),
@@ -1420,7 +1848,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const scope = settingsScope;
     const handlers = { native, network: native, domains, appearance: appearanceSnapshot, about: aboutSnapshot,
       materialSource: () => materialSource.read({ themeId, revision: appearanceRevision, asset: themeAsset }),
-      select: selectTheme, reload: reloadThemes, restore: restoreThemes,
+      select: selectTheme, reload: reloadThemes, restore: restoreThemes, setTransparency, setWindowOpacity,
+      setSwitcherStyle, setSwitcherMotion, setWallpaper, setCompanion, setWorkspaceCube,
       managed(page) {
         return showSystemSettings(host.displays()[0]?.id, page);
       }, report };
@@ -1462,22 +1891,152 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return showSystemSettings(outputId, 'keyboard');
   }
 
+  function switcherRectangle(current, id) {
+    const node = current.window.document.getElementById(id);
+    if (!node) throw new Error('Window preview target retired before registration');
+    const rect = node.getBoundingClientRect();
+    const body = current.window.document.body.getBoundingClientRect();
+    const values = [rect.x - body.x, rect.y - body.y, rect.width, rect.height];
+    if (values.some(value => !Number.isFinite(value) || Math.abs(value - Math.round(value)) > 0.01))
+      throw new Error('Window previews require aligned actual geometry');
+    return values.map(Math.round);
+  }
+
+  function scheduleSwitcherPreview(current, snapshot, key, width, height, register, stillCurrent = () => true) {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!running || switcher !== current || current.window.closed || current.previewRequestedKey !== key) return;
+      try {
+        const latest = native.windowSwitcher();
+        if (!latest.active || latest.serial !== snapshot.serial) return;
+        if (!stillCurrent(latest)) { paintSwitcher(); return; }
+        const actual = current.window.state;
+        if (!actual || actual.width !== width || actual.height !== height) {
+          if (actual?.width > 0 && actual?.height > 0) { paintSwitcher(); return; }
+          if (actual && typeof current.window.observeState === 'function') {
+            current.previewRequestedKey = null;
+            return;
+          }
+          throw new Error('Actual selector surface geometry is unavailable');
+        }
+        current.previewGeometry = JSON.stringify([actual.width, actual.height, actual.scale]);
+        if (register() !== true) throw new Error('Native window previews were not acknowledged');
+        if (!running || switcher !== current || current.window.closed || current.previewRequestedKey !== key) return;
+        current.previewKey = key;
+        paintSwitcher();
+      } catch (failure) {
+        if (!running || switcher !== current || current.window.closed || current.previewRequestedKey !== key) return;
+        current.previewError = 'Window previews unavailable: ' + String(failure);
+        report('[shell] ' + current.previewError);
+        paintSwitcher();
+      }
+    }));
+  }
+
+  function paintProjectedSwitcher(current, snapshot, theme, width, height, accept) {
+    const viewport = windowProjectionViewport(theme, width, height);
+    if (!viewport) {
+      render(switcherView(theme, snapshot, accept, 1,
+        'Not enough room for a 3D stack; title-only switching remains available.'), current.window.document.body);
+      return;
+    }
+    const key = JSON.stringify(['projection', snapshot.serial, width, height, THEME_REVISION, current.switcherMotion]);
+    const pending = current.previewRequestedKey !== key;
+    if (pending) { current.previewRequestedKey = key; current.previewError = ''; }
+    const configured = current.previewKey === key && snapshot.previewConfigured === true && snapshot.previewProjection === true;
+    const pick = (serial, x, y) => {
+      if (!running || switcher !== current || current.window.closed || current.previewKey !== key) return;
+      try {
+        const index = native.pickWindowProjection(serial, x, y);
+        if (index !== null) accept(serial, index);
+      } catch (failure) { shortcutFailure(failure); }
+    };
+    render(projectedSwitcherView(theme, snapshot, viewport, pick, configured,
+      current.previewError || (configured ? snapshot.previewError : '')), current.window.document.body);
+    if (pending) scheduleSwitcherPreview(current, snapshot, key, width, height, () =>
+      native.configureWindowProjection(snapshot.serial, current.window,
+        switcherRectangle(current, 'shell-switcher-3d-viewport'),
+        Number.parseInt(theme.colors.body.slice(1, 7), 16), current.switcherMotion));
+  }
+
   function paintSwitcher() {
     try {
       const snapshot = native.windowSwitcher();
       if (!snapshot.active) { closeSurface(switcher); switcher = null; return; }
       const output = host.displays()[0];
       if (!output) throw new Error('No display is available for the window switcher');
-      const layout = getDesktopTheme(themeId).layout;
-      const height = Math.max(1, Math.min(layout.switcherHeight, output.height - layout.switcherInset * 2));
-      if (!switcher || switcher.window.closed) switcher = newSurface(output, 'switcher', {
-        layer: 'overlay', width: Math.max(1, Math.min(layout.switcherWidth, output.width - layout.switcherInset * 2)), height,
-        anchors: [], exclusiveZone: -1, keyboard: 'none', transparent: true,
-      });
-      render(switcherView(getDesktopTheme(themeId), snapshot, (serial, index) => {
+      const theme = getDesktopTheme(themeId), layout = theme.layout;
+      const style = switcher?.switcherStyle ?? configuration.snapshot.theme.switcherStyle ?? 'list';
+      const supported = typeof native.windowPreviewCapability === 'function' && native.windowPreviewCapability() === true;
+      const projected = style === 'flip3d' && typeof native.windowProjectionCapability === 'function' &&
+        native.windowProjectionCapability() === true;
+      const thumbnails = (style === 'thumbnails' || style === 'flip3d' && !projected) && supported;
+      const desired = projected ? windowProjectionSize(theme, output.width, output.height) :
+        thumbnails ? windowSwitcherSize(theme, snapshot, output.width, output.height) : {
+        width: Math.max(1, Math.min(layout.switcherWidth, output.width - layout.switcherInset * 2)),
+        height: Math.max(1, Math.min(layout.switcherHeight, output.height - layout.switcherInset * 2)),
+      };
+      if (!switcher || switcher.window.closed || switcher.output !== output.id ||
+          switcher.size.width !== desired.width || switcher.size.height !== desired.height) {
+        closeSurface(switcher);
+        switcher = newSurface(output, 'switcher', {
+          layer: 'overlay',
+          ...desired,
+          anchors: [], exclusiveZone: -1, keyboard: 'none', transparent: true,
+        });
+        switcher.switcherStyle = style;
+        switcher.switcherMotion = configuration.snapshot.theme.switcherMotion ?? true;
+        if (style !== 'list') switcher.window.document.body.style.backgroundColor = 'transparent';
+        const current = switcher;
+        if ((thumbnails || projected) && typeof current.window.observeState === 'function')
+          current.listeners.push(current.window.observeState(() => {
+            if (!running || switcher !== current || current.window.closed) return;
+            const state = current.window.state;
+            const geometry = JSON.stringify([state.width, state.height, state.scale]);
+            if (geometry !== current.previewGeometry) {
+              current.previewGeometry = geometry;
+              current.previewRequestedKey = null;
+              current.previewKey = null;
+            }
+            paintSwitcher();
+          }));
+      }
+      const current = switcher;
+      const width = current.window.state?.width || current.size.width;
+      const height = current.window.state?.height || current.size.height;
+      const accept = (serial, index) => {
         try { native.acceptWindowSwitch(serial, index); } catch (failure) { shortcutFailure(failure); }
-      }, Math.max(1, Math.min(layout.switcherMaxRows,
-        Math.floor((height - layout.switcherChromeHeight) / layout.switcherRowHeight)))), switcher.window.document.body);
+      };
+      if (projected) {
+        paintProjectedSwitcher(current, snapshot, theme, width, height, accept);
+        return;
+      }
+      const grid = thumbnails ? windowSwitcherGrid(theme, snapshot, width, height) : null;
+      if (!grid) {
+        const status = style === 'flip3d' ? switcherSnapshot().projectionReason + ' Showing the title list.' :
+          style !== 'thumbnails' ? '' : supported ?
+          'Not enough room for thumbnails; title-only switching remains available.' :
+          'Native thumbnails are unavailable; title-only switching remains available.';
+        render(switcherView(theme, snapshot, accept, Math.max(1, Math.min(layout.switcherMaxRows,
+          Math.floor((height - layout.switcherChromeHeight - (status ? 64 : 0)) / layout.switcherRowHeight))), status),
+        current.window.document.body);
+        return;
+      }
+      const key = JSON.stringify([snapshot.serial, grid.start, grid.slots.length, width, height, THEME_REVISION]);
+      const pending = current.previewRequestedKey !== key;
+      if (pending) {
+        current.previewRequestedKey = key;
+        current.previewError = '';
+      }
+      const configured = current.previewKey === key && snapshot.previewConfigured === true && snapshot.previewProjection !== true;
+      render(thumbnailSwitcherView(theme, snapshot, grid, accept, configured,
+        current.previewError || (configured ? snapshot.previewError : '') ||
+          (style === 'flip3d' ? switcherSnapshot().projectionReason + ' Showing real 2D previews.' : '')),
+      current.window.document.body);
+      if (pending) scheduleSwitcherPreview(current, snapshot, key, width, height, () =>
+        native.configureWindowPreviews(snapshot.serial, current.window,
+          grid.slots.map(slot => [slot.index, ...switcherRectangle(current, 'shell-switcher-preview-' + slot.index)]),
+          Number.parseInt(theme.colors.body.slice(1, 7), 16)),
+      latest => windowSwitcherGrid(theme, latest, width, height)?.start === grid.start);
     } catch (failure) {
       closeSurface(switcher); switcher = null;
       try { native.cancelWindowSwitch(); } catch (cancelFailure) { report('[shell] Cannot cancel switcher: ' + String(cancelFailure)); }
@@ -1882,6 +2441,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function refresh(force = false) {
     if (!running) return;
+    companion.refresh();
     const now = Date.now();
     if (launcher && now - lastCatalogPoll >= 5000) {
       lastCatalogPoll = now;
@@ -1934,6 +2494,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       host.close();
       if (launcher) reloadApplications();
       running = true;
+      videoWallpaper.start();
       systemMenuScope = {};
       systemMenuSerial = 0;
       if (typeof native?.systemMenuCapability === 'function' && native.systemMenuCapability() === true) {
@@ -1987,6 +2548,42 @@ export function createDesktopShell({ host = window, configuration, report = cons
         systemMenuTheme = null; systemMenuOutputs = '';
         throw failure;
       }
+      const storedOpacity = configuration.snapshot.theme.windowOpacityPercent;
+      if (typeof native?.backgroundActivityCapability === 'function') {
+        previousBackgroundChanged = native.onBackgroundActivityChanged;
+        backgroundChanged = () => {
+          if (!running) return;
+          for (const bundle of bundles.values()) wallpaperActivity(bundle.surfaces.wallpaper);
+          companion.activity();
+          videoWallpaper.activity();
+          if (typeof previousBackgroundChanged === 'function') previousBackgroundChanged();
+        };
+        native.onBackgroundActivityChanged = backgroundChanged;
+      }
+      if (typeof native?.windowOpacityCapability === 'function' && native.windowOpacityCapability() === true) {
+        previousWindowOpacityChanged = native.onWindowOpacityChanged;
+        windowOpacityChanged = () => {
+          if (!running) return;
+          const state = native.windowOpacityState();
+          if (state.error && error !== state.error) {
+            error = state.error; errorKind = 'window-opacity';
+            report('[shell] ' + error);
+            repaintMenu();
+          }
+          if (typeof previousWindowOpacityChanged === 'function') previousWindowOpacityChanged();
+        };
+        native.onWindowOpacityChanged = windowOpacityChanged;
+      }
+      if (storedOpacity !== 100) {
+        try {
+          if (!windowOpacitySnapshot().available) throw new Error('Saved window opacity is unsupported by this compositor');
+          native.setWindowOpacity(storedOpacity);
+        } catch (failure) {
+          error = 'Saved window opacity could not be restored: ' + String(failure);
+          errorKind = 'window-opacity';
+          report('[shell] ' + error);
+        }
+      }
       timer = setInterval(refresh, 1000);
       if (typeof native?.backdropError === 'function') {
         previousBackdropStatus = native.onBackdropStatusChanged;
@@ -2004,6 +2601,28 @@ export function createDesktopShell({ host = window, configuration, report = cons
         refreshWindows();
       }
       startShortcuts();
+      if (typeof native?.workspaceCubeState === 'function') {
+        previousCubeChanged = native.onWorkspaceCubeChanged;
+        cubeChanged = () => {
+          if (!running) return;
+          const message = native.workspaceCubeState().error;
+          if (message && message !== cubeReported) {
+            cubeReported = message; report('[shell] Workspace cube: ' + message);
+          }
+          repaintMenu();
+          if (typeof previousCubeChanged === 'function') previousCubeChanged();
+        };
+        native.onWorkspaceCubeChanged = cubeChanged;
+        const policy = configuration.snapshot.theme.workspaceCube;
+        if (policy) {
+          try { native.configureWorkspaceCube(policy.enabled, policy.motion); }
+          catch (failure) {
+            cubeError = 'Saved workspace cube could not be restored: ' + String(failure);
+            report('[shell] ' + cubeError);
+          }
+        }
+      }
+      companion.refresh();
       notifications.start();
       tray.start();
       audio.start();
@@ -2018,6 +2637,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return this;
     },
     stop() {
+      if (cubeChanged && native?.onWorkspaceCubeChanged === cubeChanged)
+        native.onWorkspaceCubeChanged = previousCubeChanged;
+      cubeChanged = null;
+      if (typeof native?.configureWorkspaceCube === 'function') {
+        try { native.configureWorkspaceCube(false, true); }
+        catch (failure) { report('[shell] Cannot stop workspace cube: ' + String(failure)); }
+      }
       if (systemMenuEnabled) {
         try { configureSystemMenu(false); }
         catch (failure) { report('[shell] Cannot stop native system-menu input: ' + String(failure)); }
@@ -2036,6 +2662,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
       pickerChanged = null;
       pickerTheme = null; pickerOutputs = '';
       running = false;
+      videoWallpaper.stop();
+      companion.stop();
+      if (backgroundChanged && native?.onBackgroundActivityChanged === backgroundChanged)
+        native.onBackgroundActivityChanged = previousBackgroundChanged;
+      backgroundChanged = null;
+      if (windowOpacityChanged && native?.onWindowOpacityChanged === windowOpacityChanged)
+        native.onWindowOpacityChanged = previousWindowOpacityChanged;
+      windowOpacityChanged = null;
       backdropScope = null; materialError = '';
       compositorAppearance = null;
       iconScope = {};
@@ -2086,15 +2720,19 @@ export function createDesktopShell({ host = window, configuration, report = cons
     },
     selectTheme, reloadThemes, restoreThemes, showSettings, showSystemSettings, showManagedSettings,
     showApplications, launchApplication, addDesktopShortcut, removeDesktopShortcuts, sortDesktopShortcuts,
-    showWindowActions, showWorkspaces, showShortcuts, showDisplays,
+    showWindowActions, showWorkspaces, showShortcuts, showDisplays, setTransparency, setWindowOpacity,
+    setSwitcherStyle, setSwitcherMotion, setWallpaper, setCompanion, setWorkspaceCube,
     showNotifications: notifications.show, showNetwork, showAudio, showPower, showLogout, refresh,
     sessionExit,
     getSettingsState: () => settingsBridge?.getState() || { pid: 0, connected: false, error: String(settingsStartupError || '') },
     getState() {
       const services = serviceMonitor.snapshot();
-      return { themeId, error: error || services.error, materialError,
+      return { themeId, error: error || services.error, materialError, transparency: transparencySnapshot(),
+        wallpaper: wallpaperSnapshot(),
+        companion: companion.snapshot(),
         services, outputs: [...bundles.keys()], running, themeFilesEnabled, themeRevision: THEME_REVISION };
     },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
+    getCompanionSurface: companion.getSurface,
   };
 }

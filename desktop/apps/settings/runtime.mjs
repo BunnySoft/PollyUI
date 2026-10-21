@@ -53,6 +53,7 @@ export async function startSettingsRuntime({ args = application.arguments, onSto
           catch (replyError) { app.controller.fail(replyError); }
         }).finally(() => { pending = false; request.close(); });
       }, 10);
+      await client.call('Ready');
     }
   } catch (error) {
     cleanup();

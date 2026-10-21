@@ -91,6 +91,7 @@ export async function runCLI(args, backend = {}) {
     plan.hardware = hardware;
     plan.status = plan.debian.status;
     plan.requirements = ['Frozen standard-effects4 runtime and trusted offline APT lock for this configuration.',
+      'Complete paired GLES desktop effects, native local-video decoder and exact current runtime source bytes.',
       'A clean fixed source checkout; no automatic native rebuild, boot, publication or stable-alias update.'];
   }
   if (options.plan) return plan;

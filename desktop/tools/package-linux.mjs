@@ -47,6 +47,8 @@ if (gitRevision && process.env.POLLY_SOURCE_DIRTY === '0' &&
   throw new Error('Clean source label differs from actual dirty checkout');
 const cache = readFileSync(path.join(build, 'CMakeCache.txt'), 'utf8');
 const setting = name => cache.match(new RegExp('^' + name + ':[^=]*=(.*)$', 'm'))?.[1].trim();
+const videoCodecs = setting('PU_DESKTOP_VIDEO') === 'ON' ? JSON.parse(readFileSync(path.join(repo,
+  'desktop/release/debian/video-codecs.json'), 'utf8')) : null;
 if (path.resolve(setting('CMAKE_HOME_DIRECTORY') || '.') !== repo)
   throw new Error('Build belongs to a different source checkout');
 if (/^CMAKE_(?:(?:C|CXX)_FLAGS|(?:EXE|SHARED|MODULE)_LINKER_FLAGS)[^:]*:[^=]*=.*-fsanitize=/m.test(cache))
@@ -197,6 +199,17 @@ try {
   copy(path.join(repo, debian ? 'desktop/release/debian/Containerfile.runtime' : 'desktop/release/Containerfile'),
     path.join(staging, 'Containerfile'));
   const binaries = ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher', 'usr/bin/polly-app'];
+  let videoBuildInfo = null;
+  if (videoCodecs) {
+    const helper = 'usr/lib/pollyui/polly-video-decoder';
+    binaries.push(helper);
+    videoBuildInfo = JSON.parse(run(path.join(root, helper), ['--build-info']));
+    if (videoBuildInfo.ffmpegVersion !== videoCodecs.version || videoBuildInfo.license !== 'LGPL-2.1-or-later' ||
+        videoBuildInfo.network !== false || videoBuildInfo.audio !== false ||
+        JSON.stringify(videoBuildInfo.decoders) !== JSON.stringify(videoCodecs.decoders) ||
+        JSON.stringify(videoBuildInfo.demuxers) !== JSON.stringify(videoCodecs.demuxers))
+      throw new Error('Installed decoder capability/license inventory differs from its recipe');
+  }
   const nativeLibraries = [];
   const bundledLibraries = [];
   function libraryOwner(library) {
@@ -209,6 +222,9 @@ try {
   }
   function linkedLibraries(binary, executable) {
     const libraries = run('ldd', [executable]);
+    if (/\blib(?:avcodec|avformat|avutil|swscale)\.so\./.test(libraries) &&
+        binary !== 'usr/lib/pollyui/polly-video-decoder')
+      throw new Error('Only the isolated local-video helper may link the video codec libraries: ' + binary);
     if (/not found|lib(?:glib|gio|gobject)-2\.0|libharfbuzz/.test(libraries))
       throw new Error('Unexpected or missing desktop runtime dependency:\n' + libraries);
     for (const line of libraries.split('\n')) {
@@ -292,6 +308,10 @@ try {
   if (debian) sourceComponents.push({ name: 'libinput-private', versionInfo: '1.28.1-1+deb13u1',
     licenseDeclared: 'MIT', downloadLocation: 'NOASSERTION',
     licenseComments: 'Debian source package; private build without libwacom; packaged COPYING and debian/copyright.' });
+  if (videoCodecs) sourceComponents.push({ name: 'FFmpeg-local-video', versionInfo: videoCodecs.version,
+    licenseDeclared: videoCodecs.license, downloadLocation: videoCodecs.url,
+    sourceInfo: 'Official release SHA-512: ' + videoCodecs.sha512,
+    licenseComments: 'Separate local-video helper; three software video decoders, no audio/network/GPL/nonfree. Full source archive and build arguments included.' });
   const entries = [...sourceComponents, ...resolved.map(pkg => ({
     name: pkg.P, versionInfo: pkg.V, licenseDeclared: 'NOASSERTION',
     licenseComments: (localPackages?.packages.some(local => local.name === pkg.P) ? 'Locally rebuilt Debian package: ' :
@@ -321,6 +341,7 @@ try {
       if (entry.isDirectory()) inventory(file, name);
       else if (entry.isFile()) manifest.files.push({ path: name, sha256: hash(file), size: lstatSync(file).size,
         mode: name.startsWith('usr/bin/') || name.endsWith('/pollyui/greeter-entry') ||
+          name.endsWith('/pollyui/polly-video-decoder') ||
           (name.startsWith('usr/share/pollyui/desktop/tools/') && name.endsWith('.sh')) ? '0755' : '0644' });
       else throw new Error('Unexpected non-regular package payload: ' + file);
     }
@@ -332,6 +353,9 @@ try {
   manifest.runtimeContract = { schemaVersion: 1, kind: 'gui-sysrt-js', installFiles, postprocess,
     nativeLibraries, bundledLibraries,
     ...(debian ? { wlrootsEffects } : {}),
+    ...(videoCodecs ? { videoCodecs: { ...videoCodecs, buildInfo: videoBuildInfo,
+      sourceArchiveSha256: hash(path.join(licenseRoot, 'pollyui-video-codecs', videoCodecs.archive)),
+      configureSha256: hash(path.join(licenseRoot, 'pollyui-video-codecs/configure-arguments.json')) } } : {}),
     abi: { path: 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs',
       sha256: hash(path.join(root, 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs')),
       target: 'linux-x86_64-lp64', verified: true } };
@@ -345,6 +369,9 @@ try {
     'desktop/tools/package-tar.py',
     'desktop/tools/build-skia-linux.sh', 'desktop/tools/skia-linux.gn', 'desktop/tools/build-sdl-linux.sh',
     'desktop/tools/build-harfbuzz-linux.sh', 'desktop/patches/sdl-wayland-sync-lifetime.patch',
+    ...(videoCodecs ? ['desktop/release/debian/video-codecs.json', 'desktop/release/debian/build-video-codecs.py',
+      'desktop/release/debian/Containerfile.video-codecs', 'desktop/native/video-decoder.c',
+      'desktop/native/video-client.c', 'desktop/shared/video-wallpaper.h'] : []),
     ...(debian ? ['desktop/release/debian/Containerfile', 'desktop/release/debian/Containerfile.sdk',
       'desktop/release/debian/Containerfile.runtime', 'desktop/release/debian/sources.json',
       'desktop/release/debian/Containerfile.live',
@@ -373,12 +400,13 @@ try {
       sourceSha256After: sourceSha256(sourcesAfter), revisionSource: gitRevision ? 'git' : 'external-label' },
     dependencies: sourceInputs,
     recipes: recipes.map(file => ({ path: file, sha256: hash(path.join(repo, file)) })),
-    configuration: Object.fromEntries(['CMAKE_BUILD_TYPE', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER',
-      'PU_HOST', 'PU_BUILD_LAUNCHER', 'PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_BUILD_IME_ENGINE',
+    configuration: { ...Object.fromEntries(['CMAKE_BUILD_TYPE', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER',
+      'PU_HOST', 'PU_BUILD_LAUNCHER', 'PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_DESKTOP_VIDEO', 'PU_BUILD_IME_ENGINE',
       'PU_BUILD_SESSION_AUTH', 'CMAKE_INSTALL_BINDIR', 'CMAKE_INSTALL_LIBDIR'].map(name => [name, setting(name) || null])),
+      wlrootsGles2: run('pkg-config', ['--variable=have_gles2_renderer', 'wlroots-0.19']) },
     limits: ['Recipe hashes identify current packaging inputs, not proof that a cached SDK was built with identical recipes.',
       'An external revision label is not Git verification; source byte inventories and a clean runtime rebuild are recorded separately.',
-      'Sources and distro package archives are not bundled here; availability and byte-for-byte reproducibility are not guaranteed.'] };
+      'Except for the optional video source archive, external sources and distro package archives are not bundled here; availability and byte-for-byte reproducibility are not guaranteed.'] };
   validateRuntimeContract(manifest, inputs, readFileSync(path.join(staging, 'runtime-packages.txt'), 'utf8'), sbom);
   writeFileSync(path.join(staging, 'build-inputs.json'), JSON.stringify(inputs, null, 2) + '\n');
   const archive = 'pollydesktop-' + version + '-' + distribution + '-x86_64.tar.gz';

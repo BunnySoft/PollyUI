@@ -36,7 +36,10 @@ export function createSettingsFixtureClient(signal) {
       await signal(`fixture-xdg-click ${++sequence} ${Math.floor(control.x + control.width / 2)} ` +
         `${Math.floor(control.y + control.height / 2)} 0 Settings`);
     },
-    async close() {
+    async key(code, modifiers = 0) {
+      await signal(`fixture-settings-key ${++sequence} ${code} ${modifiers}`);
+    },
+    async close({ disconnect = true } = {}) {
       const view = desktop.windows().find(item => item.appId === 'org.pollyui.settings' && item.title === 'Settings');
       if (view) {
         desktop.closeWindow(view.id);
@@ -46,7 +49,7 @@ export function createSettingsFixtureClient(signal) {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
       }
-      queryClient.close();
+      if (disconnect) queryClient.close();
     },
   };
 }
@@ -91,6 +94,12 @@ if (app) {
         versionFooter: surface.document.getElementById('settings-system-version')?.textContent || '' };
       else if (query.op === 'capture') {
         surface.capture(application.cacheDir + '/' + query.name); result = true;
+      }       else if (query.op === 'dialog') {
+        const walk = node => [node, ...Array.from(node.childNodes || []).flatMap(walk)];
+        const dialog = walk(surface.document.body).find(node => node.getAttribute?.('role') === 'dialog');
+        result = dialog ? { id: dialog.id, entries: walk(dialog).filter(node =>
+          node.id?.startsWith(dialog.id + '-entry-')).map(node =>
+          ({ id: node.id, caption: node.getAttribute('aria-label') || node.textContent })) } : null;
       } else if (query.op === 'control') {
         const node = surface.document.getElementById(query.id);
         if (!node) throw new Error('Missing independent Settings control: ' + query.id);

@@ -2,10 +2,17 @@ import { SETTINGS_INSTANCE_NAME, settingsPage, settingsThemeId, settingsTarget, 
   parseMaterialSource, matchMaterialSource } from './desktop/client/settings-contract.mjs';
 import { waitSettingsReply, settingsPeer } from './desktop/client/settings.mjs';
 import { parseSettingsNetwork, parseSettingsNetworkAction, parseSettingsNetworkAuthentication } from './desktop/client/settings-network-contract.mjs';
+import { transparencyMode, windowOpacityPercent } from './desktop/shared/ui/transparency.mjs';
+import { windowSwitcherStyle, windowSwitcherMotion } from './desktop/shared/ui/window-switcher.mjs';
+import { wallpaperPreferences } from './desktop/shared/ui/procedural-wallpaper.mjs';
+import { companionPreferences } from './desktop/shared/ui/companion.mjs';
+import { workspaceCubePreferences } from './desktop/shared/ui/workspace-cube.mjs';
 
 const denied = message => Object.assign(new Error(message), { dbusName: 'org.pollyui.Settings.Error.AccessDenied' });
 export function createSettingsService({ service, client, pid, uid, spawn, activate, appearance, about,
-  select, reload, restore, managed, materialSource = null, network = null, domains = null, report = console.error }) {
+  select, reload, restore, managed, setTransparency = null, setWindowOpacity = null,
+  setSwitcherStyle = null, setSwitcherMotion = null, setWallpaper = null, setCompanion = null, setWorkspaceCube = null,
+  materialSource = null, network = null, domains = null, report = console.error }) {
   let owned = null, generation = 0, closed = false, fatal = null, opening = false, requestOrder = 0;
   const requests = new Set();
   function networkSnapshot(owner) {
@@ -32,7 +39,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
       throw denied('Only the current Shell-owned Settings PID may use this method');
   }
   async function present(owner, page) {
-    if (!current(owner) || !owner.destination) throw new Error('Settings is still starting');
+    if (!current(owner) || !owner.destination || !owner.ready) throw new Error('Settings is still starting');
     const peer = await settingsPeer(client, owner.destination);
     if (!current(owner) || peer.pid !== owner.pid || peer.uid !== uid) throw denied('Settings presentation peer changed');
     await waitSettingsReply(client.call(settingsTarget('Present', owner.destination), 's', [page], '', 3000));
@@ -53,7 +60,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
         owned = { pid: child, generation: ++generation, page, destination: null };
       }
       const owner = owned, deadline = Date.now() + 5000;
-      while (current(owner) && !owner.destination) {
+      while (current(owner) && !owner.ready) {
         if (Date.now() >= deadline) throw new Error('Settings startup timed out; process retained, no automatic relaunch');
         await new Promise(resolve => setTimeout(resolve, 10));
       }
@@ -78,6 +85,11 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     }
     // No awaits between the final owned-generation check and a Shell operation.
     if (!current(owner)) throw denied('Settings generation changed before execution');
+    if (member === 'Ready') {
+      if (request.args.length || !owner.destination) throw new Error('Settings must connect before reporting UI readiness');
+      owner.ready = true;
+      return [];
+    }
     if (member === 'GetAppearance') return [JSON.stringify(appearance())];
     if (member === 'GetMaterialSource') {
       if (request.args.length || !materialSource) throw new TypeError('Material source takes no arguments and requires a current bitmap');
@@ -143,6 +155,40 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     }
     let success;
     if (member === 'SelectTheme') success = select(settingsThemeId(request.args[0]));
+    else if (member === 'SetTransparency') {
+      if (!setTransparency) throw new Error('Desktop transparency controls are unavailable');
+      success = setTransparency(transparencyMode(request.args[0]));
+    }
+    else if (member === 'SetWindowOpacity') {
+      if (!setWindowOpacity) throw new Error('Global window opacity controls are unavailable');
+      success = setWindowOpacity(windowOpacityPercent(request.args[0]));
+    }
+    else if (member === 'SetSwitcherStyle') {
+      if (!setSwitcherStyle) throw new Error('Window switcher controls are unavailable');
+      success = setSwitcherStyle(windowSwitcherStyle(request.args[0]));
+    }
+    else if (member === 'SetSwitcherMotion') {
+      if (!setSwitcherMotion) throw new Error('3D transition controls are unavailable');
+      success = setSwitcherMotion(windowSwitcherMotion(request.args[0]));
+    }
+    else if (member === 'SetWorkspaceCube') {
+      if (!setWorkspaceCube) throw new Error('Workspace cube controls are unavailable');
+      const text = request.args[0];
+      if (typeof text !== 'string' || text.length > 256) throw new TypeError('Invalid cube preference payload');
+      success = setWorkspaceCube(workspaceCubePreferences(JSON.parse(text)));
+    }
+    else if (member === 'SetWallpaper') {
+      if (!setWallpaper) throw new Error('Procedural wallpaper controls are unavailable');
+      const text = request.args[0];
+      if (typeof text !== 'string' || text.length > 16384) throw new TypeError('Invalid wallpaper preference payload');
+      success = setWallpaper(wallpaperPreferences(JSON.parse(text)));
+    }
+    else if (member === 'SetCompanion') {
+      if (!setCompanion) throw new Error('Desktop companion controls are unavailable');
+      const text = request.args[0];
+      if (typeof text !== 'string' || text.length > 256) throw new TypeError('Invalid companion preference payload');
+      success = setCompanion(companionPreferences(JSON.parse(text)));
+    }
     else if (member === 'ReloadThemes') success = reload();
     else if (member === 'RestoreThemes') success = restore();
     else throw new TypeError('Unknown Settings operation');
@@ -190,6 +236,6 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
       }
     },
     getState: () => ({ pid: owned?.pid || 0, generation, page: owned?.page || null,
-      connected: !!owned?.destination, error: fatal ? String(fatal) : '' }),
+      connected: !!owned?.ready, error: fatal ? String(fatal) : '' }),
   });
 }

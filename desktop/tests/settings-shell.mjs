@@ -57,6 +57,21 @@ async function until(predicate, message) {
     await delay(10);
   }
 }
+async function waitProbe() {
+  const owner = shell.getSettingsState();
+  await until(async () => {
+    const current = shell.getSettingsState();
+    if (current.pid !== owner.pid || current.generation !== owner.generation)
+      throw new Error('Settings owner changed while awaiting its test probe');
+    try {
+      const state = await query({ op: 'state' });
+      return state.pid === owner.pid && state.appearance !== null;
+    } catch (error) {
+      if (error.code === 'ERR_DBUS_REMOTE' && error.dbusName === 'org.freedesktop.DBus.Error.ServiceUnknown') return false;
+      throw error;
+    }
+  }, 'current Settings process registered its separate test probe');
+}
 async function painted() {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
@@ -132,6 +147,7 @@ async function openSettingsFromPanel(panel) {
   check(gesture.join(',') === 'mousedown,mouseup', 'one native Settings entry press/release, without a retry');
   await until(() => shell.getSettingsState().connected, 'Shell-owned independent Settings handshake');
   check(shell.getSettingsState().pid > 0, 'native first-click activates the real owned Settings process');
+  await waitProbe();
 }
 async function appClick(id) {
   const owner = shell.getSettingsState();
@@ -243,7 +259,7 @@ async function snapBindings(beforeReset = null) {
     check(shell.configuration.snapshot.shortcuts.some(binding => binding.action === action &&
       binding.key === key && binding.modifiers === 2), action + ' saved after acknowledgement');
     const saved = JSON.parse(decodeUtf8(readPrivateConfigurationFile(application.configDir, 'shell-preferences.json')));
-    check(saved.version === 4 && saved.shortcuts.some(binding => binding.action === action &&
+    check(saved.version === 5 && saved.shortcuts.some(binding => binding.action === action &&
       binding.key === key && binding.modifiers === 2), action + ' exact binding read back from the published native file');
     await appClick('shell-shortcut-disable-' + action);
     await until(() => desktop.shortcuts().some(binding => binding.action === action &&
@@ -299,6 +315,7 @@ async function migration(output, firstPid, survivor) {
   await signal('fixture-settings-close ' + ++serial);
   await until(() => exits.has(firstPid), 'actual owned Settings close');
   await shell.showSystemSettings(output, 'audio');
+  await waitProbe();
   const reopened = shell.getSettingsState().pid;
   check(reopened !== firstPid, 'Settings reopens with a fresh owned PID/generation');
   await until(async () => (await query({ op: 'state' })).text.includes('Volume: 90%'), 'reopened page reads actual retained audio state');
@@ -343,6 +360,7 @@ async function run() {
   if (mode === 'keyboard') {
     await shell.showSystemSettings(output, 'keyboard');
     await until(() => shell.getSettingsState().connected, 'owned Keyboard Settings handshake');
+    await waitProbe();
     await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 10,
       'independent Keyboard consumes the actual ten-action native catalog');
     const setter = desktop.setShortcuts;
@@ -359,6 +377,7 @@ async function run() {
       await shell.showSystemSettings(output, 'keyboard');
       await until(() => shell.getSettingsState().connected && shell.getSettingsState().pid !== first,
         'Keyboard reopens in a fresh owned process');
+      await waitProbe();
       await until(async () => {
         const snapshot = (await query({ op: 'state' })).pageState.snapshot;
         return snapshot?.bindings?.length === 10 && disabled(snapshot.bindings);
@@ -382,9 +401,7 @@ async function run() {
   await until(() => desktop.windows().some(item => item.appId === 'org.pollyui.settings-survivor'),
     'ordinary survivor maps before the panel gesture');
   await openSettingsFromPanel(panel);
-  await until(async () => {
-    try { return (await query({ op: 'state' })).appearance !== null; } catch { return false; }
-  }, 'independent Settings test probe');
+  await waitProbe();
   const settings = independent, firstPid = shell.getSettingsState().pid;
   const initial = await query({ op: 'state' });
   const expectedBuild = runtimeBuild(application), expectedLabel = buildLabel(expectedBuild);
@@ -398,7 +415,10 @@ async function run() {
     'Settings owns a distinct native PID, realm, event loop and storage namespace');
   if (mode === 'migration') { await migration(output, firstPid, survivor); return; }
   const intruder = createSettingsClient(openDbusClient(environment.address));
-  for (const [member, argument] of [['SelectTheme', 'bigsur'], ['ReloadThemes'], ['RestoreThemes'],
+  for (const [member, argument] of [['SelectTheme', 'bigsur'], ['SetTransparency', 'opaque'], ['SetWindowOpacity', 75],
+    ['SetSwitcherStyle', 'thumbnails'], ['SetWallpaper', JSON.stringify({ mode: 'aurora', reducedMotion: false })],
+    ['SetSwitcherMotion', false],
+    ['ReloadThemes'], ['RestoreThemes'],
     ['OpenManagedPage', 'audio'], ['GetAppearance'], ['SelectTheme', JSON.stringify({ pid: firstPid, generation: 1 })]]) {
     let denied = false;
     try { await intruder.call(member, argument); } catch (error) { denied = /AccessDenied/.test(error.dbusName || ''); }
@@ -407,6 +427,35 @@ async function run() {
   intruder.close();
   await signal('fixture-settings-state ' + ++serial + ' 1');
   await capture(settings, 'appearance');
+  await appClick('settings-switcher-thumbnails');
+  await until(() => shell.configuration.snapshot.theme.switcherStyle === 'thumbnails',
+    'real Settings button saves native 2D preview preference');
+  check((await query({ op: 'state' })).appearance.switcher.available === true,
+    'actual compositor capability is displayed by independent Settings');
+  check((await query({ op: 'control', id: 'settings-switcher-flip3d' })).enabled === false &&
+    (await query({ op: 'state' })).appearance.switcher.projectionAvailable === false,
+  'Pixman Settings disables native 3D without pretending that application GL enables compositor projection');
+  await appClick('settings-switcher-still');
+  await until(() => shell.configuration.snapshot.theme.switcherMotion === false, 'actual Settings saves still 3D poses independently');
+  await appClick('settings-switcher-animate');
+  await until(() => shell.configuration.snapshot.theme.switcherMotion === true, 'actual Settings restores animated 3D preference');
+  await appClick('settings-switcher-list');
+  await until(() => shell.configuration.snapshot.theme.switcherStyle === 'list',
+    'real Settings button restores title-only switching');
+  await appClick('settings-wallpaper-aurora');
+  await until(() => shell.configuration.snapshot.theme.wallpaper?.mode === 'aurora' &&
+    shell.getSurfaces().filter(surface => surface.kind === 'wallpaper').every(surface => surface.wallpaperAnimation?.stats.frames > 0),
+  'real Settings button starts bounded Canvas wallpaper on both outputs');
+  await appClick('settings-wallpaper-reduced');
+  await until(() => shell.configuration.snapshot.theme.wallpaper?.reducedMotion === true &&
+    shell.getSurfaces().filter(surface => surface.kind === 'wallpaper').every(surface =>
+      surface.wallpaperAnimation?.stats.reducedMotion && !surface.wallpaperAnimation.stats.pending),
+  'real Settings button freezes wallpaper without an idle animation timer');
+  await appClick('settings-wallpaper-theme');
+  await until(() => shell.configuration.snapshot.theme.wallpaper?.mode === 'theme' &&
+    shell.getSurfaces().filter(surface => surface.kind === 'wallpaper').every(surface =>
+      !surface.wallpaperAnimation && !surface.wallpaperWatch),
+  'real Settings button restores static theme and releases animation resources');
   panel.window.capture(application.cacheDir + '/settings-' + mode + '-taskbar.png');
   const launcher = shell.showApplications(output);
   await painted();
@@ -423,6 +472,42 @@ async function run() {
   let theme = getDesktopTheme('bigsur');
   await signal('fixture-settings-decoration ' + theme.window.borderWidth + ' ' + theme.window.titleHeight);
   await capture(settings, 'bigsur');
+  await appClick('shell-transparency-opaque');
+  await until(() => shell.configuration.snapshot.theme.transparency === 'opaque', 'opaque desktop bars acknowledged');
+  check(getDesktopTheme('bigsur').panel.menuBarOpacityPercent === 100 &&
+    !getDesktopTheme('bigsur').panel.regionalBackdrop,
+    'real Settings control replaces translucent bars with opaque paint');
+  await appClick('shell-transparency-transparent');
+  await until(() => shell.configuration.snapshot.theme.transparency === 'transparent', 'transparent desktop bars acknowledged');
+  check(getDesktopTheme('bigsur').panel.menuBarOpacityPercent < 100 &&
+    getDesktopTheme('bigsur').panel.regionalBackdrop,
+    'real Settings control restores genuine alpha and regional Dock material');
+  await appClick('settings-transparency-preview');
+  await until(() => desktop.windows().some(view => view.title === 'Transparency preview'), 'ordinary alpha preview mapped');
+  await signal('fixture-settings-transparency');
+  const preview = desktop.windows().find(view => view.title === 'Transparency preview');
+  desktop.closeWindow(preview.id);
+  await until(() => !desktop.windows().some(view => view.id === preview.id), 'preview closes without stopping Settings');
+  check(shell.getSettingsState().pid === firstPid, 'transparent preview retains its owned Settings process');
+  await appClick('settings-window-opacity-slider');
+  await until(() => shell.configuration.snapshot.theme.windowOpacityPercent === 75,
+    'native slider release applies and saves 75 percent global window opacity');
+  check(desktop.windowOpacityState().percent === 75, 'global opacity is acknowledged by the real compositor');
+  await appClick('settings-transparency-preview');
+  await until(() => desktop.windows().some(view => view.title === 'Transparency preview'), 'new window maps under global opacity');
+  await signal('fixture-settings-window-opacity 75');
+  await signal('fixture-settings-opacity-pressure');
+  await until(async () => {
+    const current = (await query({ op: 'state' })).appearance.windowOpacity;
+    return current.percent === 100 && current.requestedPercent === 75 && current.error.includes('budget');
+  }, 'new surface pressure is visible and does not overwrite saved user intent');
+  desktop.closeWindow(desktop.windows().find(view => view.title === 'Transparency preview').id);
+  await until(() => !desktop.windows().some(view => view.title === 'Transparency preview'), 'new faded preview closes');
+  await appClick('settings-window-opacity-reset');
+  await until(() => shell.configuration.snapshot.theme.windowOpacityPercent === 100 &&
+    desktop.windowOpacityState().percent === 100, 'real restore control returns all ordinary windows to opaque');
+  await appClick('shell-transparency-theme');
+  await until(() => shell.configuration.snapshot.theme.transparency === 'theme', 'theme transparency defaults restored');
   await click('shell-theme-xp');
   await until(() => shell.getState().themeId === 'xp', 'independent theme restored');
   theme = getDesktopTheme('xp');
@@ -531,6 +616,7 @@ async function run() {
   check(reports.length === 0, 'native Settings has no unexpected Shell errors');
   await shell.showSystemSettings(output);
   const disconnectedPid = shell.getSettingsState().pid;
+  await waitProbe();
   await until(async () => (await query({ op: 'state' })).appearance !== null, 'Settings before daemon disconnect');
   const oldTheme = shell.getState().themeId;
   const killBus = desktop.spawnApplication(['/bin/sh', '-c', 'kill -TERM "$POLLY_SETTINGS_TEST_BUS_PID"'],

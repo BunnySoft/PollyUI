@@ -5,6 +5,7 @@
 #include "decoration-frame.h"
 #include "appearance-document.h"
 #include "server.h"
+#include "window-opacity.h"
 #include "session-lock.h"
 #include "polly-appearance-server.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
@@ -66,6 +67,7 @@ struct AppearanceClient {
     struct wl_resource *resource;
     struct wl_list link;
     struct Snapshot *staged;
+    uint32_t opacity_serial;
     uint32_t serial;
     uint64_t base_generation;
     bool renderer_role;
@@ -216,12 +218,33 @@ void pu_decoration_present(struct PuDesktopView *view)
         stop_timeout(d);
     }
 }
+bool pu_decoration_preview_geometry(struct PuDesktopView *view, struct wlr_box *box, float *radius)
+{
+    struct PuDecoration *d = view->decoration;
+    *radius = 0;
+    if (!d || !d->decorated || !d->shown) {
+        *box = (struct wlr_box){0, 0, view->presented_box.width, view->presented_box.height};
+        return box->width > 0 && box->height > 0;
+    }
+    const uint32_t *meta = d->shown->meta;
+    int border = meta[PU_FRAME_BORDER], title = meta[PU_FRAME_TITLE];
+    *box = (struct wlr_box){-border, -title,
+        (int)meta[PU_FRAME_CLIENT_WIDTH] + 2 * border,
+        (int)meta[PU_FRAME_CLIENT_HEIGHT] + title + border};
+    if (view->mode == PU_DESKTOP_FLOATING) {
+        *radius = d->current->layout.effect_radius;
+        if (*radius > box->width / 2.0f) *radius = box->width / 2.0f;
+        if (*radius > box->height / 2.0f) *radius = box->height / 2.0f;
+    }
+    return true;
+}
+
 bool pu_decoration_effects(struct PuDesktopView *view)
 {
     struct PuDecoration *d = view->decoration;
     if (!d || !d->decorated || !d->shown || view->mode != PU_DESKTOP_FLOATING) {
         wlr_scene_node_set_enabled(&view->shadow->node, false);
-        return wlr_scene_tree_set_rounding(view->effects, NULL, 0);
+        return pu_window_composition(view->effects, NULL, 0, pu_window_opacity(view));
     }
     const uint32_t *meta = d->shown->meta;
     int border = meta[PU_FRAME_BORDER], title = meta[PU_FRAME_TITLE];
@@ -231,7 +254,7 @@ bool pu_decoration_effects(struct PuDesktopView *view)
     float radius = d->current->layout.effect_radius;
     if (radius > box.width / 2.0f) radius = box.width / 2.0f;
     if (radius > box.height / 2.0f) radius = box.height / 2.0f;
-    if (!wlr_scene_tree_set_rounding(view->effects, radius ? &box : NULL, radius)) return false;
+    if (!pu_window_composition(view->effects, radius ? &box : NULL, radius, pu_window_opacity(view))) return false;
     const struct PuDecorationLayout *layout = &d->current->layout;
     int opacity = d->shown->meta[PU_FRAME_STATE] & 1 ? layout->shadow_active : layout->shadow_inactive;
     if (!layout->shadow_sigma || !opacity) {
@@ -241,7 +264,7 @@ bool pu_decoration_effects(struct PuDesktopView *view)
     int dx = layout->shadow_x_bias - 64, dy = layout->shadow_y_bias - 64;
     if (!wlr_scene_shadow_set_geometry(view->shadow, box.width, box.height, radius,
         layout->shadow_sigma, dx, dy)) return false;
-    float alpha = opacity / 100.0f;
+    float alpha = opacity / 100.0f * pu_window_opacity(view);
     uint32_t rgb = (uint32_t)layout->shadow_rgb;
     float color[4] = {((rgb >> 16) & 255) / 255.0f * alpha,
         ((rgb >> 8) & 255) / 255.0f * alpha, (rgb & 255) / 255.0f * alpha, alpha};
@@ -1116,6 +1139,44 @@ static void frame_failed(struct wl_client *client, struct wl_resource *resource,
     if (owner->state->renderer == owner && d && d->revision == revision)
         renderer_failed(d, strnlen(message, 193) <= 192 ? message : "GUI painter failed");
 }
+static void get_window_opacity(struct wl_client *client, struct wl_resource *resource)
+{
+    (void)client;
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (owner->renderer_role) {
+        polly_appearance_v1_send_window_opacity_status(resource, 0, 0, 100, 0, "Only the Shell may manage window opacity");
+        return;
+    }
+    struct PuDesktop *desktop = owner->state->desktop;
+    polly_appearance_v1_send_window_opacity_status(resource, 0, pu_window_opacity_supported(desktop), desktop->window_opacity_percent,
+        !desktop->window_opacity_error[0], desktop->window_opacity_error);
+}
+static void set_window_opacity(struct wl_client *client, struct wl_resource *resource, uint32_t serial, uint32_t percent)
+{
+    (void)client;
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    struct PuDesktop *desktop = owner->state->desktop;
+    const char *error = NULL;
+    if (owner->renderer_role) error = "Only the Shell may manage window opacity";
+    else if (!serial || serial <= owner->opacity_serial) error = "Obsolete window opacity serial";
+    else {
+        owner->opacity_serial = serial;
+        if (!pu_desktop_set_window_opacity(desktop, percent))
+            error = "Window opacity rejected by its range, composition geometry or resource budget";
+    }
+    polly_appearance_v1_send_window_opacity_status(resource, serial, pu_window_opacity_supported(desktop), desktop->window_opacity_percent,
+        !error, error ? error : "");
+}
+void pu_decorations_window_opacity_status(struct PuDesktop *desktop)
+{
+    if (!desktop->decorations) return;
+    struct AppearanceClient *owner;
+    wl_list_for_each(owner, &desktop->decorations->appearance_clients, link) {
+        if (!owner->renderer_role && wl_resource_get_version(owner->resource) >= 10)
+            polly_appearance_v1_send_window_opacity_status(owner->resource, 0, pu_window_opacity_supported(desktop), desktop->window_opacity_percent,
+                !desktop->window_opacity_error[0], desktop->window_opacity_error);
+    }
+}
 static const struct polly_appearance_v1_interface appearance_impl = {
     .destroy = appearance_destroy, .prepare = prepare_theme, .commit = commit_theme, .cancel = cancel_theme,
     .enable_renderer = enable_renderer, .disable_renderer = disable_renderer,
@@ -1123,6 +1184,7 @@ static const struct polly_appearance_v1_interface appearance_impl = {
     .get_backdrop_capability = get_backdrop_capability, .prepare_backdrop = prepare_backdrop,
     .get_shell_backdrop_capability = get_shell_backdrop_capability, .prepare_shell_backdrop = prepare_shell_backdrop,
     .get_start_backdrop_capability = get_start_backdrop_capability, .prepare_start_backdrop = prepare_start_backdrop,
+    .get_window_opacity = get_window_opacity, .set_window_opacity = set_window_opacity,
 };
 static void appearance_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 {
@@ -1158,7 +1220,7 @@ bool pu_decorations_init(struct PuDesktop *desktop)
     if (!state->budget) return false;
     state->budget->refs = 1; state->theme_revision = 1;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 9, state, appearance_bind);
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 10, state, appearance_bind);
     state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
     if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;

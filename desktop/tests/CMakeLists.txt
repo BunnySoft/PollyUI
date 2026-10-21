@@ -14,6 +14,16 @@ target_link_libraries(pollywm-scene-effects-test PRIVATE pollywm-core)
 target_compile_options(pollywm-scene-effects-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME desktop-scene-effects COMMAND pollywm-scene-effects-test)
 set_tests_properties(desktop-scene-effects PROPERTIES TIMEOUT 30)
+add_executable(pollywm-group-opacity-test group-opacity.c)
+target_link_libraries(pollywm-group-opacity-test PRIVATE pollywm-core)
+target_compile_options(pollywm-group-opacity-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME desktop-group-opacity COMMAND pollywm-group-opacity-test)
+set_tests_properties(desktop-group-opacity PROPERTIES TIMEOUT 30)
+add_executable(pollywm-window-preview-test window-preview.c)
+target_link_libraries(pollywm-window-preview-test PRIVATE pollywm-core)
+target_compile_options(pollywm-window-preview-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME desktop-window-preview-pixels COMMAND pollywm-window-preview-test)
+set_tests_properties(desktop-window-preview-pixels PROPERTIES TIMEOUT 30)
 add_executable(pollywm-shm-allocator-test shm-allocator.c)
 target_link_libraries(pollywm-shm-allocator-test PRIVATE PkgConfig::WLROOTS PkgConfig::WAYLAND_SERVER)
 target_compile_definitions(pollywm-shm-allocator-test PRIVATE WLR_USE_UNSTABLE _POSIX_C_SOURCE=200809L)
@@ -26,6 +36,21 @@ add_executable(pollywm-decorator-lifecycle-test decorator-lifecycle.c)
 target_link_libraries(pollywm-decorator-lifecycle-test PRIVATE pollywm-core PkgConfig::WINDOW_PIXMAN)
 target_compile_options(pollywm-decorator-lifecycle-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
+add_test(NAME desktop-window-preview-layout COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/window-switcher.mjs")
+set_tests_properties(desktop-window-preview-layout PROPERTIES TIMEOUT 30)
+add_test(NAME desktop-procedural-wallpaper-policy COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/procedural-wallpaper.mjs")
+set_tests_properties(desktop-procedural-wallpaper-policy PROPERTIES TIMEOUT 30)
+add_test(NAME desktop-companion-policy COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/companion.mjs")
+set_tests_properties(desktop-companion-policy PROPERTIES TIMEOUT 30)
+add_test(NAME desktop-video-wallpaper-policy COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/video-wallpaper.mjs")
+set_tests_properties(desktop-video-wallpaper-policy PROPERTIES TIMEOUT 30)
+add_test(NAME desktop-workspace-cube-policy COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/workspace-cube.mjs")
+set_tests_properties(desktop-workspace-cube-policy PROPERTIES TIMEOUT 30)
 add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/package-contract.mjs")
 set_tests_properties(desktop-package-contract PROPERTIES TIMEOUT 60)
@@ -61,7 +86,7 @@ if (EXISTS "/opt/wlroots-0.19.3.tar.gz")
     pkg_check_modules(EFFECTS_GLES QUIET IMPORTED_TARGET egl glesv2)
     if (EFFECTS_GLES_FOUND)
         add_executable(pollywm-scene-effects-gles-test scene-effects-gles.c)
-        target_link_libraries(pollywm-scene-effects-gles-test PRIVATE PkgConfig::EFFECTS_GLES m)
+        target_link_libraries(pollywm-scene-effects-gles-test PRIVATE pollywm-core PkgConfig::EFFECTS_GLES m)
         target_compile_options(pollywm-scene-effects-gles-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         add_test(NAME desktop-scene-effects-software-gles COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
             "${CMAKE_CURRENT_SOURCE_DIR}/scene-effects-gles.py"
@@ -229,6 +254,11 @@ set_tests_properties(desktop-live-startup PROPERTIES TIMEOUT 15)
 add_test(NAME desktop-live-startup-source COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/live-startup.py")
 set_tests_properties(desktop-live-startup-source PROPERTIES TIMEOUT 15)
+add_test(NAME desktop-standard-hardware-source COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/standard-hardware.py")
+add_test(NAME desktop-live-wired-source COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/live-wired.py")
+set_tests_properties(desktop-standard-hardware-source desktop-live-wired-source PROPERTIES TIMEOUT 15)
 add_test(NAME desktop-cursor-native
     COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client> --cursor)
 set_tests_properties(desktop-cursor-native PROPERTIES TIMEOUT 15 ENVIRONMENT "POLLY_CURSOR_THEME=PollyRabbit")

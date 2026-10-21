@@ -303,6 +303,18 @@ const materialAppearance = (revision = 1, bitmap = false, policy = 'wallpaper') 
     { ...theme, desktop: { ...theme.desktop, asset: bitmap ? 'wallpaper.png' : '' },
       window: { ...theme.window, clientMaterial: policy } }) },
 });
+test('same Appearance presentation refreshes without rebuilding the ready document or resetting its focus', async t => {
+  const f = domainFixture(t);
+  await f.app.present('appearance'); await tick();
+  const root = f.document.getElementById('shell-system-settings');
+  const button = f.document.getElementById('settings-theme-xp');
+  assert.ok(root);
+  if (button) button.focus();
+  const focus = f.document.activeElement;
+  await f.app.present('appearance'); await tick();
+  assert.equal(f.document.getElementById('shell-system-settings'), root);
+  assert.equal(f.document.activeElement, focus);
+});
 test('direct Settings API/default and explicit solid have no material work; packaged opt-in preserves input and mount identity', async t => {
   for (const [name, options] of [['api-default', null],
     ['opt-out', { optIn: false, appearance: materialAppearance() }],
@@ -703,6 +715,185 @@ test('shared appearance view uses the explicit remote catalog rather than a Shel
   const ids = nodes(tree).map(node => node.props.id).filter(id => id?.startsWith('shell-theme-'));
   assert.deepEqual(ids, ['shell-theme-remote-choice']);
 });
+test('transparency snapshot remains strict and rejects invalid modes, capabilities and extra fields', () => {
+  const current = { ...appearance(), transparency: { mode: 'opaque', available: true, target: 'Taskbar', reason: '' } };
+  assert.equal(parseAppearance(JSON.stringify(current)).transparency.mode, 'opaque');
+  for (const patch of [{ mode: true }, { mode: 'blur' }, { available: 1 }, { target: null },
+    { reason: '\0' }, { extra: true }])
+    assert.throws(() => parseAppearance(JSON.stringify({ ...current, transparency: { ...current.transparency, ...patch } })));
+  assert.equal(parseAppearance(JSON.stringify(appearance())).transparency, undefined, 'Older snapshots remain usable');
+});
+test('Settings transparency is acknowledged remotely, while its real preview is owned and retired locally', async t => {
+  const host = applicationHost(t), reports = [], calls = [];
+  host.capabilities = () => ({ transparent: true });
+  let current = { ...appearance(), transparency: { mode: 'theme', available: true, target: 'Taskbar', reason: '' } };
+  const client = { async call(member, argument) {
+    calls.push([member, argument]);
+    if (member === 'SetTransparency') current = { ...current, revision: current.revision + 1,
+      transparency: { ...current.transparency, mode: argument } };
+    return JSON.stringify(current);
+  }, close() {} };
+  const app = createSettingsApp({ client, host, report: message => reports.push(message) }).start();
+  t.after(app.stop);
+  await tick();
+  const doc = app.getWindow().document;
+  await deliver(doc.getElementById('shell-transparency-opaque'));
+  await tick();
+  assert.equal(app.controller.getState().appearance.transparency.mode, 'opaque');
+  assert.equal(doc.getElementById('shell-transparency-opaque').getAttribute('aria-pressed'), 'true');
+  assert.equal(calls.filter(([member]) => member === 'SetTransparency').length, 1);
+  await deliver(doc.getElementById('settings-transparency-preview'));
+  const preview = host.windows.at(-1);
+  assert.equal(preview.transparent, true);
+  assert.equal(preview.parent, app.getWindow());
+  assert.equal(preview.document.body.style.backgroundColor, 'transparent');
+  assert.equal(preview.document.getElementById('settings-transparency-preview-content').style.backgroundColor, '#20304a80');
+  await deliver(doc.getElementById('settings-transparency-preview'));
+  assert.equal(host.windows.length, 2, 'Repeated preview never creates another native window');
+  await deliver(preview.document.getElementById('settings-transparency-preview-close'));
+  assert.equal(preview.closed, true);
+  await deliver(doc.getElementById('settings-transparency-preview'));
+  const replacement = host.windows.at(-1);
+  assert.notEqual(replacement, preview);
+  app.stop();
+  assert.equal(replacement.closed, true);
+  assert.deepEqual(reports, []);
+});
+test('unavailable transparency is visibly disabled and a rejected preview never masquerades as success', async t => {
+  const host = applicationHost(t), reports = [];
+  host.capabilities = () => ({ transparent: true });
+  const current = { ...appearance(), transparency: { mode: 'theme', available: false, target: '',
+    reason: 'Choose a compatible theme.' } };
+  const app = createSettingsApp({ host, client: { call: async () => JSON.stringify(current), close() {} },
+    report: message => reports.push(message) }).start();
+  t.after(app.stop);
+  await tick();
+  const doc = app.getWindow().document;
+  assert.equal(doc.getElementById('shell-transparency-transparent').getAttribute('aria-disabled'), 'true');
+  const create = host.create;
+  host.create = options => {
+    if (options.transparent) throw new Error('native alpha unavailable');
+    return create(options);
+  };
+  await deliver(doc.getElementById('settings-transparency-preview'));
+  assert.equal(host.windows.length, 1);
+  assert.match(reports[0], /native alpha unavailable/);
+  assert.equal(reports.length, 1);
+  host.capabilities = () => ({ transparent: false });
+  await app.controller.refresh();
+  assert.equal(doc.getElementById('settings-transparency-preview').getAttribute('aria-disabled'), 'true');
+});
+test('global opacity slider saves only on release, supports keyboard, and cancels lost capture without a write', async t => {
+  const host = applicationHost(t), calls = [];
+  let current = { ...appearance(), windowOpacity: { available: true, percent: 100,
+    requestedPercent: 100, reason: '', error: '' } };
+  const app = createSettingsApp({ host, client: { async call(member, argument) {
+    if (member === 'SetWindowOpacity') {
+      calls.push(argument);
+      current = { ...current, revision: current.revision + 1,
+        windowOpacity: { ...current.windowOpacity, percent: argument, requestedPercent: argument } };
+    }
+    return JSON.stringify(current);
+  }, close() {} }, report: assert.fail }).start();
+  t.after(app.stop);
+  await tick();
+  const doc = app.getWindow().document, id = 'settings-window-opacity-slider';
+  let slider = doc.getElementById(id);
+  await deliver(slider, 'mousedown', { clientX: 450 });
+  await deliver(slider, 'mousemove', { clientX: 540 });
+  assert.deepEqual(calls, []);
+  assert.equal(slider.hasMouseCapture(), true);
+  await deliver(slider, 'mouseup', { clientX: 630 });
+  await tick();
+  assert.deepEqual(calls, [85]);
+  assert.equal(slider.hasMouseCapture(), false);
+  assert.equal(app.controller.getState().appearance.windowOpacity.percent, 85);
+  slider = doc.getElementById(id);
+  await deliver(slider, 'mousedown', { clientX: 100 });
+  slider.releaseMouseCapture();
+  await deliver(slider, 'mouseup', { clientX: 100 });
+  assert.deepEqual(calls, [85]);
+  assert.equal(slider.getAttribute('aria-valuenow'), '85');
+  await deliver(slider, 'keydown', { key: 'ArrowRight', isComposing: true });
+  assert.deepEqual(calls, [85]);
+  await deliver(slider, 'keydown', { key: 'ArrowRight' });
+  await tick();
+  assert.deepEqual(calls, [85, 86]);
+  await deliver(doc.getElementById(id), 'keydown', { key: 'Home' });
+  await tick();
+  assert.equal(calls.at(-1), 50);
+  await deliver(doc.getElementById('settings-window-opacity-reset'));
+  await tick();
+  assert.equal(calls.at(-1), 100);
+  for (const invalid of [49, 101, NaN, true, '75'])
+    assert.throws(() => app.controller.setWindowOpacity(invalid));
+});
+test('global opacity DTO rejects fabricated state and accepts explicit unavailability without inventing an actual percent', () => {
+  const state = { available: true, percent: 75, requestedPercent: 75, reason: '', error: '' };
+  assert.equal(parseAppearance(JSON.stringify({ ...appearance(), windowOpacity: state })).windowOpacity.percent, 75);
+  assert.equal(parseAppearance(JSON.stringify({ ...appearance(), windowOpacity: {
+    ...state, available: false, percent: null, reason: 'Not supported' } })).windowOpacity.percent, null);
+  for (const patch of [{ percent: null }, { percent: 49 }, { percent: 101 }, { percent: 75.5 },
+    { available: 1 }, { requestedPercent: '75' }, { error: '\0' }, { extra: true }])
+    assert.throws(() => parseAppearance(JSON.stringify({ ...appearance(), windowOpacity: { ...state, ...patch } })));
+});
+test('window preview preference DTO and rendered controls are strict and acknowledged by the owned Shell', async t => {
+  const host = applicationHost(t), calls = [];
+  let current = { ...appearance(), switcher: { style: 'list', available: true, reason: '' } };
+  const app = createSettingsApp({ host, client: { async call(member, argument) {
+    calls.push([member, argument]);
+    if (member === 'SetSwitcherStyle') current = { ...current, revision: current.revision + 1,
+      switcher: { ...current.switcher, style: argument } };
+    return JSON.stringify(current);
+  }, close() {} }, report: assert.fail }).start();
+  t.after(app.stop);
+  await tick();
+  const doc = app.getWindow().document;
+  await deliver(doc.getElementById('settings-switcher-thumbnails'));
+  await tick();
+  assert.equal(app.controller.getState().appearance.switcher.style, 'thumbnails');
+  assert.equal(doc.getElementById('settings-switcher-thumbnails').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(calls.filter(([member]) => member === 'SetSwitcherStyle'), [['SetSwitcherStyle', 'thumbnails']]);
+  current = { ...current, switcher: { style: 'thumbnails', available: false, reason: 'Native preview renderer unavailable' } };
+  await app.controller.refresh();
+  assert.equal(doc.getElementById('settings-switcher-thumbnails').getAttribute('aria-disabled'), 'true');
+  await deliver(doc.getElementById('settings-switcher-thumbnails'));
+  assert.equal(calls.filter(([member]) => member === 'SetSwitcherStyle').length, 1);
+  for (const patch of [{ style: 'cube' }, { available: 1 }, { reason: null }, { extra: true },
+    { projectionAvailable: 'yes', projectionReason: '' }, { projectionAvailable: true }, { motion: 1 }])
+    assert.throws(() => parseAppearance(JSON.stringify({ ...current, switcher: { ...current.switcher, ...patch } })));
+});
+test('paired 3D controls save style and motion only through acknowledged Settings commands', async t => {
+  const host = applicationHost(t), calls = [];
+  let current = { ...appearance(), switcher: { style: 'list', available: true, reason: '',
+    projectionAvailable: true, projectionReason: '', motion: true } };
+  const app = createSettingsApp({ host, client: { async call(member, argument) {
+    calls.push([member, argument]);
+    if (member === 'SetSwitcherStyle') current = { ...current, revision: current.revision + 1,
+      switcher: { ...current.switcher, style: argument } };
+    if (member === 'SetSwitcherMotion') current = { ...current, revision: current.revision + 1,
+      switcher: { ...current.switcher, motion: argument } };
+    return JSON.stringify(current);
+  }, close() {} }, report: assert.fail }).start();
+  t.after(app.stop);
+  await tick();
+  const doc = app.getWindow().document;
+  await deliver(doc.getElementById('settings-switcher-flip3d'));
+  await tick();
+  assert.equal(app.controller.getState().appearance.switcher.style, 'flip3d');
+  await deliver(doc.getElementById('settings-switcher-still'));
+  await tick();
+  assert.equal(app.controller.getState().appearance.switcher.motion, false);
+  assert.deepEqual(calls.filter(([member]) => member.startsWith('SetSwitcher')),
+    [['SetSwitcherStyle', 'flip3d'], ['SetSwitcherMotion', false]]);
+  current = { ...current, switcher: { ...current.switcher, projectionAvailable: false,
+    projectionReason: 'Restart in a paired GLES graphics session' } };
+  await app.controller.refresh();
+  assert.equal(doc.getElementById('settings-switcher-flip3d').getAttribute('aria-disabled'), 'true');
+  await deliver(doc.getElementById('settings-switcher-flip3d'));
+  assert.equal(calls.filter(([member]) => member === 'SetSwitcherStyle').length, 1);
+});
+
 test('system identity has strict source fields, never invents a release, and displays dirty/unknown explicitly', () => {
   assert.match(buildLabel(runtimeBuild()), /unknown.*source state unknown/);
   const build = runtimeBuild({ runtimeVersion: '0.1.0-alpha.7', runtimeRevision: 'a'.repeat(40), runtimeSourceDirty: true });
@@ -845,6 +1036,13 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     materialSource: () => { materialReads++; return materialDTO({ themeId: 'xp' }); },
     select: id => { effects.push(['select', id]); return id !== 'fail'; },
     reload: () => { effects.push(['reload']); return true; }, restore: () => true,
+    setTransparency: mode => { effects.push(['transparency', mode]); return mode !== 'transparent'; },
+    setWindowOpacity: percent => { effects.push(['opacity', percent]); return percent !== 50; },
+    setSwitcherStyle: style => { effects.push(['switcher', style]); return true; },
+    setSwitcherMotion: motion => { effects.push(['switcher-motion', motion]); return true; },
+    setWallpaper: value => { effects.push(['wallpaper', value]); return true; },
+    setCompanion: value => { effects.push(['companion', value]); return true; },
+    setWorkspaceCube: value => { effects.push(['cube', value]); return true; },
     managed: page => effects.push(['managed', page]), report: value => reports.push(value) });
   function request(member, args = [], sender = ':owned', noReply = false) {
     return new Promise(resolve => queue.push({ target: { member }, args, sender, noReply,
@@ -856,6 +1054,14 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     await tick();
     const connected = await request('Connect');
     assert.deepEqual(connected.value, [7, 1, 'appearance']);
+    await tick();
+    assert.equal(bridge.getState().connected, false, 'Authentication is not UI readiness');
+    assert.equal(effects.some(([kind]) => kind === 'present'), false, 'No Present deadline starts during UI construction');
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('Ready', [], sender)).name, /AccessDenied/);
+    assert.deepEqual(await request('Ready', [], ':owned', true), { closed: true });
+    assert.equal(bridge.getState().connected, false, 'No-reply traffic cannot publish readiness');
+    assert.deepEqual((await request('Ready')).value, []);
     assert.equal((await opening).value[0], 42);
     assert.equal(effects.filter(([kind]) => kind === 'spawn').length, 1);
     assert.equal(parseMaterialSource((await request('GetMaterialSource')).value[0]).generation, 1);
@@ -868,12 +1074,15 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     assert.ok(effects.some(effect => effect.join() === 'present,:presentation,about'));
     for (const sender of [':intruder', ':root'])
       assert.match((await request('SelectTheme', ['bigsur'], sender)).name, /AccessDenied/);
-    for (const member of ['Open', 'SelectTheme', 'ReloadThemes', 'RestoreThemes', 'OpenManagedPage',
+    for (const member of ['Open', 'SelectTheme', 'SetTransparency', 'SetWindowOpacity', 'SetSwitcherStyle',
+       'SetSwitcherMotion', 'SetWallpaper', 'SetCompanion', 'SetWorkspaceCube',
+      'ReloadThemes', 'RestoreThemes', 'OpenManagedPage',
       'NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection', 'DetachNetwork',
       'ApplyDisplays', 'ForgetDisplayProfile', 'AudioAction', 'RefreshAudio', 'ForgetAudio', 'KeyboardAction', 'CancelShortcutRecording', 'DetachPage',
       'GetMaterialSource'])
       await request(member, ['xp'], ':owned', true);
     assert.equal(effects.some(([kind]) => kind === 'select'), false);
+    assert.equal(effects.some(([kind]) => kind === 'transparency'), false);
     assert.equal(effects.filter(([kind]) => kind === 'spawn').length, 1);
     assert.equal(materialReads, 1, 'Malformed, foreign and no-reply requests never project a bitmap');
     credentials.set(':presentation', { pid: 88, uid: 1000 });
@@ -884,6 +1093,58 @@ test('owned native PID/UID, presentation owner and final generation gate every S
       assert.match((await request('SelectTheme', [id])).name, /Failed/);
     assert.equal(effects.filter(([kind]) => kind === 'select').length, 1);
     assert.match((await request('SelectTheme', ['fail'])).name, /ApplyFailed/);
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetTransparency', ['opaque'], sender)).name, /AccessDenied/);
+    assert.ok((await request('SetTransparency', ['opaque'])).value[0]);
+    assert.match((await request('SetTransparency', ['transparent'])).name, /ApplyFailed/);
+    assert.match((await request('SetTransparency', ['exec'])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'transparency'),
+      [['transparency', 'opaque'], ['transparency', 'transparent']]);
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetWindowOpacity', [75], sender)).name, /AccessDenied/);
+    assert.ok((await request('SetWindowOpacity', [75])).value[0]);
+    assert.match((await request('SetWindowOpacity', [50])).name, /ApplyFailed/);
+    for (const value of [49, 101, null, true, '75'])
+      assert.match((await request('SetWindowOpacity', [value])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'opacity'), [['opacity', 75], ['opacity', 50]]);
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetSwitcherStyle', ['thumbnails'], sender)).name, /AccessDenied/);
+    assert.ok((await request('SetSwitcherStyle', ['thumbnails'])).value[0]);
+    assert.ok((await request('SetSwitcherStyle', ['flip3d'])).value[0]);
+    assert.match((await request('SetSwitcherStyle', ['cube'])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'switcher'), [['switcher', 'thumbnails'], ['switcher', 'flip3d']]);
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetWorkspaceCube', [JSON.stringify({ enabled: true, motion: true })], sender)).name,
+        /AccessDenied/);
+    assert.ok((await request('SetWorkspaceCube', [JSON.stringify({ enabled: true, motion: false })])).value[0]);
+    for (const value of ['{}', '{"enabled":1,"motion":true}', '{"enabled":true,"motion":true,"source":"foreign"}'])
+      assert.match((await request('SetWorkspaceCube', [value])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'cube'), [['cube', { enabled: true, motion: false }]]);
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetSwitcherMotion', [false], sender)).name, /AccessDenied/);
+    assert.ok((await request('SetSwitcherMotion', [false])).value[0]);
+    for (const value of [null, 0, 'false'])
+      assert.match((await request('SetSwitcherMotion', [value])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'switcher-motion'), [['switcher-motion', false]]);
+    const wallpaper = JSON.stringify({ mode: 'aurora', reducedMotion: true });
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetWallpaper', [wallpaper], sender)).name, /AccessDenied/);
+    assert.ok((await request('SetWallpaper', [wallpaper])).value[0]);
+    const localVideo = { mode: 'video', reducedMotion: false,
+      video: { path: '/home/' + 'segment/'.repeat(50) + 'clip.mp4', loop: true, paused: false } };
+    assert.ok((await request('SetWallpaper', [JSON.stringify(localVideo)])).value[0],
+      'valid bounded local paths are not truncated to the old non-video 256-character payload limit');
+    for (const text of ['null', '{}', '{"mode":"video","reducedMotion":false}', 'x'.repeat(257)])
+      assert.match((await request('SetWallpaper', [text])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'wallpaper'),
+      [['wallpaper', { mode: 'aurora', reducedMotion: true }], ['wallpaper', localVideo]]);
+    const companion = JSON.stringify({ enabled: true, reducedMotion: false });
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('SetCompanion', [companion], sender)).name, /AccessDenied/);
+    assert.ok((await request('SetCompanion', [companion])).value[0]);
+    for (const text of ['null', '{}', '{"enabled":1,"reducedMotion":false}', 'x'.repeat(257)])
+      assert.match((await request('SetCompanion', [text])).name, /Failed/);
+    assert.deepEqual(effects.filter(([kind]) => kind === 'companion'), [['companion', { enabled: true, reducedMotion: false }]]);
     assert.match((await request('OpenManagedPage', ['appearance'])).name, /Failed/);
     await request('OpenManagedPage', ['network']);
     assert.ok(effects.some(effect => effect.join() === 'managed,network'));

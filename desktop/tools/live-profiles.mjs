@@ -23,7 +23,8 @@ export function validateProfileManifest(value) {
   if (value.schemaVersion !== 1 || value.distribution !== 'debian13' ||
       value.architecture !== 'x86_64' || value.defaultSku !== 'full')
     fail('Unsupported hardware profile manifest');
-  keys(value.packageGroups, ['common', 'stockKernel', 'intelGraphics', 'nvidiaGraphics', 'amdGraphics', 'physicalNetworkAudio']);
+  keys(value.packageGroups, ['common', 'stockKernel', 'intelGraphics', 'nvidiaGraphics', 'amdGraphics', 'physicalNetworkAudio',
+    'standardWirelessAudio', 'standardUtilities']);
   const packages = [];
   for (const group of Object.values(value.packageGroups)) {
     strings(group, /^[a-z0-9][a-z0-9+.-]*(?:=[A-Za-z0-9.+:~_-]+)?$/);
@@ -77,7 +78,8 @@ export function hardwareProfile(sku) {
   return { sku, manifestSha256: profileManifestSha256,
     requiredPackages: selected.packageGroups.flatMap(group => manifest.packageGroups[group]),
     forbiddenPackages: Object.entries(manifest.packageGroups)
-      .filter(([name]) => !selected.packageGroups.includes(name)).flatMap(([, group]) => group.map(pkg => pkg.split('=')[0])),
+      .filter(([name]) => name !== 'standardUtilities' && !selected.packageGroups.includes(name))
+      .flatMap(([, group]) => group.map(pkg => pkg.split('=')[0])),
     requiredModules: selected.requiredModules, displayPolicy: manifest.displayPolicies[selected.displayPolicy],
     kernelPolicy: selected.kernelPolicy, support: selected.support, shared: manifest.shared };
 }

@@ -648,6 +648,26 @@ int pu_image_set_bitmap(const char *key, const uint8_t *bytes, size_t length,
     }
 }
 
+int pu_image_set_video_frame(const char *key, int width, int height, const uint8_t *bytes, size_t length) {
+    if (!key || std::strncmp(key, "polly-memory:video-", 19) || !bytes ||
+        width < 1 || height < 1 || width > 1280 || height > 720 ||
+        length != (size_t)width * height * 4) {
+        std::fprintf(stderr, "[render] Invalid bounded native video frame\n"); return 0;
+    }
+    try {
+        SkPixmap pixmap(SkImageInfo::Make(width, height, kBGRA_8888_SkColorType, kOpaque_SkAlphaType),
+            bytes, (size_t)width * 4);
+        auto image = SkImages::RasterFromPixmapCopy(pixmap);
+        if (!image) {
+            std::fprintf(stderr, "[render] Cannot retain native video frame\n"); return 0;
+        }
+        image_cache()[key] = std::move(image);
+        return 1;
+    } catch (const std::bad_alloc &) {
+        std::fprintf(stderr, "[render] Cannot allocate native video frame\n"); return 0;
+    }
+}
+
 void pu_image_remove(const char *key) {
     if (key && !std::strncmp(key, "polly-memory:", 13)) image_cache().erase(key);
 }

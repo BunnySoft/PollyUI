@@ -102,7 +102,9 @@ class Node {
   getContext() {
     // Controller-only fixture; Classic pixels are covered by the GUI render fixtures.
     return { fillRect() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {},
-      resetTransform() {}, createPattern: () => ({}) };
+      resetTransform() {}, createPattern: () => ({}), beginPath() {}, moveTo() {},
+      bezierCurveTo() {}, lineTo() {}, closePath() {}, fill() {},
+      createLinearGradient: () => ({ addColorStop() {} }) };
   }
   setMouseCapture() { this.ownerDocument.captured = this; }
   releaseMouseCapture() { this.ownerDocument.captured = null; domEvent(this, 'lostmousecapture'); }
@@ -2568,11 +2570,280 @@ settingsScenario('theme publication failures preserve the real committed state a
   assert.equal(f.state.settingsHandlers.restore(), false);
   assert.deepEqual(appearances, ['bigsur'], 'published restore must not roll back the new catalog/native theme');
   assert.equal(f.shell.getState().themeFilesEnabled, false);
-  assert.deepEqual(f.saved.snapshot.theme, { id: 'bigsur', filesEnabled: false });
+  assert.deepEqual(f.saved.snapshot.theme, { id: 'bigsur', filesEnabled: false, transparency: 'theme',
+    windowOpacityPercent: 100 });
   assert.equal(f.state.settingsHandlers.appearance().themeFilesEnabled, false);
   assert.match(f.state.settingsHandlers.appearance().error, /fixture directory sync failed/);
   f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
   f.state.configurationFailure = null;
+});
+
+settingsScenario('transparency controls publish real panel modes, preserve foreground and restore exact catalog defaults', f => {
+  try {
+    const builtin = JSON.stringify(BUILTIN_THEME_CATALOG);
+    assert.equal(f.state.settingsHandlers.appearance().transparency.mode, 'theme');
+    assert.equal(f.state.settingsHandlers.setTransparency('opaque'), true);
+    assert.equal(f.saved.snapshot.theme.transparency, 'opaque');
+    assert.equal(getDesktopTheme('modern').panel.taskbarBackdrop, undefined);
+    assert.notEqual(find(f.surface('panel'), 'shell-panel').style.backgroundColor, 'transparent');
+    assert.equal(f.state.settingsHandlers.select('bigsur'), true);
+    assert.equal(getDesktopTheme('bigsur').panel.menuBarOpacityPercent, 100);
+    assert.equal(getDesktopTheme('bigsur').panel.materialOpacityPercent, 100);
+    assert.equal(getDesktopTheme('bigsur').panel.regionalBackdrop, undefined);
+    assert.equal(f.saved.snapshot.theme.transparency, 'opaque', 'Selecting a theme preserves the explicit mode');
+    assert.equal(f.state.settingsHandlers.setTransparency('transparent'), true);
+    assert.equal(f.state.settingsHandlers.appearance().transparency.target, 'Dock and menu bar');
+    assert.equal(JSON.parse(f.shell.getSurfaces().find(surface => surface.kind === 'panel').signature).transparent, true);
+    assert.equal(find(f.surface('panel'), 'shell-panel').style.backgroundColor, 'transparent');
+    assert.equal(find(f.surface('panel'), 'shell-panel').style.opacity, undefined);
+    assert.equal(getDesktopTheme('bigsur').panel.regionalBackdrop.opacityPercent, 28);
+    assert.equal(f.state.settingsHandlers.restore(), true);
+    assert.equal(f.saved.snapshot.theme.transparency, 'transparent', 'Packaged restore retains the explicit mode');
+    assert.equal(f.state.settingsHandlers.setTransparency('theme'), true);
+    assert.deepEqual(getDesktopTheme('bigsur'), BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'bigsur'));
+    assert.equal(JSON.stringify(BUILTIN_THEME_CATALOG), builtin);
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+});
+
+settingsScenario('transparency failures retain the committed preference and old surfaces; unavailable capability is explicit', f => {
+  try {
+    assert.equal(f.state.settingsHandlers.setTransparency('opaque'), true);
+    const old = f.shell.getSurfaces().map(surface => surface.window);
+    f.native.shellBackdropCapability = () => false;
+    assert.equal(f.state.settingsHandlers.appearance().transparency.available, false);
+    assert.equal(f.state.settingsHandlers.setTransparency('transparent'), false);
+    assert.equal(f.saved.snapshot.theme.transparency, 'opaque');
+    assert.ok(old.every(window => !window.closed));
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    f.native.shellBackdropCapability = () => true;
+    f.state.configurationFailure = new Error('transparency save denied');
+    assert.equal(f.state.settingsHandlers.setTransparency('transparent'), false);
+    assert.equal(f.saved.snapshot.theme.transparency, 'opaque');
+    assert.equal(getDesktopTheme('modern').panel.taskbarBackdrop, undefined);
+    assert.ok(old.every(window => !window.closed));
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    f.state.configurationFailure = Object.assign(new Error('transparency directory sync failed'), { committed: true });
+    assert.equal(f.state.settingsHandlers.setTransparency('transparent'), false);
+    assert.equal(f.saved.snapshot.theme.transparency, 'transparent');
+    assert.equal(f.state.settingsHandlers.appearance().transparency.mode, 'transparent');
+    assert.ok(getDesktopTheme('modern').panel.taskbarBackdrop);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    f.state.configurationFailure = null;
+    assert.equal(f.state.settingsHandlers.setTransparency('theme'), true);
+    assert.equal(f.state.settingsHandlers.select('xp'), true);
+    assert.equal(f.state.settingsHandlers.appearance().transparency.available, false);
+    assert.match(f.state.settingsHandlers.appearance().transparency.reason, /solid desktop bars/);
+    assert.equal(f.state.settingsHandlers.setTransparency('transparent'), false);
+    assert.equal(f.saved.snapshot.theme.transparency, 'theme');
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+});
+
+function wallpaperBackend(f) {
+  settingsBackend(f);
+  f.state.backgroundWatches = new Map();
+  let next = 0;
+  f.native.backgroundActivityCapability = () => true;
+  f.native.watchBackground = () => { f.state.backgroundWatches.set(++next, { active: true, retired: false }); return next; };
+  f.native.backgroundActivity = id => {
+    assert.ok(f.state.backgroundWatches.has(id));
+    return f.state.backgroundWatches.get(id);
+  };
+  f.native.releaseBackground = id => { assert.equal(f.state.backgroundWatches.delete(id), true); };
+}
+
+scenario('Settings: wallpaper publication preserves old drawing on failure and releases it after committed static recovery', f => {
+  const policy = { mode: 'aurora', reducedMotion: true };
+  assert.equal(f.shell.setWallpaper(policy), true);
+  const surface = f.shell.getSurfaces().find(surface => surface.kind === 'wallpaper');
+  const animation = surface.wallpaperAnimation;
+  assert.equal(animation.stats.reducedMotion, true);
+  assert.equal(animation.stats.pending, false);
+  assert.equal(f.state.backgroundWatches.size, 2);
+  f.state.configurationFailure = new Error('wallpaper save denied');
+  assert.equal(f.shell.setWallpaper({ mode: 'theme', reducedMotion: true }), false);
+  assert.equal(surface.wallpaperAnimation, animation);
+  assert.deepEqual(f.saved.snapshot.theme.wallpaper, policy);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('wallpaper directory sync failed'), { committed: true });
+  assert.equal(f.shell.setWallpaper({ mode: 'theme', reducedMotion: true }), false);
+  assert.equal(f.saved.snapshot.theme.wallpaper.mode, 'theme');
+  assert.equal(surface.wallpaperAnimation, null);
+  assert.equal(animation.stats.disposed, true);
+  assert.equal(f.state.backgroundWatches.size, 0);
+  assert.match(f.state.settingsHandlers.appearance().error, /wallpaper directory sync failed/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+}, wallpaperBackend);
+
+scenario('Settings: failed video publication preserves playback and committed pause retains the source owner', f => {
+  const policy = { mode: 'video', reducedMotion: false,
+    video: { path: '/fixture/original.mp4', loop: true, paused: false } };
+  assert.equal(f.shell.setWallpaper(policy), true);
+  assert.equal(f.state.video.key, 'fixture-native-video');
+  const count = f.calls.length, before = f.saved.snapshot;
+  const paused = { ...policy, video: { ...policy.video, paused: true } };
+  f.state.configurationFailure = new Error('video save denied');
+  assert.equal(f.shell.setWallpaper(paused), false);
+  assert.equal(f.saved.snapshot, before);
+  assert.equal(f.calls.length, count);
+  assert.equal(f.state.video.paused, false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('video durability unknown'), { committed: true });
+  assert.equal(f.shell.setWallpaper(paused), false);
+  assert.equal(f.saved.snapshot.theme.wallpaper.video.paused, true);
+  assert.equal(f.state.video.paused, true);
+  assert.equal(f.state.video.key, 'fixture-native-video');
+  assert.equal(f.calls.filter(call => call[0] === 'video-start').length, 1);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+  assert.equal(f.shell.setWallpaper({ ...paused, mode: 'theme' }), true);
+  assert.equal(f.state.video.ready, false);
+  assert.deepEqual(f.saved.snapshot.theme.wallpaper.video, paused.video);
+}, f => {
+  wallpaperBackend(f);
+  f.state.video = { available: true, ready: false, paused: false, ended: false, frames: 0,
+    width: 0, height: 0, loop: 0, key: '', error: '' };
+  f.native.videoWallpaperState = () => ({ ...f.state.video });
+  f.native.startVideoWallpaper = () => {
+    f.calls.push(['video-start']);
+    Object.assign(f.state.video, { key: 'fixture-native-video', width: 64, height: 48, ready: true });
+  };
+  f.native.stopVideoWallpaper = () => {
+    f.calls.push(['video-stop']); Object.assign(f.state.video, { ready: false, key: '' });
+  };
+  f.native.pauseVideoWallpaper = paused => { f.calls.push(['video-pause', paused]); f.state.video.paused = paused; };
+  f.native.setVideoWallpaperTargets = () => {};
+});
+
+settingsScenario('wallpaper capability failure cannot save or start an unsupported renderer', f => {
+  assert.equal(f.state.settingsHandlers.appearance().wallpaper.available, false);
+  const previous = f.saved.snapshot;
+  assert.equal(f.shell.setWallpaper({ mode: 'aurora', reducedMotion: false }), false);
+  assert.equal(f.saved.snapshot, previous);
+  assert.ok(f.shell.getSurfaces().every(surface => !surface.wallpaperAnimation && !surface.wallpaperWatch));
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+});
+
+scenario('Settings: cube gating, native rollback and committed durability retain exact user policy', f => {
+  const initial = f.saved.snapshot;
+  f.state.cube.available = false;
+  assert.equal(f.shell.setWorkspaceCube({ enabled: true, motion: true }), false);
+  assert.equal(f.saved.snapshot, initial);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.cube.available = true;
+  assert.equal(f.shell.setWorkspaceCube({ enabled: true, motion: true }), true);
+  const before = f.saved.snapshot;
+  f.state.configurationFailure = new Error('cube save denied');
+  assert.equal(f.shell.setWorkspaceCube({ enabled: false, motion: false }), false);
+  assert.equal(f.saved.snapshot, before);
+  assert.equal(f.state.cube.enabled, true);
+  assert.equal(f.state.cube.motion, true);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('cube durability unknown'), { committed: true });
+  assert.equal(f.shell.setWorkspaceCube({ enabled: false, motion: false }), false);
+  assert.equal(f.saved.snapshot.theme.workspaceCube.enabled, false);
+  assert.equal(f.state.cube.enabled, false);
+  assert.equal(f.state.cube.motion, false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+  f.state.workspaces.pop();
+  assert.equal(f.shell.setWorkspaceCube({ enabled: true, motion: false }), false);
+  assert.equal(f.state.cube.enabled, false);
+  assert.match(f.shell.getState().error, /exactly four/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, f => {
+  settingsBackend(f);
+  f.state.workspaces.push({ id: 11, order: 2, name: 'Third', active: false, canRemove: true },
+    { id: 12, order: 3, name: 'Fourth', active: false, canRemove: true });
+  f.state.cube = { available: true, enabled: false, motion: true, active: false, selected: 0, error: '' };
+  f.native.workspaceCubeState = () => ({ ...f.state.cube });
+  f.native.configureWorkspaceCube = (enabled, motion) => {
+    f.calls.push(['cube', enabled, motion]);
+    Object.assign(f.state.cube, { enabled, motion });
+  };
+});
+
+settingsScenario('companion starts disabled, gates unavailable input capability and keeps strict publication semantics', f => {
+  const snapshot = f.saved.snapshot;
+  assert.equal(f.state.settingsHandlers.appearance().companion.enabled, false);
+  assert.equal(f.shell.getCompanionSurface(), null);
+  assert.equal(f.shell.setCompanion({ enabled: true, reducedMotion: false }), false);
+  assert.equal(f.saved.snapshot, snapshot);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(f.shell.setCompanion({ enabled: false, reducedMotion: true }), true);
+  f.state.configurationFailure = new Error('companion save denied');
+  assert.equal(f.shell.setCompanion({ enabled: false, reducedMotion: false }), false);
+  assert.equal(f.saved.snapshot.theme.companion.reducedMotion, true);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('companion directory sync failed'), { committed: true });
+  assert.equal(f.shell.setCompanion({ enabled: false, reducedMotion: false }), false);
+  assert.equal(f.saved.snapshot.theme.companion.reducedMotion, false);
+  assert.match(f.state.settingsHandlers.appearance().error, /companion directory sync failed/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+});
+
+settingsScenario('3D activation is capability-gated while strict motion preference remains independently persistent', f => {
+  const previous = f.saved.snapshot;
+  assert.equal(f.state.settingsHandlers.appearance().switcher.projectionAvailable, false);
+  assert.equal(f.shell.setSwitcherStyle('flip3d'), false);
+  assert.equal(f.saved.snapshot, previous);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(f.shell.setSwitcherMotion(false), true);
+  assert.equal(f.saved.snapshot.theme.switcherMotion, false);
+  assert.equal(f.saved.snapshot.theme.switcherStyle, undefined);
+  assert.throws(() => f.shell.setSwitcherMotion('false'));
+  f.state.configurationFailure = new Error('motion save denied');
+  assert.equal(f.shell.setSwitcherMotion(true), false);
+  assert.equal(f.saved.snapshot.theme.switcherMotion, false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('motion directory sync failed'), { committed: true });
+  assert.equal(f.shell.setSwitcherMotion(true), false);
+  assert.equal(f.saved.snapshot.theme.switcherMotion, true);
+  assert.match(f.state.settingsHandlers.appearance().error, /motion directory sync failed/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+});
+
+scenario('Settings: global opacity preserves user intent, reports failures and rolls back only unpublished writes', f => {
+  assert.equal(f.state.settingsHandlers.setWindowOpacity(75), true);
+  assert.equal(f.state.opacity.percent, 75);
+  assert.equal(f.saved.snapshot.theme.windowOpacityPercent, 75);
+  assert.equal(f.state.settingsHandlers.select('bigsur'), true);
+  assert.equal(f.state.settingsHandlers.setTransparency('opaque'), true);
+  assert.equal(f.saved.snapshot.theme.windowOpacityPercent, 75);
+  f.state.configurationFailure = new Error('opacity save denied');
+  assert.equal(f.state.settingsHandlers.setWindowOpacity(50), false);
+  assert.equal(f.state.opacity.percent, 75);
+  assert.deepEqual(f.calls.filter(call => call[0] === 'opacity').slice(-2), [['opacity', 50], ['opacity', 75]]);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('opacity sync failed'), { committed: true });
+  assert.equal(f.state.settingsHandlers.setWindowOpacity(50), false);
+  assert.equal(f.state.opacity.percent, 50);
+  assert.equal(f.saved.snapshot.theme.windowOpacityPercent, 50);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+  f.state.opacity = { percent: 100, error: 'New geometry exceeded budget; transparency disabled.' };
+  f.native.onWindowOpacityChanged();
+  const actual = f.state.settingsHandlers.appearance().windowOpacity;
+  assert.equal(actual.percent, 100);
+  assert.equal(actual.requestedPercent, 50);
+  assert.match(actual.error, /budget/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(f.state.settingsHandlers.setWindowOpacity(100), true);
+  assert.equal(f.state.settingsHandlers.setTransparency('theme'), true);
+  installThemeCatalog(BUILTIN_THEME_CATALOG);
+}, f => {
+  settingsBackend(f);
+  f.state.opacity = { percent: 100, error: '' };
+  f.native.windowOpacityCapability = () => true;
+  f.native.windowOpacityState = () => ({ ...f.state.opacity });
+  f.native.setWindowOpacity = percent => {
+    f.calls.push(['opacity', percent]);
+    f.state.opacity = { percent, error: '' };
+    return f.state.opacity;
+  };
 });
 
 function blockedActivation(f) {

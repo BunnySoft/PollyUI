@@ -212,7 +212,7 @@ test('deterministic hashes separate configuration/native/complete plan domains a
   const tampered = structuredClone(a); tampered.stages.platform.push('curl');
   assert.throws(() => validatePlan(tampered));
   const trimmed = structuredClone(full); trimmed.name = 'standard-full';
-  trimmed.packageGroups[1].install.push('curl');
+  trimmed.packageGroups[1].install.push('jq');
   assert.equal(resolvePlan(trimmed).stableAliasEligible, false);
 });
 test('real Node CLI planning has no output/external side effects; help has no YAML dependency', t => {
@@ -391,7 +391,7 @@ test('input tampering fails before heavy actions; configured root/lock/SBOM tamp
   assert.throws(() => verifyBundle(directory), /SBOM/);
 });
 test('full hardware with any extra selection cannot update the stable alias even when named standard-full', async t => {
-  const config = legacyConfig('full'); config.packageGroups[1].install.push('curl');
+  const config = legacyConfig('full'); config.packageGroups[1].install.push('jq');
   const f = fixture(t, config); await runCLI(f.args, f.backend);
   assert.throws(() => publish(path.join(f.output, 'full/media'), path.join(f.root, 'publish'),
     { updateAlias: true }), /exact standard full/);

@@ -85,10 +85,13 @@ test('strict SKU CLI defaults to full and refuses unknown, duplicate, empty or u
 });
 test('manifest is declarative and strict; GPU choice never removes CPU/network/audio requirements', () => {
   const full = hardwareProfile('full'), intel = hardwareProfile('intel'), nv = hardwareProfile('nvidia');
+  const extraFirmware = ['firmware-atheros', 'firmware-brcm80211', 'firmware-mediatek',
+    'firmware-intel-sound', 'firmware-cirrus'];
   assert.deepEqual(hardwareProfile('vm').forbiddenPackages.sort(), [
-    'firmware-intel-graphics', 'firmware-nvidia-graphics', 'firmware-amd-graphics', 'firmware-iwlwifi', 'firmware-sof-signed'].sort());
-  assert.deepEqual(intel.forbiddenPackages, ['firmware-nvidia-graphics', 'firmware-amd-graphics']);
-  assert.deepEqual(nv.forbiddenPackages, ['firmware-intel-graphics', 'firmware-amd-graphics']);
+    'firmware-intel-graphics', 'firmware-nvidia-graphics', 'firmware-amd-graphics', 'firmware-iwlwifi', 'firmware-sof-signed',
+    'firmware-realtek', ...extraFirmware].sort());
+  assert.deepEqual(intel.forbiddenPackages, ['firmware-nvidia-graphics', 'firmware-amd-graphics', ...extraFirmware]);
+  assert.deepEqual(nv.forbiddenPackages, ['firmware-intel-graphics', 'firmware-amd-graphics', ...extraFirmware]);
   assert.ok(hardwareProfile('amd').requiredPackages.includes('firmware-amd-graphics'));
   assert.ok(hardwareProfile('full').requiredModules.includes('amdgpu'));
   for (const sku of hardwareSkus) {
@@ -111,6 +114,32 @@ test('manifest is declarative and strict; GPU choice never removes CPU/network/a
     mutate(copy);
     assert.throws(() => validateProfileManifest(copy));
   }
+});
+test('full adds multi-vendor Wi-Fi/audio firmware and hardware data without expanding other profiles', () => {
+  const full = hardwareProfile('full');
+  for (const name of ['firmware-iwlwifi', 'firmware-realtek', 'firmware-atheros', 'firmware-brcm80211',
+    'firmware-mediatek', 'firmware-sof-signed', 'firmware-intel-sound', 'firmware-cirrus',
+    'alsa-ucm-conf', 'alsa-topology-conf'])
+    assert.ok(full.requiredPackages.includes(name), name);
+  for (const name of ['iwlwifi', 'rtw89_8852be', 'ath11k_pci', 'brcmfmac', 'mt7921e',
+    'snd_hda_codec_realtek', 'snd_usb_audio', 'snd_sof_pci_intel_tgl', 'snd_sof_amd_rembrandt'])
+    assert.ok(full.requiredModules.includes(name), name);
+  for (const sku of hardwareSkus.filter(name => name !== 'full')) {
+    assert.ok(!hardwareProfile(sku).requiredPackages.includes('firmware-mediatek'), sku);
+    assert.ok(!hardwareProfile(sku).forbiddenPackages.includes('alsa-ucm-conf'), sku);
+  }
+});
+
+test('full adds P1000 payload roots, common wired modules and utilities without forbidding base tools elsewhere', () => {
+  const full = hardwareProfile('full');
+  for (const name of ['firmware-nvidia-graphics', 'firmware-realtek', 'openssh-client', 'curl', 'nano', 'iputils-ping'])
+    assert.ok(full.requiredPackages.some(spec => spec.split('=')[0] === name), name);
+  for (const name of ['nouveau', 'e1000e', 'igb', 'igc', 'r8169', 'r8152', 'asix', 'ax88179_178a'])
+    assert.ok(full.requiredModules.includes(name), name);
+  assert.ok(!full.requiredPackages.includes('openssh-server'));
+  for (const sku of ['vm', 'basic'])
+    for (const name of ['bash', 'coreutils', 'grep', 'tar'])
+      assert.ok(!hardwareProfile(sku).forbiddenPackages.includes(name), sku + ': ' + name);
 });
 if (process.platform === 'linux') test('Python assembly and Node publication use the same six source profiles/marker bytes', () => {
   for (const sku of hardwareSkus) {

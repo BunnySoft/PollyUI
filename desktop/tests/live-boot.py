@@ -83,6 +83,10 @@ def main():
     parser.add_argument("evidence", type=Path)
     parser.add_argument("--usb", action="store_true")
     parser.add_argument("--memory-mib", type=int, choices=[4096, 8192], default=4096)
+    parser.add_argument("--wired-network", action="store_true",
+                        help="Separate e1000e/user-network lane: ordinary-user DHCP, gateway and public DNS check")
+    parser.add_argument("--audio-devices", action="store_true",
+                        help="With --wired-network, require emulated ALSA playback/capture devices, not audible sound")
     parser.add_argument("--new-architecture", action="store_true",
                         help="Inject ordinary-user test source into guest RAM and exercise production Settings/files")
     parser.add_argument("--harness-revision", help="Exact separate producer/test commit, never the runtime source label")
@@ -96,6 +100,12 @@ def main():
     parser.add_argument("--profile-settings-startup", action="store_true",
                         help="One ordinary-user owned-bus header-only startup diagnostic, maximum 30 seconds")
     args = parser.parse_args()
+    if args.wired_network and args.new_architecture:
+        raise ValueError("Wired network and new-architecture acceptance use separate guest lanes")
+    if args.audio_devices and not args.wired_network:
+        raise ValueError("Audio device enumeration requires the ordinary-user wired guest lane")
+    if args.wired_network and not re.fullmatch(r"[0-9a-f]{40}", args.harness_revision or ""):
+        raise ValueError("Wired acceptance requires an explicit full harness revision")
     if args.new_architecture and (not args.harness_revision or len(args.harness_revision) != 40 or
                                  any(char not in "0123456789abcdef" for char in args.harness_revision)):
         raise ValueError("New-architecture acceptance requires an explicit full harness revision")
@@ -155,9 +165,11 @@ def main():
             "-drive", f"if=pflash,format=raw,file={variables}",
             "-device", "virtio-vga", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-tablet",
             "-audiodev", "none,id=silent", "-device", "intel-hda", "-device", "hda-duplex,audiodev=silent",
-            "-nic", "none", "-display", "none",
+            *(["-netdev", "user,id=wired", "-device", "e1000e,netdev=wired"] if args.wired_network
+              else ["-nic", "none"]), "-display", "none",
             *(["-chardev", f"socket,id=guestserial,path={serial_path},server=on,wait=off,logfile={serial}",
-               "-serial", "chardev:guestserial"] if args.new_architecture else ["-serial", "file:" + str(serial)]),
+               "-serial", "chardev:guestserial"] if args.new_architecture or args.wired_network
+              else ["-serial", "file:" + str(serial)]),
             "-qmp", f"unix:{qmp_path},server=on,wait=off", "-no-reboot",
         ]
         if args.usb:
@@ -200,7 +212,7 @@ def main():
                             return response["return"]
 
                 execute("qmp_capabilities")
-                if args.new_architecture:
+                if args.new_architecture or args.wired_network:
                     serial_connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     serial_connection.settimeout(10)
                     serial_connection.connect(str(serial_path))
@@ -320,6 +332,34 @@ def main():
                 if status.get("status") != "running":
                     raise RuntimeError("Guest is no longer running")
                 new_architecture = None
+                wired_network = None
+                if args.wired_network:
+                    wait_log("login:", 30)
+                    serial_connection.sendall(b"polly\n")
+                    wait_log("Password:", 30)
+                    serial_connection.sendall(b"polly\n")
+                    wait_log("Live diagnostic console on /dev/ttyS0", 30)
+                    guest = Path(__file__).with_name("live-wired-guest.py").read_bytes()
+                    payload = base64.b64encode(zlib.compress(guest)).decode("ascii")
+                    instruction = ("python3 -I -c 'import base64,zlib; exec(zlib.decompress(base64.b64decode(\"" +
+                                   payload + "\")))'" + (" --audio-devices" if args.audio_devices else "") + "\n")
+                    if len(instruction) >= 4000:
+                        raise ValueError("Wired guest input exceeds its serial line budget")
+                    serial_connection.sendall(instruction.encode("ascii"))
+                    until = time.monotonic() + 60
+                    while True:
+                        transcript = re.sub(r"\x1b\[[0-9;]*m", "", serial.read_text(errors="replace"))
+                        complete = transcript[:transcript.rfind("\n") + 1]
+                        if "polly-wired-check[" in complete and "POLLY_WIRED_FAILED=" in complete:
+                            raise RuntimeError("Wired guest check failed; see original serial log")
+                        match = re.search(r"polly-wired-check\[\d+\]: POLLY_WIRED_READY=(\{[^\r\n]+\})", complete)
+                        if match:
+                            wired_network = json.loads(match[1])
+                            wired_network["harnessRevision"] = args.harness_revision
+                            break
+                        if process.poll() is not None or time.monotonic() > until:
+                            raise RuntimeError("Missing actual wired DHCP/DNS guest result")
+                        time.sleep(0.2)
                 if args.new_architecture:
                     def send_text(value):
                         serial_connection.sendall(value.encode())
@@ -679,7 +719,7 @@ def main():
                                         "input": "QMP physical USB keyboard and ordinary public Live serial login"}
                 result = {
                     "ready": True, "firmware": "OVMF UEFI", "acceleration": acceleration,
-                    "memoryMiB": args.memory_mib, "vcpus": 2, "disks": [], "network": False,
+                    "memoryMiB": args.memory_mib, "vcpus": 2, "disks": [], "network": args.wired_network,
                     "bootMedia": "read-only USB" if args.usb else "read-only optical",
                     "graphics": "virtio-vga", "hostAudio": False, "ordinaryUser": 1000,
                     "keyboardWorkspaceSwitch": True,
@@ -688,6 +728,7 @@ def main():
                     "inputCadenceSeconds": 1.0 if acceleration == "tcg" else 0.15,
                     "iso": iso.name, "serialLog": "serial.log", "screenshot": "desktop.ppm",
                     **({"newArchitecture": new_architecture} if new_architecture else {}),
+                    **({"wiredNetwork": wired_network} if wired_network is not None else {}),
                     "termination": "QMP quit, not a guest user power-off assertion",
                 }
                 with iso.open("rb") as source:
@@ -695,7 +736,8 @@ def main():
                 (evidence / "result.json").write_text(json.dumps(result, indent=2) + "\n")
                 execute("quit")
                 process.wait(timeout=10)
-                print("PASS: UEFI Live media booted a non-root PollyWM DRM desktop without any writable disk or network")
+                print("PASS: UEFI Live media booted a non-root PollyWM DRM desktop without writable disks" +
+                      ("; e1000e wired DHCP/gateway/DNS passed" if args.wired_network else " or network"))
             finally:
                 if stream is not None:
                     stream.close()

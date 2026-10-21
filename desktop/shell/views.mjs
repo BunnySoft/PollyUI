@@ -19,6 +19,7 @@ import { taskLabel, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 import { controlStates } from './desktop/shared/ui/control-state.mjs';
+import { activationEvents } from './desktop/shared/ui/activation.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
@@ -913,18 +914,94 @@ export function workspacesView(theme, workspaces, activate, remove, create, clos
   error ? label(error, theme.colors.text, l.statusFontSize) : null);
 }
 
-export function switcherView(theme, snapshot, accept, rows = theme.layout.switcherMaxRows) {
+export function switcherView(theme, snapshot, accept, rows = theme.layout.switcherMaxRows, status = '') {
   const l = theme.layout;
   const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
   const start = Math.max(0, Math.min(snapshot.items.length - rows, snapshot.selected - Math.floor(rows / 2)));
   return panelViewport(theme, { id: 'shell-window-switcher' },
   label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length,
     theme.colors.text, l.headingFontSize),
+  status ? h('view', { role: 'status' }, label(status, theme.colors.muted, l.statusFontSize)) : null,
   snapshot.items.slice(start, start + rows).map((item, offset) =>
     button('shell-switcher-item-' + (start + offset), item.title || item.appId || 'Untitled', theme,
       () => accept(snapshot.serial, start + offset), snapshot.selected === start + offset,
       { height: theme.layout.choiceHeight, alignItems: 'flex-start', overflow: 'hidden' })),
   label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, l.statusFontSize));
+}
+
+export function thumbnailSwitcherView(theme, snapshot, grid, accept, configured, status = '') {
+  const ready = configured ? snapshot.previewMask ?? 0 : 0;
+  return h('view', { id: 'shell-window-switcher', style: {
+    width: '100%', height: '100%', position: 'relative', overflow: 'hidden',
+    borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: configured ? 'transparent' : theme.colors.body,
+  } },
+  h('view', { style: { position: 'absolute', left: 16, top: 12, right: 16 } },
+    themedText(theme, 'Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length,
+      theme.colors.text, theme.layout.headingFontSize)),
+  grid.slots.map((slot, offset) => {
+    const selected = slot.index === snapshot.selected, available = (ready & 1 << offset) !== 0;
+    const card = h('view', { id: 'shell-switcher-item-' + slot.index, role: 'button', tabIndex: 0,
+      'aria-label': slot.item.title || slot.item.appId || 'Untitled', 'aria-pressed': String(selected),
+      style: { position: 'absolute', left: slot.x, top: slot.y, width: slot.width, height: slot.height,
+        backgroundColor: 'transparent', borderWidth: 2,
+        borderColor: selected ? theme.colors.accent : theme.colors.border },
+      focusStyle: { borderColor: theme.colors.focus },
+      ...activationEvents(() => accept(snapshot.serial, slot.index), true),
+    },
+    h('view', { id: 'shell-switcher-preview-' + slot.index, 'aria-hidden': 'true', style: {
+      position: 'absolute', left: Math.floor((slot.width - slot.imageWidth) / 2), top: 8,
+      width: slot.imageWidth, height: slot.imageHeight,
+      backgroundColor: available ? 'transparent' : theme.colors.surface,
+      alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+    } }, available ? null : themedText(theme,
+      configured || status ? 'Preview unavailable' : 'Loading preview...', theme.colors.muted,
+      theme.layout.statusFontSize, { pointerEvents: 'none', flexShrink: 1, minWidth: 0 })),
+    h('view', { style: { position: 'absolute', left: 8, right: 8, bottom: 5, height: 22,
+      overflow: 'hidden', pointerEvents: 'none' } },
+      themedText(theme, slot.item.title || slot.item.appId || 'Untitled', theme.colors.text,
+        theme.layout.fontSize, { pointerEvents: 'none' })));
+    return guardTaskGesture(card, JSON.stringify([snapshot.serial, slot.index, slot.item.appId]));
+  }),
+  h('view', { id: 'shell-switcher-preview-status', role: 'status', 'aria-live': 'polite',
+    style: { position: 'absolute', left: 16, right: 16, bottom: 8, height: grid.footer - 12,
+      overflow: 'hidden', pointerEvents: 'none' } },
+    themedText(theme, status || 'Release shortcut modifiers to activate. Esc cancels. Previews update only while open.',
+      theme.colors.muted, theme.layout.statusFontSize, { flexShrink: 1, minWidth: 0 })));
+}
+
+export function projectedSwitcherView(theme, snapshot, viewport, pick, configured, status = '') {
+  const ready = configured && snapshot.previewMask === 1;
+  const selected = snapshot.items[snapshot.selected];
+  const image = h('view', { id: 'shell-switcher-3d-viewport', role: 'listbox',
+    'aria-label': 'Native 3D window previews. Click a projected window to choose.',
+    style: { position: 'absolute', left: viewport.x, top: viewport.y,
+      width: viewport.width, height: viewport.height,
+      backgroundColor: ready ? 'transparent' : theme.colors.surface,
+      alignItems: 'center', justifyContent: 'center' },
+    onClick: event => {
+      if (!ready || event.button !== 0) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      event.preventDefault();
+      pick(snapshot.serial, Math.floor(event.clientX - rect.x), Math.floor(event.clientY - rect.y));
+    },
+  }, ready ? null : themedText(theme, configured || status ? '3D preview unavailable' : 'Preparing native 3D previews...',
+    theme.colors.muted, theme.layout.statusFontSize, { flexShrink: 1, pointerEvents: 'none' }));
+  return h('view', { id: 'shell-window-switcher', style: {
+    width: '100%', height: '100%', position: 'relative', overflow: 'hidden',
+    borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: configured ? 'transparent' : theme.colors.body,
+  } },
+  h('view', { style: { position: 'absolute', left: 16, top: 12, right: 16 } },
+    themedText(theme, 'Flip 3D  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length,
+      theme.colors.text, theme.layout.headingFontSize)),
+  guardTaskGesture(image, JSON.stringify([snapshot.serial, snapshot.selected, ready])),
+  h('view', { id: 'shell-switcher-projection-status', role: 'status', 'aria-live': 'polite',
+    style: { position: 'absolute', left: 16, right: 16, top: viewport.y + viewport.height + 8,
+      bottom: 8, overflow: 'hidden', pointerEvents: 'none', gap: 4 } },
+    themedText(theme, selected.title || selected.appId || 'Untitled', theme.colors.text, theme.layout.fontSize),
+    themedText(theme, status || 'Up to nine real window images. Release modifiers to choose; Esc cancels.',
+      theme.colors.muted, theme.layout.statusFontSize, { flexShrink: 1 })));
 }
 
 export function displayConfirmationView(theme, remaining, keep, revert) {

@@ -95,6 +95,9 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shared/ui"
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/resources/themes"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/resources" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.json")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/resources/companions"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/resources" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.mjs" PATTERN "*.png")
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/input-method/main.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/input-method/view.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/input-method" COMPONENT PollyDesktop)

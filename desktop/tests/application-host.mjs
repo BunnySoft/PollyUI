@@ -51,6 +51,14 @@ class Node {
   }
   setInputMethod() {}
   cancelComposition() {}
+  setMouseCapture() { this.ownerDocument.captured = this; }
+  hasMouseCapture() { return this.ownerDocument.captured === this; }
+  releaseMouseCapture() {
+    if (!this.hasMouseCapture()) return;
+    this.ownerDocument.captured = null;
+    for (const callback of this.listeners.get('lostmousecapture') || [])
+      callback({ target: this, currentTarget: this });
+  }
   getBoundingClientRect() { return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight }; }
 }
 function document() {

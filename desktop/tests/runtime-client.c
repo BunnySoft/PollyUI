@@ -1,4 +1,5 @@
 #include "server.h"
+#include "workspace-cube.h"
 #include "decorator-process.h"
 #include "decoration.h"
 #include "decoration-layout-fixtures.h"
@@ -7,9 +8,11 @@
 #include "input-method.h"
 #include "shortcut-control.h"
 #include "session-lock.h"
+#include "window-opacity.h"
 
 #include <stdio.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -20,6 +23,9 @@
 #include <drm_fourcc.h>
 #include <linux/input-event-codes.h>
 #include <wlr/backend.h>
+#include <wlr/config.h>
+#include <wlr/render/allocator.h>
+#include <wlr/render/wlr_texture.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_buffer.h>
@@ -48,6 +54,36 @@ static const struct wlr_pointer_impl pointer_impl = { .name = "runtime-fixture-p
 static wl_notify_func_t input_listener;
 static wl_notify_func_t output_listener;
 static bool missing_display_identity;
+
+struct wlr_allocator *__real_wlr_allocator_autocreate(struct wlr_backend *backend, struct wlr_renderer *renderer);
+struct wlr_allocator *__wrap_wlr_allocator_autocreate(struct wlr_backend *backend, struct wlr_renderer *renderer);
+#if WLR_HAS_GBM_ALLOCATOR
+struct wlr_allocator *wlr_gbm_allocator_create(int fd);
+#endif
+struct wlr_allocator *__wrap_wlr_allocator_autocreate(struct wlr_backend *backend, struct wlr_renderer *renderer)
+{
+    const char *device = getenv("POLLY_FIXTURE_DRM_ALLOCATOR");
+    if (!device) return __real_wlr_allocator_autocreate(backend, renderer);
+#if WLR_HAS_GBM_ALLOCATOR
+    if (strncmp(device, "/dev/dri/card", 13) || !device[13] || strspn(device + 13, "0123456789") != strlen(device + 13)) {
+        fputs("FAIL: fixture allocator requires an explicit DRM primary node\n", stderr);
+        return NULL;
+    }
+    int fd = open(device, O_RDWR | O_CLOEXEC);
+    if (fd < 0) { perror("fixture DRM allocator"); return NULL; }
+    struct wlr_allocator *allocator = wlr_gbm_allocator_create(fd);
+    if (!allocator) {
+        fputs("FAIL: fixture GBM allocator unavailable\n", stderr);
+        return NULL;
+    }
+    puts("FIXTURE: explicit DRM-backed GBM for headless native GLES acceptance, not KMS scanout");
+    return allocator;
+#else
+    (void)backend; (void)renderer;
+    fputs("FAIL: fixture SDK does not contain GBM\n", stderr);
+    return NULL;
+#endif
+}
 
 static void identified_output(struct wl_listener *listener, void *data)
 {
@@ -746,13 +782,242 @@ static bool capture_caption_output(struct PuDesktopView *view)
     return true;
 }
 
+static struct PuDesktopLayer *preview_layer(void)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop.layers, link)
+        if (layer->presented && layer->surface->surface->mapped &&
+            !strncmp(layer->surface->namespace, "PollyShell.switcher.", 20)) return layer;
+    return NULL;
+}
+
+static struct wlr_scene_tree *preview_tree(struct PuDesktopLayer *layer)
+{
+    if (!layer) return NULL;
+    struct wlr_scene_node *node;
+    wl_list_for_each(node, &layer->tree->children, link) {
+        if (node->type != WLR_SCENE_NODE_TREE) continue;
+        struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+        if (tree != layer->content && tree != layer->popups) return tree;
+    }
+    return NULL;
+}
+
+static struct wlr_scene_buffer *preview_image(struct PuDesktopLayer *layer, unsigned index)
+{
+    struct wlr_scene_tree *tree = preview_tree(layer);
+    if (!tree) return NULL;
+    struct wlr_scene_node *node;
+    wl_list_for_each(node, &tree->children, link) {
+        if (node->type != WLR_SCENE_NODE_BUFFER) continue;
+        if (!index--) return wlr_scene_buffer_from_node(node);
+    }
+    return NULL;
+}
+
+static struct wlr_scene_buffer *projection_image(struct PuDesktopLayer *layer)
+{
+    struct wlr_scene_tree *tree = preview_tree(layer);
+    if (!tree) return NULL;
+    struct wlr_scene_buffer *image = NULL;
+    struct wlr_scene_node *node;
+    wl_list_for_each(node, &tree->children, link)
+        if (node->enabled && node->type == WLR_SCENE_NODE_BUFFER) image = wlr_scene_buffer_from_node(node);
+    return image;
+}
+
+static bool preview_overlay_ready(struct PuDesktopLayer *layer)
+{
+    struct wlr_scene_buffer *image = preview_image(layer, 0);
+    if (!image) return false;
+    struct wlr_surface *surface = layer->surface->surface;
+    struct wlr_buffer *source = surface->buffer ? surface->buffer->source : NULL;
+    if (!source || surface->current.width < 1 || surface->current.height < 1) return false;
+    int ix, iy, lx, ly;
+    if (!wlr_scene_node_coords(&image->node, &ix, &iy) ||
+        !wlr_scene_node_coords(&layer->tree->node, &lx, &ly)) return false;
+    int x = (ix - lx + image->dst_width / 2) * source->width / surface->current.width;
+    int y = (iy - ly + image->dst_height / 2) * source->height / surface->current.height;
+    if (x < 0 || y < 0 || x >= source->width || y >= source->height) return false;
+    void *data;
+    uint32_t format, value;
+    size_t stride;
+    if (!wlr_buffer_begin_data_ptr_access(source, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride))
+        return false;
+    memcpy(&value, (char *)data + (size_t)y * stride + (size_t)x * 4, sizeof(value));
+    unsigned opaque = 0;
+    int top = 8 * source->height / surface->current.height;
+    int bottom = 44 * source->height / surface->current.height;
+    if (bottom > source->height) bottom = source->height;
+    for (int py = top; py < bottom; py++) for (int px = 8; px < source->width - 8; px++) {
+        uint32_t header;
+        memcpy(&header, (char *)data + (size_t)py * stride + (size_t)px * 4, sizeof(header));
+        opaque += (header >> 24) == 255;
+    }
+    wlr_buffer_end_data_ptr_access(source);
+    return format == DRM_FORMAT_ARGB8888 && (value >> 24) == 0 && opaque > 100;
+}
+
+static bool preview_capture(struct PuDesktopLayer *layer, struct wlr_output_state *state)
+{
+    struct wlr_output *output = layer->surface->output;
+    wlr_output_state_init(state);
+    wlr_output_lock_attach_render(output, true);
+    bool built = wlr_scene_output_build_state(wlr_scene_get_scene_output(desktop.scene, output), state, NULL);
+    wlr_output_lock_attach_render(output, false);
+    return built && state->buffer;
+}
+
+static bool wallpaper_pixels(struct PuDesktopLayer *layer, uint64_t *hash)
+{
+    struct wlr_output_state state;
+    CHECK(preview_capture(layer, &state));
+    void *data;
+    uint32_t format;
+    size_t stride;
+    CHECK(wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
+    bool supported = format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888;
+    *hash = UINT64_C(14695981039346656037);
+    if (supported) for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++) {
+        uint32_t pixel;
+        int sx = state.buffer->width / 4 + x * state.buffer->width / 64;
+        int sy = state.buffer->height / 4 + y * state.buffer->height / 64;
+        memcpy(&pixel, (char *)data + (size_t)sy * stride + (size_t)sx * 4, sizeof(pixel));
+        *hash = (*hash ^ (pixel & 0xffffff)) * UINT64_C(1099511628211);
+    }
+    wlr_buffer_end_data_ptr_access(state.buffer);
+    wlr_output_state_finish(&state);
+    CHECK(supported);
+    return true;
+}
+
+static uint32_t *fixture_read_pixels(struct wlr_renderer *renderer, struct wlr_buffer *buffer)
+{
+    if (!buffer || buffer->width < 1 || buffer->height < 1 ||
+        (uint64_t)buffer->width * buffer->height > WLR_SCENE_EFFECTS_MAX_PIXELS) return NULL;
+    uint32_t *pixels = malloc((size_t)buffer->width * buffer->height * 4);
+    struct wlr_texture *texture = pixels ? wlr_texture_from_buffer(renderer, buffer) : NULL;
+    bool read = texture && wlr_texture_read_pixels(texture, &(struct wlr_texture_read_pixels_options){
+        .data = pixels, .format = DRM_FORMAT_ARGB8888, .stride = (uint32_t)buffer->width * 4 });
+    if (texture) wlr_texture_destroy(texture);
+    if (!read) { free(pixels); return NULL; }
+    return pixels;
+}
+
+static bool projection_capture_ready(struct PuDesktopLayer *layer, unsigned color)
+{
+    if (!layer || !layer->surface->surface->buffer) return false;
+    struct wlr_scene_buffer *image = projection_image(layer);
+    if (!image || !image->buffer) return false;
+    struct wlr_buffer *gui = layer->surface->surface->buffer->source;
+    uint32_t *overlay = fixture_read_pixels(desktop.renderer, gui);
+    if (!overlay) return false;
+    int x = (image->node.x + image->dst_width / 2) * gui->width / layer->surface->surface->current.width;
+    int y = (image->node.y + image->dst_height / 2) * gui->height / layer->surface->surface->current.height;
+    bool clear = x >= 0 && y >= 0 && x < gui->width && y < gui->height && (overlay[y * gui->width + x] >> 24) == 0;
+    free(overlay);
+    if (!clear) return false;
+    struct wlr_output_state state;
+    if (!preview_capture(layer, &state)) { wlr_output_state_finish(&state); return false; }
+    uint32_t *pixels = fixture_read_pixels(desktop.renderer, state.buffer);
+    unsigned count = 0;
+    int lx, ly;
+    struct wlr_box output_box;
+    wlr_output_layout_get_box(desktop.layout, layer->surface->output, &output_box);
+    bool positioned = wlr_scene_node_coords(&layer->tree->node, &lx, &ly);
+    float scale = layer->surface->output->scale;
+    int left = (int)lroundf((lx + image->node.x - output_box.x) * scale);
+    int top = (int)lroundf((ly + image->node.y - output_box.y) * scale);
+    int right = left + (int)lroundf(image->dst_width * scale);
+    int bottom = top + (int)lroundf(image->dst_height * scale);
+    if (pixels && positioned) for (int py = top; py < bottom; py++) for (int px = left; px < right; px++)
+        if (py >= 0 && px >= 0 && py < state.buffer->height && px < state.buffer->width &&
+            (pixels[py * state.buffer->width + px] & 0xffffff) == color) count++;
+    free(pixels);
+    wlr_output_state_finish(&state);
+    return count > 1000;
+}
+
+static bool preview_save(struct PuDesktopLayer *layer, const char *mode, unsigned sequence)
+{
+    const char *prefix = getenv("POLLY_PREVIEW_EVIDENCE");
+    if (!prefix) return true;
+    char path[4096];
+    int length = sequence == 1 ? snprintf(path, sizeof(path), "%s-%s.ppm", prefix, mode) :
+        snprintf(path, sizeof(path), "%s-%s-%u.ppm", prefix, mode, sequence);
+    CHECK(length >= 0 && length < (int)sizeof(path));
+    struct wlr_output_state state;
+    CHECK(preview_capture(layer, &state));
+    uint32_t *data = fixture_read_pixels(desktop.renderer, state.buffer);
+    CHECK(data);
+    FILE *file = fopen(path, "wb");
+    CHECK(file);
+    CHECK(fprintf(file, "P6\n%d %d\n255\n", state.buffer->width, state.buffer->height) > 0);
+    for (int y = 0; y < state.buffer->height; y++) for (int x = 0; x < state.buffer->width; x++) {
+        uint32_t pixel;
+        pixel = data[(size_t)y * state.buffer->width + x];
+        const unsigned char rgb[] = {pixel >> 16 & 255, pixel >> 8 & 255, pixel & 255};
+        CHECK(fwrite(rgb, sizeof(rgb), 1, file) == 1);
+    }
+    CHECK(fclose(file) == 0);
+    free(data);
+    wlr_output_state_finish(&state);
+    return true;
+}
+
+static bool preview_color(struct PuDesktopLayer *layer, unsigned index, uint32_t expected)
+{
+    struct wlr_scene_buffer *image = preview_image(layer, index);
+    if (!image || !image->buffer) return false;
+    void *data;
+    uint32_t format;
+    size_t stride;
+    if (!wlr_buffer_begin_data_ptr_access(image->buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+        &data, &format, &stride)) return false;
+    unsigned colored = 0;
+    if (format == DRM_FORMAT_ARGB8888) {
+        for (int y = 0; y < image->buffer->height; y++) for (int x = 0; x < image->buffer->width; x++) {
+            uint32_t value;
+            memcpy(&value, (char *)data + (size_t)y * stride + (size_t)x * 4, sizeof(value));
+            colored += (value >> 24) == 255 && (value & 0xffffff) == expected;
+        }
+    }
+    wlr_buffer_end_data_ptr_access(image->buffer);
+    if (colored < 100) return false;
+    struct wlr_output *output = layer->surface->output;
+    struct wlr_box bounds;
+    wlr_output_layout_get_box(desktop.layout, output, &bounds);
+    int nx, ny;
+    if (!wlr_scene_node_coords(&image->node, &nx, &ny)) return false;
+    int x = (int)((nx - bounds.x + image->dst_width / 2) * output->scale);
+    int y = (int)((ny - bounds.y + image->dst_height / 2) * output->scale);
+    struct wlr_output_state state;
+    bool built = preview_capture(layer, &state);
+    bool matches = false;
+    if (built && state.buffer && x >= 0 && y >= 0 && x < state.buffer->width && y < state.buffer->height &&
+        wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride)) {
+        uint32_t value;
+        memcpy(&value, (char *)data + (size_t)y * stride + (size_t)x * 4, sizeof(value));
+        matches = (format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888) &&
+            (value & 0xffffff) == expected;
+        wlr_buffer_end_data_ptr_access(state.buffer);
+    }
+    wlr_output_state_finish(&state);
+    return matches;
+}
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.window-shell",
-        script, mode, executable, script, NULL };
+        script, mode, executable, script, getenv("POLLY_VIDEO_TEST_FILES"), NULL };
     CHECK(pu_desktop_spawn_shell(&desktop, args));
     pid_t settings_shell_identity = desktop.shell_pid;
     bool success = false, crashed = false;
+    bool fixture_lock_started = false;
+    struct wlr_output *wallpaper_disabled_output = NULL;
+    char disabled_wallpaper_target[96] = "";
+    unsigned preview_capture_sequence = 0;
+    struct wlr_output *cube_capture_output = NULL;
     struct wlr_box placement_boxes[3] = {{0}};
     unsigned settings_sequence = 0;
     unsigned file_dialog_sequence = 0;
@@ -782,6 +1047,362 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            unsigned cube_color;
+            if (sscanf(name, "fixture-cube-ready %x", &cube_color) == 1) {
+                CHECK(pu_workspace_cube_active(&desktop));
+                bool seen = false;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link) {
+                    if (strncmp(layer->surface->namespace, "PollyShell.wallpaper.", 21) || !layer->presented) continue;
+                    struct wlr_output_state state;
+                    CHECK(preview_capture(layer, &state));
+                    uint32_t *pixels = fixture_read_pixels(desktop.renderer, state.buffer);
+                    unsigned count = 0;
+                    if (pixels) for (int y = 0; y < state.buffer->height; y++)
+                        for (int x = 0; x < state.buffer->width; x++)
+                            count += (pixels[y * state.buffer->width + x] & 0xffffff) == cube_color;
+                    free(pixels);
+                    wlr_output_state_finish(&state);
+                    if (count > 1000) {
+                        cube_capture_output = layer->surface->output;
+                        CHECK(preview_save(layer, mode, ++preview_capture_sequence));
+                        seen = true; break;
+                    }
+                }
+                if (!seen) continue;
+                printf("CUBE_PIXELS: actual workspace source color=%06x is composed in the native cube\n", cube_color);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-cube-pointer")) {
+                CHECK(cube_capture_output && pu_workspace_cube_active(&desktop));
+                struct wlr_box bounds;
+                wlr_output_layout_get_box(desktop.layout, cube_capture_output, &bounds);
+                fixture_pointer_click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2,
+                    settings_time += 3, 0);
+                CHECK(!pu_workspace_cube_active(&desktop));
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-cube-transition")) {
+                CHECK(cube_capture_output && pu_workspace_cube_active(&desktop));
+                struct PuDesktopLayer *target = NULL, *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->surface->output == cube_capture_output &&
+                        !strncmp(layer->surface->namespace, "PollyShell.wallpaper.", 21)) target = layer;
+                CHECK(target);
+                fixture_keyboard(KEY_RIGHT, 0, &settings_time);
+                bool both = false;
+                for (unsigned attempt = 0; attempt < 80 && !both; attempt++) {
+                    CHECK(pump());
+                    struct wlr_output_state state;
+                    CHECK(preview_capture(target, &state));
+                    uint32_t *pixels = fixture_read_pixels(desktop.renderer, state.buffer);
+                    unsigned green = 0, blue = 0;
+                    if (pixels) for (int y = 0; y < state.buffer->height; y++)
+                        for (int x = 0; x < state.buffer->width; x++) {
+                            uint32_t color = pixels[y * state.buffer->width + x] & 0xffffff;
+                            green += color == 0x00ff00; blue += color == 0x0000ff;
+                        }
+                    free(pixels);
+                    wlr_output_state_finish(&state);
+                    both = green > 500 && blue > 500;
+                    if (both) CHECK(preview_save(target, "cube-transition", ++preview_capture_sequence));
+                }
+                CHECK(both);
+                puts("CUBE_ROTATION: two real neighboring workspace sources are visible together during native rotation");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (!strcmp(name, "fixture-cube-idle")) {
+                CHECK(pu_workspace_cube_active(&desktop));
+                struct wlr_scene_buffer *image = NULL;
+                struct wlr_scene_node *node;
+                wl_list_for_each(node, &desktop.scene->tree.children, link) {
+                    if (node->type != WLR_SCENE_NODE_TREE || !node->enabled) continue;
+                    struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+                    if (wl_list_length(&tree->children) != 1) continue;
+                    struct wlr_scene_node *child = wl_container_of(tree->children.next, child, link);
+                    if (child->type != WLR_SCENE_NODE_BUFFER) continue;
+                    struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(child);
+                    if (buffer->point_accepts_input && buffer->buffer) image = buffer;
+                }
+                CHECK(image);
+                struct wlr_buffer *held = wlr_buffer_lock(image->buffer);
+                for (unsigned attempt = 0; attempt < 150; attempt++) CHECK(pump());
+                CHECK(pu_workspace_cube_active(&desktop) && image->buffer == held);
+                wlr_buffer_unlock(held);
+                puts("CUBE_IDLE: native cube retains its immutable frame without idle recomposition");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (!strcmp(name, "fixture-video-live") || !strcmp(name, "fixture-video-still")) {
+                struct PuDesktopLayer *layer, *wallpaper = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (!strncmp(layer->surface->namespace, "PollyShell.wallpaper.", 21) && layer->presented)
+                        wallpaper = layer;
+                if (!wallpaper) continue;
+                bool live_video = !strcmp(name, "fixture-video-live");
+                unsigned seen = 0, first = 0;
+                bool sampled = false, stable = true;
+                for (unsigned attempt = 0; attempt < (live_video ? 700u : 80u); attempt++) {
+                    CHECK(pump());
+                    struct wlr_output_state state;
+                    CHECK(preview_capture(wallpaper, &state));
+                    uint32_t *pixels = fixture_read_pixels(desktop.renderer, state.buffer);
+                    CHECK(pixels);
+                    uint32_t color = pixels[(state.buffer->height / 2) * state.buffer->width + state.buffer->width / 2] & 0xffffff;
+                    free(pixels);
+                    wlr_output_state_finish(&state);
+                    if (!sampled) { first = color; sampled = true; }
+                    stable &= first == color;
+                    unsigned red = color >> 16, green = color >> 8 & 255, blue = color & 255;
+                    if (red > 100 && green < 20 && blue < 20) seen |= 1;
+                    if (green > 100 && red < 20 && blue < 20) seen |= 2;
+                    if (blue > 100 && red < 20 && green < 20) seen |= 4;
+                    if (live_video && seen == 7) break;
+                }
+                CHECK(live_video ? seen == 7 : stable && sampled);
+                CHECK(preview_save(wallpaper, mode, ++preview_capture_sequence));
+                puts(live_video ? "VIDEO_NATIVE: actual composed red/green/blue frames, no JavaScript pixel transport" :
+                    "VIDEO_NATIVE: actual composed paused frame remains stable");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (!strcmp(name, "fixture-video-remove-output") || !strcmp(name, "fixture-cube-remove-output")) {
+                struct PuDesktopLayer *layer;
+                struct wlr_output *output = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (!strncmp(layer->surface->namespace, "PollyShell.wallpaper.", 21))
+                        output = layer->surface->output;
+                CHECK(output && desktop.output_count >= 2);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                wlr_output_destroy(output);
+                break;
+            }
+            int companion_x, companion_y;
+            bool companion_pixels = sscanf(name, "fixture-companion-pixels %d %d", &companion_x, &companion_y) == 2;
+            bool companion_through = !companion_pixels &&
+                sscanf(name, "fixture-companion-through %d %d", &companion_x, &companion_y) == 2;
+            if (companion_pixels || companion_through) {
+                struct PuDesktopLayer *layer, *actor = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (!strncmp(layer->surface->namespace, "PollyShell.companion.", 21) &&
+                        layer->surface->surface->mapped && layer->presented) actor = layer;
+                if (!actor) continue;
+                struct wlr_surface *surface = actor->surface->surface;
+                CHECK(actor->surface->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+                if (companion_through) {
+                    CHECK(!pixman_region32_contains_point(&surface->input_region, companion_x, companion_y, NULL));
+                    struct wlr_surface *focus = desktop.seat->keyboard_state.focused_surface;
+                    int x, y;
+                    CHECK(wlr_scene_node_coords(&actor->tree->node, &x, &y));
+                    fixture_pointer_click(x + companion_x, y + companion_y, 85000, 0);
+                    CHECK(desktop.seat->pointer_state.focused_surface &&
+                        desktop.seat->pointer_state.focused_surface != surface);
+                    CHECK(desktop.seat->keyboard_state.focused_surface == focus);
+                    puts("COMPANION_NATIVE: transparent pixel sends actual pointer input through without taking keyboard focus");
+                } else {
+                    uint32_t *pixels = fixture_read_pixels(desktop.renderer, surface->buffer->source);
+                    CHECK(pixels);
+                    unsigned visible = 0, mismatch = 0;
+                    struct wlr_buffer *buffer = surface->buffer->source;
+                    for (int y = 0; y < 96; y++) for (int x = 0; x < 96; x++) {
+                        int lx = companion_x + x, ly = companion_y + y;
+                        CHECK(lx >= 0 && ly >= 0 && lx < surface->current.width && ly < surface->current.height);
+                        int px = (int)((lx + 0.5) * buffer->width / surface->current.width);
+                        int py = (int)((ly + 0.5) * buffer->height / surface->current.height);
+                        bool alpha = (pixels[py * buffer->width + px] >> 24) != 0;
+                        bool input = pixman_region32_contains_point(&surface->input_region, lx, ly, NULL);
+                        mismatch += alpha != input;
+                        visible += alpha;
+                    }
+                    free(pixels);
+                    if (visible < 1000) continue;
+                    CHECK(mismatch == 0);
+                    CHECK(preview_save(actor, mode, ++preview_capture_sequence));
+                    printf("COMPANION_NATIVE: visible pixels=%u, exact transparent/input mismatches=0\n", visible);
+                }
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (!strcmp(name, "fixture-companion-closed")) {
+                bool found = false;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    found |= !strncmp(layer->surface->namespace, "PollyShell.companion.", 21);
+                if (found) continue;
+                puts("COMPANION_NATIVE: owned overlay and input recipient retired");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-companion-remove-output")) {
+                struct PuDesktopLayer *layer;
+                struct wlr_output *output = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (!strncmp(layer->surface->namespace, "PollyShell.companion.", 21))
+                        output = layer->surface->output;
+                CHECK(output && desktop.output_count >= 2);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                wlr_output_destroy(output);
+                break;
+            }
+            if (!strcmp(name, "fixture-projection-transition") || !strcmp(name, "fixture-projection-idle")) {
+                struct wlr_scene_buffer *image = projection_image(preview_layer());
+                CHECK(image && image->buffer);
+                struct wlr_buffer *held = wlr_buffer_lock(image->buffer);
+                bool animated = !strcmp(name, "fixture-projection-transition");
+                if (animated) {
+                    struct wlr_keyboard_key_event event = { .time_msec = 80000, .keycode = KEY_TAB,
+                        .state = WL_KEYBOARD_KEY_STATE_PRESSED, .update_state = true };
+                    wlr_keyboard_notify_key(&keyboard, &event);
+                    event.state = WL_KEYBOARD_KEY_STATE_RELEASED; event.time_msec++;
+                    wlr_keyboard_notify_key(&keyboard, &event);
+                }
+                unsigned changes = 0;
+                for (unsigned attempt = 0; attempt < 100; attempt++) {
+                    CHECK(pump());
+                    image = projection_image(preview_layer());
+                    CHECK(image && image->buffer);
+                    if (image->buffer != held) {
+                        changes++;
+                        wlr_buffer_unlock(held);
+                        held = wlr_buffer_lock(image->buffer);
+                    }
+                }
+                wlr_buffer_unlock(held);
+                CHECK(animated ? changes >= 2 && changes <= 12 : changes == 0);
+                printf("PROJECTION_CADENCE: %s frame changes=%u\n", animated ? "bounded transition" : "idle", changes);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            unsigned projection_color;
+            if (!strcmp(name, "fixture-projection-stack")) {
+                struct PuDesktopLayer *target = preview_layer();
+                static bool diagnostic_saved;
+                if (!diagnostic_saved && preview_tree(target)) {
+                    CHECK(preview_save(target, "stack-diagnostic", ++preview_capture_sequence));
+                    diagnostic_saved = true;
+                }
+                if (!projection_capture_ready(target, 0x00ff00) || !projection_capture_ready(target, 0x0000ff) ||
+                    !(projection_capture_ready(target, 0xff0000) || projection_capture_ready(target, 0xff00ff))) continue;
+                CHECK(preview_save(target, mode, ++preview_capture_sequence));
+                puts("PROJECTION_NATIVE: all three actual source images are independently visible in the perspective stack");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (sscanf(name, "fixture-projection-ready %x", &projection_color) == 1) {
+                CHECK(projection_color <= 0xffffff);
+                struct PuDesktopLayer *target = preview_layer();
+                if (!projection_capture_ready(target, projection_color)) continue;
+                CHECK(preview_save(target, mode, ++preview_capture_sequence));
+                printf("PROJECTION_NATIVE: native GLES stack is visible through actual GUI alpha; color=%06x\n", projection_color);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            unsigned moving;
+            char wallpaper_target[96];
+            if (sscanf(name, "fixture-wallpaper-frame %u %95s", &moving, wallpaper_target) == 2) {
+                CHECK(moving <= 1);
+                struct PuDesktopLayer *layer, *target = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (!strcmp(layer->surface->namespace, wallpaper_target) &&
+                        layer->presented && layer->surface->surface->mapped) target = layer;
+                if (!target) continue;
+                uint64_t first, next;
+                CHECK(wallpaper_pixels(target, &first));
+                bool changed = false;
+                for (unsigned attempt = 0; attempt < (moving ? 300u : 60u); attempt++) {
+                    CHECK(pump());
+                    CHECK(wallpaper_pixels(target, &next));
+                    changed |= first != next;
+                    if (moving && changed) break;
+                }
+                CHECK(changed == (moving == 1));
+                CHECK(preview_save(target, moving ? "wallpaper-live" : "wallpaper-still", ++preview_capture_sequence));
+                printf("WALLPAPER_NATIVE: actual composed central pixels are %s\n", moving ? "animated" : "stable");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            unsigned output_enabled;
+            if (sscanf(name, "fixture-wallpaper-output %u %95s", &output_enabled, wallpaper_target) == 2) {
+                CHECK(output_enabled <= 1);
+                struct wlr_output *target = wallpaper_disabled_output;
+                if (!output_enabled) {
+                    CHECK(!target);
+                    struct PuDesktopLayer *layer;
+                    wl_list_for_each(layer, &desktop.layers, link)
+                        if (!strcmp(layer->surface->namespace, wallpaper_target))
+                            target = layer->surface->output;
+                    strcpy(disabled_wallpaper_target, wallpaper_target);
+                }
+                CHECK(target && !strcmp(disabled_wallpaper_target, wallpaper_target));
+                struct wlr_output_state state;
+                wlr_output_state_init(&state);
+                wlr_output_state_set_enabled(&state, output_enabled == 1);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                CHECK(wlr_output_commit_state(target, &state));
+                wlr_output_state_finish(&state);
+                wallpaper_disabled_output = output_enabled ? NULL : target;
+                break;
+            }
+            unsigned preview_count, preview_index;
+            if (sscanf(name, "fixture-previews-ready %u", &preview_count) == 1) {
+                CHECK(preview_count >= 1 && preview_count <= 9);
+                struct PuDesktopLayer *layer = preview_layer();
+                if (!preview_tree(layer)) continue;
+                bool ready = true;
+                for (unsigned index = 0; index < preview_count; index++) {
+                    struct wlr_scene_buffer *image = preview_image(layer, index);
+                    if (!image || !image->buffer) { ready = false; break; }
+                    CHECK(image->buffer->width <= 1024 && image->buffer->height <= 640);
+                    double x = 0, y = 0;
+                    CHECK(image->point_accepts_input && !image->point_accepts_input(image, &x, &y));
+                }
+                if (!ready || !preview_overlay_ready(layer) ||
+                    !(preview_color(layer, 0, 0x0000ff) || preview_color(layer, 0, 0x00ff00) ||
+                    preview_color(layer, 0, 0xff0000) || preview_color(layer, 0, 0xff00ff))) continue;
+                CHECK(wl_resource_get_client(layer->surface->surface->resource) == desktop.shell_client);
+                CHECK(pixman_region32_contains_point(&layer->surface->surface->input_region,
+                    layer->surface->surface->current.width / 2, layer->surface->surface->current.height / 2, NULL));
+                printf("PREVIEW_NATIVE: %u owned actual window frames are visible through the real selector alpha holes; no preview-node input\n",
+                    preview_count);
+                CHECK(preview_save(layer, mode, ++preview_capture_sequence));
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (sscanf(name, "fixture-preview-live %u", &preview_index) == 1) {
+                bool first = false, second = false;
+                for (unsigned attempt = 0; attempt < 700 && !(first && second); attempt++) {
+                    CHECK(pump());
+                    struct PuDesktopLayer *layer = preview_layer();
+                    first |= preview_color(layer, preview_index, 0xff0000);
+                    second |= preview_color(layer, preview_index, 0xff00ff);
+                }
+                CHECK(first && second);
+                puts("PREVIEW_LIVE: source window red/magenta commits reach the actual composed selector without a JS pixel channel");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (sscanf(name, "fixture-preview-idle %u", &preview_index) == 1) {
+                struct wlr_scene_buffer *image = preview_image(preview_layer(), preview_index);
+                CHECK(image && image->buffer);
+                struct wlr_buffer *held = wlr_buffer_lock(image->buffer);
+                for (unsigned attempt = 0; attempt < 100; attempt++) CHECK(pump());
+                image = preview_image(preview_layer(), preview_index);
+                CHECK(image && image->buffer == held);
+                wlr_buffer_unlock(held);
+                puts("PREVIEW_IDLE: unchanged source reuses the same owned frame while another source animates");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
+            if (!strcmp(name, "fixture-previews-closed")) {
+                CHECK(!pu_shortcuts_switching(&desktop));
+                if (preview_layer()) continue;
+                puts("PREVIEW_CLOSED: selector and native preview recipients retired");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             unsigned placement_height;
             if (sscanf(name, "fixture-placement-output-height %u", &placement_height) == 1) {
                 CHECK(placement_height == 360 || placement_height == 720);
@@ -913,11 +1534,11 @@ static bool window_suite(char *executable, char *script, char *mode)
                 CHECK(wlr_output_commit_state(target, &state)); wlr_output_state_finish(&state);
                 wlr_layer_surface_v1_destroy(marker->surface); continue;
             }
-            if (!strcmp(name, "fixture-desktop-lock")) {
-                static bool started_lock;
-                if (!started_lock) {
-                    char *args[] = { getenv("PU_DESKTOP_FIXTURE_LOCK"), "unlock", NULL };
-                    CHECK(args[0] && pu_session_lock_spawn(&desktop, args)); started_lock = true;
+            if (!strcmp(name, "fixture-desktop-lock") || !strcmp(name, "fixture-desktop-lock-long")) {
+                if (!fixture_lock_started) {
+                    char *args[] = { getenv("PU_DESKTOP_FIXTURE_LOCK"),
+                        !strcmp(name, "fixture-desktop-lock-long") ? "unlock-held" : "unlock", NULL };
+                    CHECK(args[0] && pu_session_lock_spawn(&desktop, args)); fixture_lock_started = true;
                 }
                 if (!pu_session_lock_active(&desktop)) continue;
                 if (desktop.seat->keyboard_state.focused_surface &&
@@ -930,6 +1551,7 @@ static bool window_suite(char *executable, char *script, char *mode)
             if (!strcmp(name, "fixture-desktop-unlocked")) {
                 if (pu_session_lock_pid(&desktop) || pu_session_lock_active(&desktop)) continue;
                 CHECK(pu_session_lock_client_succeeded(&desktop));
+                fixture_lock_started = false;
                 puts("PASS: desktop real session lock completed explicit protocol unlock");
                 wlr_layer_surface_v1_destroy(marker->surface); continue;
             }
@@ -1344,6 +1966,84 @@ static bool window_suite(char *executable, char *script, char *mode)
                     wlr_xdg_toplevel_send_close(view->toplevel);
                     acknowledge_settings_marker(request);
                 }
+                continue;
+            }
+            if (!strcmp(name, "fixture-settings-transparency")) {
+                struct PuDesktopView *view = NULL, *item, *settings = settings_view();
+                wl_list_for_each(item, &desktop.views, link)
+                    if (item->mapped && !item->geometry_pending && item->toplevel->title &&
+                        !strcmp(item->toplevel->title, "Transparency preview")) view = item;
+                if (!view || !settings) continue;
+                struct wlr_surface *surface = view->toplevel->base->surface;
+                struct wlr_buffer *buffer = surface->buffer ? surface->buffer->source : NULL;
+                if (!buffer || buffer->width < 16 || buffer->height < 16) continue;
+                void *pixels;
+                uint32_t format, pixel;
+                size_t stride;
+                CHECK(wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+                    &pixels, &format, &stride));
+                memcpy(&pixel, (char *)pixels + 8 * stride + 8 * 4, sizeof(pixel));
+                unsigned opaque = 0;
+                for (int py = 0; py < buffer->height; py++)
+                    for (int px = 0; px < buffer->width; px++) {
+                        uint32_t value;
+                        memcpy(&value, (char *)pixels + (size_t)py * stride + (size_t)px * 4, sizeof(value));
+                        if ((value >> 24) == 255) opaque++;
+                    }
+                wlr_buffer_end_data_ptr_access(buffer);
+                if ((pixel >> 24) != 128 || opaque < 100) continue;
+                CHECK(format == DRM_FORMAT_ARGB8888);
+                CHECK(wl_resource_get_client(view->toplevel->base->resource) ==
+                    wl_resource_get_client(settings->toplevel->base->resource));
+                CHECK(wl_resource_get_client(view->toplevel->base->resource) != desktop.shell_client);
+                CHECK(pixman_region32_contains_point(&surface->input_region, 8, 8, NULL));
+                printf("SETTINGS_TRANSPARENCY: real owned ordinary surface, background alpha=%u, "
+                    "opaque foreground pixels=%u, rectangular input retained\n", pixel >> 24, opaque);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            unsigned expected_opacity;
+            if (!strcmp(name, "fixture-settings-opacity-pressure")) {
+                struct PuDesktopView *view = NULL, *item;
+                wl_list_for_each(item, &desktop.views, link)
+                    if (item->mapped && item->toplevel->title &&
+                        !strcmp(item->toplevel->title, "Transparency preview")) view = item;
+                if (!view) continue;
+                CHECK(desktop.window_opacity_percent == 75);
+                struct wlr_scene_rect *pressure = wlr_scene_rect_create(view->popups, 40000, 1,
+                    (float[4]){1, 1, 1, 1});
+                CHECK(pressure);
+                CHECK(!pu_desktop_set_window_opacity(&desktop, 50));
+                CHECK(desktop.window_opacity_percent == 75);
+                wlr_scene_node_destroy(&pressure->node);
+                CHECK(pu_window_effects_update(view) && desktop.window_opacity_percent == 75);
+                pressure = wlr_scene_rect_create(view->popups, 40000, 1, (float[4]){1, 1, 1, 1});
+                CHECK(pressure && pu_window_effects_update(view));
+                CHECK(desktop.window_opacity_percent == 100 && desktop.window_opacity_error[0]);
+                wlr_scene_node_destroy(&pressure->node);
+                CHECK(!desktop.failed);
+                puts("SETTINGS_WINDOW_OPACITY_PRESSURE: invalid popup extent rejects a request, "
+                    "then new geometry explicitly disables transparency without terminating the desktop");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (sscanf(name, "fixture-settings-window-opacity %u", &expected_opacity) == 1) {
+                CHECK(expected_opacity >= 50 && expected_opacity <= 100);
+                if (desktop.window_opacity_percent != expected_opacity) continue;
+                struct PuDesktopView *view;
+                unsigned ordinary = 0;
+                wl_list_for_each(view, &desktop.views, link) {
+                    if (!view->mapped || !view->toplevel->base->surface->buffer ||
+                        wl_resource_get_client(view->toplevel->base->resource) == desktop.shell_client) continue;
+                    if (expected_opacity < 100) CHECK(view->effects->rounding);
+                    ordinary++;
+                }
+                CHECK(ordinary >= 3);
+                CHECK(desktop.scene->effects_cached_bytes > 0 &&
+                    desktop.scene->effects_cached_bytes <= WLR_SCENE_EFFECTS_MAX_BYTES);
+                printf("SETTINGS_WINDOW_OPACITY: percent=%u, ordinary windows=%u, "
+                    "new preview included, group caches bounded\n", expected_opacity, ordinary);
+                wlr_layer_surface_v1_destroy(marker->surface);
                 continue;
             }
             unsigned code, modifiers;

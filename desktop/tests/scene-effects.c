@@ -400,6 +400,19 @@ static bool backdrop_taller_peak_suite(struct PuDesktop *desktop, struct wlr_out
 static bool backdrop_suite(struct PuDesktop *desktop, struct wlr_output *output)
 {
     CHECK(wlr_scene_backdrop_supported(desktop->renderer));
+    size_t hidden_before = desktop->scene->effects_cached_bytes;
+    struct wlr_scene_tree *hidden = wlr_scene_tree_create(desktop->layer_trees[2]);
+    CHECK(hidden);
+    wlr_scene_node_set_enabled(&hidden->node, false);
+    CHECK(wlr_scene_rect_create(hidden, 96, 64, (float[4]){1, 0, 1, 1}));
+    struct wlr_scene_tree *nested = wlr_scene_tree_create(hidden);
+    CHECK(nested);
+    struct wlr_scene_rect *hidden_backdrop = wlr_scene_backdrop_create(nested,
+        &(struct wlr_box){0, 0, 96, 64}, 0, 1, (float[4]){0});
+    CHECK(hidden_backdrop && !hidden->node.enabled);
+    wlr_scene_node_destroy(&hidden->node);
+    CHECK(desktop->scene->effects_cached_bytes == hidden_before);
+    puts("PASS: hidden ancestor backdrop preflight locates its stop without enabling hidden siblings");
     struct wlr_scene_tree *apps = wlr_scene_tree_create(desktop->windows);
     CHECK(apps);
     struct wlr_scene_tree *first = wlr_scene_tree_create(apps), *second = wlr_scene_tree_create(apps);

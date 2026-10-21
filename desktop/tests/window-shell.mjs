@@ -200,7 +200,7 @@ async function run() {
       await placementMark('check', slot, nativeMode);
       check(admissions === count + 1, 'real pointer admits exactly one ' + action);
     }
-    check(preferences() === pointerPreferences && shell.configuration.snapshot.version === 4,
+    check(preferences() === pointerPreferences && shell.configuration.snapshot.version === 5,
       'native pointer placement preserves exact v4 preference bytes');
     check(shell.selectTheme('server2003'), 'Classic uses the same native window placement commands');
     const keyboardPreferences = preferences();

@@ -1,9 +1,11 @@
 /* Wayland lifecycle patterns informed by wlroots tinywl; see ../LICENSE.wlroots. */
 #include "server.h"
+#include "window-opacity.h"
 #include "polly-session-status-server.h"
 #include "decoration.h"
 #include "decorator-process.h"
 #include "workspace.h"
+#include "workspace-cube.h"
 #include "shortcut-control.h"
 #include "session-lock.h"
 #include "output-control.h"
@@ -1392,7 +1394,7 @@ static void present_view(struct PuDesktopView *view)
     };
     wlr_scene_subsurface_tree_set_clip(&view->content->node,
         view->mode != PU_DESKTOP_FLOATING ? &clip : NULL);
-    if (!pu_decoration_effects(view)) {
+    if (!pu_window_effects_update(view)) {
         fail(view->desktop, "Cannot apply native window effects");
         return;
     }
@@ -1404,9 +1406,11 @@ static void present_view(struct PuDesktopView *view)
 void pu_desktop_decoration_ready(struct PuDesktopView *view)
 {
     if (view->desktop->stopping) return;
+    view->preview_revision++;
+    pu_shortcuts_preview_damage(view);
     present_view(view);
     pu_decoration_update(view);
-    if (!pu_decoration_effects(view))
+    if (!pu_window_effects_update(view))
         fail(view->desktop, "Cannot update native window effects");
 }
 
@@ -1742,6 +1746,10 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
     pu_workspaces_system_menu_validate(desktop);
     pu_workspaces_picker_validate(desktop);
     if (pu_session_lock_active(desktop)) { pu_session_lock_motion(desktop, time); return; }
+    if (pu_workspace_cube_active(desktop)) {
+        wlr_seat_pointer_notify_clear_focus(desktop->seat);
+        return;
+    }
     pu_input_method_reposition(desktop);
     pu_data_device_motion(desktop);
     struct PuDesktopView *view = desktop->grabbed;
@@ -1917,6 +1925,13 @@ static void cursor_button(struct wl_listener *listener, void *data)
         return;
     }
     pu_cursor_button(desktop, event->button, pressed);
+    if (pu_workspace_cube_active(desktop)) {
+        if (pressed) {
+            desktop->suppressed_button = event->button;
+            pu_workspace_cube_pointer(desktop, event->button == BTN_LEFT, desktop->cursor->x, desktop->cursor->y);
+        }
+        return;
+    }
     if (!pressed && desktop->suppressed_button == event->button) {
         desktop->suppressed_button = 0;
         struct PuDesktopView *view = desktop->decoration_pressed;
@@ -2024,6 +2039,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
 static void cursor_axis(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, axis);
+    if (pu_workspace_cube_active(desktop)) return;
     struct wlr_pointer_axis_event *event = data;
     if (pu_session_lock_active(desktop) &&
         !pu_session_lock_surface(desktop, desktop->seat->pointer_state.focused_surface)) return;
@@ -2184,6 +2200,12 @@ static void output_frame(struct wl_listener *listener, void *data)
     if (!entry->output->enabled) return;
     struct wlr_scene_output *output =
         wlr_scene_get_scene_output(entry->desktop->scene, entry->output);
+    if (!pu_desktop_prepare_window_opacity(entry->desktop)) {
+        fail(entry->desktop, "Cannot prepare current window-opacity surfaces");
+        return;
+    }
+    pu_shortcuts_prepare_previews(entry->desktop, entry->output);
+    pu_workspace_cube_prepare(entry->desktop, entry->output);
     live_boot_frame(entry);
     pu_session_lock_prepare_frame(entry->desktop, entry->output);
     if (entry->backdrop_stalled &&
@@ -2442,6 +2464,10 @@ static void view_map(struct wl_listener *listener, void *data)
     view->resize_pending = false;
     present_view(view);
     wlr_scene_node_set_enabled(&view->tree->node, !view->minimized && pu_workspace_current(view));
+    if (!pu_window_effects_update(view)) {
+        fail(desktop, "Cannot prepare mapped window composition");
+        return;
+    }
     wl_list_insert(&desktop->views, &view->link);
     view->foreign = wlr_foreign_toplevel_handle_v1_create(desktop->foreign_manager);
     if (!view->foreign) { wl_resource_post_no_memory(view->toplevel->resource); return; }
@@ -2508,6 +2534,8 @@ static void view_commit(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopView *view = wl_container_of(listener, view, commit);
+    pu_workspace_cube_damage(view->desktop);
+    view->preview_revision++;
     if (view->toplevel->base->initial_commit) {
         pu_decoration_configure(view);
         view->output = initial_output(view->desktop);
@@ -2702,9 +2730,10 @@ static void new_toplevel(struct wl_listener *listener, void *data)
         wl_resource_post_no_memory(toplevel->resource);
         return;
     }
-    view->backdrop = wlr_scene_rect_create(view->tree, 1, 1, (float[4]){0, 0, 0, 1});
     view->shadow = wlr_scene_shadow_create(view->tree);
     view->effects = wlr_scene_tree_create(view->tree);
+    view->backdrop = view->effects ?
+        wlr_scene_rect_create(view->effects, 1, 1, (float[4]){0, 0, 0, 1}) : NULL;
     view->content = view->effects ? wlr_scene_xdg_surface_create(view->effects, toplevel->base) : NULL;
     if (!view->shadow || !view->effects || !view->content) {
         wlr_scene_node_destroy(&view->tree->node);
@@ -2826,6 +2855,14 @@ static void popup_commit(struct wl_listener *listener, void *data)
         wlr_xdg_surface_schedule_configure(entry->popup->base);
     }
     constrain_popup_tree(entry->popup->base);
+    for (struct wlr_scene_tree *root = entry->tree; root; root = root->node.parent) {
+        struct PuDesktopOwner *owner = root->node.data;
+        if (owner && owner->view) {
+            if (!pu_window_effects_update(owner->view))
+                fail(entry->desktop, "Cannot prepare popup opacity composition");
+            break;
+        }
+    }
 }
 
 static void popup_reposition(struct wl_listener *listener, void *data)
@@ -2914,6 +2951,7 @@ static int stop_signal(int signal_number, void *data)
 bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
 {
     memset(desktop, 0, sizeof(*desktop));
+    desktop->window_opacity_percent = 100;
     const char *live = getenv("POLLY_LIVE_STARTUP"), *splash = getenv("POLLY_LIVE_SPLASH");
     desktop->live_startup = live && !strcmp(live, "1");
     desktop->live_splash = desktop->live_startup && splash && !strcmp(splash, "1");

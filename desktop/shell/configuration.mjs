@@ -5,10 +5,15 @@ import { validateWorkspacePreferences, readWorkspacePreferences } from './deskto
 import { validateShortcuts, migrateLegacyShortcuts } from './desktop/shell/shortcuts.mjs';
 import { validateDesktopShortcuts } from './desktop/shell/desktop-shortcuts.mjs';
 import { validateLauncherPins } from './desktop/shell/launcher-pins.mjs';
+import { transparencyMode, windowOpacityPercent } from './desktop/shared/ui/transparency.mjs';
+import { windowSwitcherStyle, windowSwitcherMotion } from './desktop/shared/ui/window-switcher.mjs';
+import { wallpaperPreferences } from './desktop/shared/ui/procedural-wallpaper.mjs';
+import { companionPreferences } from './desktop/shared/ui/companion.mjs';
+import { workspaceCubePreferences } from './desktop/shared/ui/workspace-cube.mjs';
 
 export const SHELL_CONFIGURATION_FILE = 'shell-preferences.json';
 export function defaultShellConfiguration() {
-  return { version: 4, theme: { id: null, filesEnabled: true },
+  return { version: 5, theme: { id: null, filesEnabled: true, transparency: 'theme', windowOpacityPercent: 100 },
     audio: null, display: null, workspace: null, shortcuts: null,
     desktop: { version: 1, shortcuts: [] }, launchers: { version: 1, applications: [] } };
 }
@@ -19,17 +24,29 @@ function keys(value, expected) {
 export function validateShellConfiguration(value, report) {
   const legacy = value?.version === 1 && keys(value, 'audio,display,shortcuts,theme,version,workspace');
   const previous = value?.version === 2 && keys(value, 'audio,desktop,display,shortcuts,theme,version,workspace');
-  const withLaunchers = (value?.version === 3 || value?.version === 4) &&
+  const withLaunchers = [3, 4, 5].includes(value?.version) &&
     keys(value, 'audio,desktop,display,launchers,shortcuts,theme,version,workspace');
+  const themeFields = ['filesEnabled', 'id'];
+  for (const field of ['transparency', 'windowOpacityPercent', 'switcherStyle', 'switcherMotion', 'wallpaper', 'companion', 'workspaceCube'])
+    if (value?.theme && Object.hasOwn(value.theme, field)) themeFields.push(field);
   if ((!legacy && !previous && !withLaunchers) ||
-      !keys(value.theme, 'filesEnabled,id') || typeof value.theme.filesEnabled !== 'boolean' ||
+      !keys(value.theme, themeFields.sort().join(',')) ||
+      typeof value.theme.filesEnabled !== 'boolean' ||
       (value.theme.id !== null && (typeof value.theme.id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.theme.id))))
     throw new TypeError('Invalid or unsupported Shell configuration schema');
-  return { version: 4, theme: { ...value.theme },
+  if (Object.hasOwn(value.theme, 'switcherStyle')) windowSwitcherStyle(value.theme.switcherStyle);
+  if (Object.hasOwn(value.theme, 'switcherMotion')) windowSwitcherMotion(value.theme.switcherMotion);
+  if (Object.hasOwn(value.theme, 'wallpaper')) wallpaperPreferences(value.theme.wallpaper);
+  if (Object.hasOwn(value.theme, 'companion')) companionPreferences(value.theme.companion);
+  if (Object.hasOwn(value.theme, 'workspaceCube')) workspaceCubePreferences(value.theme.workspaceCube);
+  return { version: 5, theme: { ...value.theme,
+    transparency: transparencyMode(Object.hasOwn(value.theme, 'transparency') ? value.theme.transparency : 'theme'),
+    windowOpacityPercent: windowOpacityPercent(Object.hasOwn(value.theme, 'windowOpacityPercent') ?
+      value.theme.windowOpacityPercent : 100) },
     audio: value.audio === null ? null : validateAudioPreferences(value.audio),
     display: value.display === null ? null : validateDisplayProfile(value.display),
     workspace: value.workspace === null ? null : validateWorkspacePreferences(value.workspace),
-    shortcuts: value.shortcuts === null ? null : value.version === 4 ? validateShortcuts(value.shortcuts) :
+    shortcuts: value.shortcuts === null ? null : value.version >= 4 ? validateShortcuts(value.shortcuts) :
       migrateLegacyShortcuts(value.shortcuts, report),
     desktop: legacy ? { version: 1, shortcuts: [] } : validateDesktopShortcuts(value.desktop),
     launchers: withLaunchers ? validateLauncherPins(value.launchers) : { version: 1, applications: [] } };
@@ -99,7 +116,7 @@ export function createShellConfiguration(files, readLegacy, report = console.err
     else {
       const parsed = JSON.parse(decodeUtf8(bytes));
       const migrated = snapshot(validateShellConfiguration(parsed, diagnostic));
-      if (parsed.version !== 4) publish(migrated);
+      if (parsed.version !== 5) publish(migrated);
       else current = migrated;
     }
     if (diagnostics.length) report(diagnostics.join('; '));

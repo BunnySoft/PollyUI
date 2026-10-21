@@ -35,7 +35,8 @@ def load(path=MANIFEST):
     if (type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1 or value["distribution"] != "debian13" or
             value["architecture"] != "x86_64" or value["defaultSku"] != "full"):
         raise ValueError("Unsupported hardware profile manifest")
-    keys(value["packageGroups"], ("common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics", "physicalNetworkAudio"))
+    keys(value["packageGroups"], ("common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics",
+                                 "physicalNetworkAudio", "standardWirelessAudio", "standardUtilities"))
     packages = []
     for group in value["packageGroups"].values():
         strings(group, r"[a-z0-9][a-z0-9+.-]*(?:=[A-Za-z0-9.+:~_-]+)?")
@@ -93,7 +94,7 @@ def profile(sku, path=MANIFEST):
     selected = value["profiles"][sku]
     required = [pkg for name in selected["packageGroups"] for pkg in value["packageGroups"][name]]
     forbidden = [pkg.split("=")[0] for name, group in value["packageGroups"].items()
-                 if name not in selected["packageGroups"] for pkg in group]
+                 if name != "standardUtilities" and name not in selected["packageGroups"] for pkg in group]
     return {"sku": sku, "manifestSha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             "requiredPackages": required, "forbiddenPackages": forbidden,
             "requiredModules": selected["requiredModules"],
@@ -144,6 +145,7 @@ def packages(root):
 
 def verify_packages(installed, selected):
     allowed = {spec.split("=")[0] for spec in selected["requiredPackages"]}
+    allowed.update(spec.split("=")[0] for spec in selected.get("optionalPackages", ()))
     for spec in selected["requiredPackages"]:
         name, _, version = spec.partition("=")
         if name not in installed or version and installed[name]["version"] != version:
@@ -174,8 +176,12 @@ def verify(root, sku=None, path=MANIFEST):
             raise ValueError("Basic modprobe policy cannot leak into another SKU")
     checked = selected
     if not explicit and not present:
-        checked = {**selected, "requiredPackages": [spec for spec in selected["requiredPackages"]
-                                                   if spec != "firmware-amd-graphics"]}
+        historical_optional = {"firmware-amd-graphics", "firmware-realtek",
+                               *load(path)["packageGroups"]["standardWirelessAudio"],
+                               *load(path)["packageGroups"]["standardUtilities"]}
+        checked = {**selected, "optionalPackages": historical_optional,
+                   "requiredPackages": [spec for spec in selected["requiredPackages"]
+                                                   if spec not in historical_optional]}
     verify_packages(packages(root), checked)
     if selected["kernelPolicy"] == "basic-pack":
         runpy.run_path(str(Path(__file__).with_name("basic-kernel.py")))["verify_root"](root)
@@ -239,7 +245,7 @@ def grub_configuration(template, identity, sku=None):
 def clean_runtime(root, path=MANIFEST):
     installed = packages(root)
     forbidden = {pkg.split("=")[0] for name, group in load(path)["packageGroups"].items()
-                 if name != "common" for pkg in group}
+                 if name not in ("common", "standardUtilities") for pkg in group}
     payload = [root / "usr/lib/firmware", root / "usr/lib/modules"]
     if (any(name in forbidden or name.startswith("firmware-") for name in installed) or
             any(not file.is_dir() for directory in payload if directory.exists() for file in directory.rglob("*")) or

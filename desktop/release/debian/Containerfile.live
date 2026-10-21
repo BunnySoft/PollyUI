@@ -4,7 +4,7 @@ USER root
 WORKDIR /
 ARG HARDWARE_SKU=full
 ARG CONFIGURED_BUILD=0
-COPY release/debian/live-profile.py release/debian/live-profiles.json release/debian/basic-kernel.py release/debian/live-display.py /usr/lib/polly-hardware/
+COPY release/debian/live-profile.py release/debian/live-profiles.json release/debian/basic-kernel.py release/debian/live-display.py release/debian/standard-hardware.py release/debian/network-sysctl.conf /usr/lib/polly-hardware/
 COPY release/debian/live-config.py /usr/lib/polly-hardware/live-config.py
 COPY release/debian/archive-trust.json /usr/lib/polly-hardware/archive-trust.json
 COPY tools/live-root.py /usr/lib/polly-hardware/live-root.py
@@ -24,6 +24,9 @@ RUN python3 -I -B /usr/lib/polly-hardware/live-profile.py clean-runtime && \
     iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode && \
     python3 -I -B /usr/lib/polly-hardware/live-profile.py mark --sku "$HARDWARE_SKU" && \
     chmod 644 /usr/lib/polly-hardware/* && chown -R 0:0 /usr/lib/polly-hardware && \
+    if [ "$HARDWARE_SKU" = full ]; then \
+        install -D -m 644 /usr/lib/polly-hardware/network-sysctl.conf /etc/sysctl.d/70-polly-live-network.conf; \
+    fi && \
     rm -rf /tmp/polly-basic-kernel
 COPY release/live/init /init
 COPY release/live/session /usr/bin/polly-live-session

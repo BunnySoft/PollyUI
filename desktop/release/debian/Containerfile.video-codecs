@@ -1,0 +1,11 @@
+ARG SDK_IMAGE=localhost/polly-debian-sdk
+FROM ${SDK_IMAGE}
+USER root
+RUN apt-get update -qq -o APT::Update::Error-Mode=any && \
+    apt-get install -y --no-install-recommends --no-upgrade nasm gpg gpgv
+COPY ffmpeg-9.0.2.tar.xz ffmpeg-9.0.2.tar.xz.asc ffmpeg-devel.asc /opt/polly-video-inputs/
+COPY build-video-codecs.py video-codecs.json /opt/polly-video-recipe/
+RUN python3 -I -B /opt/polly-video-recipe/build-video-codecs.py \
+    /opt/polly-video-inputs /opt/polly-video-build /opt/pollyui-video-codecs
+ENV PKG_CONFIG_PATH=/opt/pollyui-video-codecs/lib/pkgconfig:/opt/pollyui-input/lib/pkgconfig:/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots-effects4/lib/pkgconfig
+WORKDIR /workspace

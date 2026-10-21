@@ -4,6 +4,7 @@ import { wallpaper } from './desktop/shell/appearance.mjs';
 import { desktopIcon, themedText, desktopCommand, selectionInk } from './desktop/shell/presentation.mjs';
 import { DESKTOP_GRID } from './desktop/shell/desktop-shortcuts.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
+import { videoWallpaperCover } from './desktop/shared/ui/video-wallpaper.mjs';
 
 function shortcutLabel(theme, name, selected) {
   const shadow = !selected && theme.icons.desktopLabelStyle === 'shadow';
@@ -16,13 +17,19 @@ function shortcutLabel(theme, name, selected) {
     color: '#000000', ...bodyFont(theme), fontSize: 12, textAlign: 'center', pointerEvents: 'none' } }, name) : null, name);
 }
 
-export function desktopView(theme, asset, state, entries, message = '', images = new Map()) {
+export function desktopView(theme, asset, state, entries, message = '', images = new Map(), video = null) {
   const art = wallpaper(theme, 'shell-wallpaper', asset);
+  const cover = video ? videoWallpaperCover(video.width, video.height, video.outputWidth, video.outputHeight) : null;
   art.props.style.pointerEvents = 'none';
   const catalog = new Map(entries.map(entry => [entry.id, entry]));
   return h('view', { id: 'shell-desktop', role: 'group', 'aria-label': 'Desktop shortcuts',
     style: { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'hidden' } },
   art,
+  video ? h('view', { id: 'shell-wallpaper-video', 'aria-hidden': 'true', style: {
+    position: 'absolute', left: cover.x, top: cover.y, width: cover.width, height: cover.height,
+    backgroundImage: video.key, pointerEvents: 'none' } }) : null,
+  h('view', { id: 'shell-wallpaper-motion', 'aria-hidden': 'true', style: {
+    position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' } }),
   h('view', { id: 'shell-desktop-icons', role: 'listbox', 'aria-label': 'Applications on this desktop',
     'aria-multiselectable': 'true', style: { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' } },
   state.items.map(item => {

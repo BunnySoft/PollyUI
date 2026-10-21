@@ -1,8 +1,7 @@
 diff --git a/include/render/gles2.h b/include/render/gles2.h
-index 6b852dc..86a0cac 100644
 --- a/include/render/gles2.h
 +++ b/include/render/gles2.h
-@@ -42,6 +42,7 @@ struct wlr_gles2_renderer {
+@@ -42,6 +42,7 @@
  
  	struct wlr_egl *egl;
  	int drm_fd;
@@ -10,7 +9,7 @@ index 6b852dc..86a0cac 100644
  
  	struct wlr_drm_format_set shm_texture_formats;
  
-@@ -78,6 +79,11 @@ struct wlr_gles2_renderer {
+@@ -78,8 +79,22 @@
  			GLuint program;
  			GLint proj;
  			GLint color;
@@ -21,20 +20,39 @@ index 6b852dc..86a0cac 100644
 +			GLint shadow_original_box;
  			GLint pos_attrib;
  		} quad;
++		struct {
++			GLuint program;
++			GLint proj, tex_proj, tex, kernel, kernel_size, direction;
++			GLint size, tint, corner_radius, pos_attrib;
++		} blur;
++		struct {
++			GLuint program;
++			GLint tex, opacity, background, position, texcoord;
++		} projected;
  		struct wlr_gles2_tex_shader tex_rgba;
-@@ -134,6 +140,7 @@ struct wlr_gles2_texture {
+ 		struct wlr_gles2_tex_shader tex_rgbx;
+ 		struct wlr_gles2_tex_shader tex_ext;
+@@ -106,6 +121,7 @@
+ 
+ 	EGLImageKHR image;
+ 	GLuint rbo;
++	GLuint depth_rbo;
+ 	GLuint fbo;
+ 	GLuint tex;
+ 
+@@ -134,6 +150,8 @@
  struct wlr_gles2_render_pass {
  	struct wlr_render_pass base;
  	struct wlr_gles2_buffer *buffer;
 +	bool failed;
++	bool projection_depth_cleared;
  	float projection_matrix[9];
  	struct wlr_egl_context prev_ctx;
  	struct wlr_gles2_render_timer *timer;
 diff --git a/include/render/pixman.h b/include/render/pixman.h
-index 0984214..bcbaf1d 100644
 --- a/include/render/pixman.h
 +++ b/include/render/pixman.h
-@@ -49,6 +49,7 @@ struct wlr_pixman_texture {
+@@ -49,6 +49,7 @@
  struct wlr_pixman_render_pass {
  	struct wlr_render_pass base;
  	struct wlr_pixman_buffer *buffer;
@@ -43,22 +61,56 @@ index 0984214..bcbaf1d 100644
  
  pixman_format_code_t get_pixman_format_from_drm(uint32_t fmt);
 diff --git a/include/wlr/render/gles2.h b/include/wlr/render/gles2.h
-index 454e7eb..93efde2 100644
 --- a/include/wlr/render/gles2.h
 +++ b/include/wlr/render/gles2.h
-@@ -43,6 +43,7 @@ struct wlr_gles2_texture_attribs {
+@@ -12,6 +12,7 @@
+ #include <GLES2/gl2.h>
+ 
+ #include <wlr/render/wlr_renderer.h>
++#include <wlr/util/box.h>
+ 
+ struct wlr_egl;
+ 
+@@ -43,6 +44,35 @@
  };
  
  bool wlr_renderer_is_gles2(struct wlr_renderer *wlr_renderer);
 +bool wlr_gles2_renderer_supports_scene_effects(struct wlr_renderer *renderer);
++bool wlr_gles2_renderer_supports_backdrop(struct wlr_renderer *renderer);
++bool wlr_gles2_renderer_supports_projection(struct wlr_renderer *renderer);
++
++struct wlr_gles2_blur_options {
++	struct wlr_texture *texture;
++	const float *kernel;
++	uint32_t kernel_size;
++	struct wlr_box source;
++	bool vertical;
++	float tint[4];
++	float corner_radius;
++};
++
++/* A full-target separable FIR pass, with an equally-sized source crop. */
++bool wlr_gles2_render_pass_blur(struct wlr_render_pass *pass,
++	const struct wlr_gles2_blur_options *options);
++
++struct wlr_gles2_projected_texture_options {
++	struct wlr_texture *texture;
++	/* Homogeneous clip-space vertices: top-left, top-right, bottom-left, bottom-right. */
++	float vertices[16];
++	float background[4];
++	float opacity;
++};
++
++/* A depth-tested, perspective-correct quad. Translucent quads need back-to-front order. */
++bool wlr_gles2_render_pass_add_projected_texture(struct wlr_render_pass *pass,
++	const struct wlr_gles2_projected_texture_options *options);
  bool wlr_render_timer_is_gles2(struct wlr_render_timer *timer);
  bool wlr_texture_is_gles2(struct wlr_texture *texture);
  void wlr_gles2_texture_get_attribs(struct wlr_texture *texture,
 diff --git a/include/wlr/render/pass.h b/include/wlr/render/pass.h
-index 2159bc3..1a2f6d7 100644
 --- a/include/wlr/render/pass.h
 +++ b/include/wlr/render/pass.h
-@@ -70,6 +70,8 @@ enum wlr_render_blend_mode {
+@@ -70,6 +70,8 @@
  	WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
  	/* Blending is disabled */
  	WLR_RENDER_BLEND_MODE_NONE,
@@ -67,7 +119,7 @@ index 2159bc3..1a2f6d7 100644
  };
  
  /**
-@@ -137,6 +139,11 @@ struct wlr_render_rect_options {
+@@ -137,6 +139,11 @@
  	const pixman_region32_t *clip;
  	/* Blend mode */
  	enum wlr_render_blend_mode blend_mode;
@@ -80,10 +132,9 @@ index 2159bc3..1a2f6d7 100644
  
  /**
 diff --git a/include/wlr/types/wlr_scene.h b/include/wlr/types/wlr_scene.h
-index 2292f1f..1ed5b98 100644
 --- a/include/wlr/types/wlr_scene.h
 +++ b/include/wlr/types/wlr_scene.h
-@@ -38,6 +38,25 @@ struct wlr_surface;
+@@ -38,6 +38,28 @@
  
  struct wlr_scene_node;
  struct wlr_scene_buffer;
@@ -101,6 +152,9 @@ index 2292f1f..1ed5b98 100644
 +#define WLR_SCENE_BACKDROP_MIN_SIGMA 0.5f
 +#define WLR_SCENE_BACKDROP_MAX_SIGMA 32
 +#define WLR_SCENE_BACKDROP_MAX_SCALED_SIGMA 64
++#define WLR_SCENE_PROJECTION_MAX_WIDTH 2048
++#define WLR_SCENE_PROJECTION_MAX_HEIGHT 1280
++#define WLR_SCENE_PROJECTION_MAX_QUADS 9
 +
 +/* A separately named symbol makes a new compositor/old library mismatch fatal. */
 +uint32_t wlr_scene_effects_abi_v4(void);
@@ -109,7 +163,7 @@ index 2292f1f..1ed5b98 100644
  struct wlr_scene_output_layout;
  
  struct wlr_presentation;
-@@ -91,6 +110,7 @@ struct wlr_scene_tree {
+@@ -91,6 +113,7 @@
  	struct wlr_scene_node node;
  
  	struct wl_list children; // wlr_scene_node.link
@@ -117,7 +171,7 @@ index 2292f1f..1ed5b98 100644
  };
  
  /** The root scene-graph node. */
-@@ -102,6 +122,12 @@ struct wlr_scene {
+@@ -102,6 +125,12 @@
  	// May be NULL
  	struct wlr_linux_dmabuf_v1 *linux_dmabuf_v1;
  	struct wlr_gamma_control_manager_v1 *gamma_control_manager_v1;
@@ -130,7 +184,7 @@ index 2292f1f..1ed5b98 100644
  
  	struct {
  		struct wl_listener linux_dmabuf_v1_destroy;
-@@ -140,6 +166,10 @@ struct wlr_scene_rect {
+@@ -140,6 +169,10 @@
  	struct wlr_scene_node node;
  	int width, height;
  	float color[4];
@@ -141,7 +195,7 @@ index 2292f1f..1ed5b98 100644
  };
  
  struct wlr_scene_outputs_update_event {
-@@ -211,6 +241,7 @@ struct wlr_scene_buffer {
+@@ -211,6 +244,7 @@
  /** A viewport for an output in the scene-graph */
  struct wlr_scene_output {
  	struct wlr_output *output;
@@ -149,10 +203,11 @@ index 2292f1f..1ed5b98 100644
  	struct wl_list link; // wlr_scene.outputs
  	struct wlr_scene *scene;
  	struct wlr_addon addon;
-@@ -361,6 +392,39 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
+@@ -360,6 +394,79 @@
+  * Add a node displaying nothing but its children.
   */
  struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
- 
++
 +/**
 + * Isolate this subtree, then apply antialiased circular corners exactly once.
 + * Box is tree-local. NULL with radius zero restores the unmodified scene path.
@@ -162,6 +217,46 @@ index 2292f1f..1ed5b98 100644
 + */
 +bool wlr_scene_tree_set_rounding(struct wlr_scene_tree *tree,
 +	const struct wlr_box *box, float radius);
++
++/**
++ * Isolate and clip a subtree, applying its opacity once after child composition.
++ * Radius zero retains rectangular coverage. Opacity must be finite in [0, 1].
++ * NULL with radius zero and opacity one restores the unmodified scene.
++ * Existing nested-effect and cache limits apply; input regions are unchanged.
++ */
++bool wlr_scene_tree_set_composition(struct wlr_scene_tree *tree,
++	const struct wlr_box *box, float radius, float opacity);
++/** Prepare current output-local caches without presenting or sampling feedback. */
++bool wlr_scene_tree_prepare_composition(struct wlr_scene_tree *tree);
++
++/**
++ * Render only this subtree into an owned, aspect-fitted thumbnail. Local enabled
++ * children are sampled even if an ancestor is hidden; no presentation feedback
++ * or frame callbacks are sent. Nested scene effects are unsupported.
++ * The returned buffer must be dropped. Its reservation remains in the shared
++ * scene-effects budget until release; no source buffers are retained.
++ */
++struct wlr_buffer *wlr_scene_tree_snapshot(struct wlr_scene_tree *tree,
++	struct wlr_scene_output *output, const struct wlr_box *box,
++	float radius, int width, int height);
++
++struct wlr_scene_projected_quad {
++	struct wlr_buffer *buffer;
++	float vertices[16];
++	float background[4];
++	float opacity;
++};
++
++bool wlr_scene_projection_supported(struct wlr_renderer *renderer);
++/**
++ * Compose owned source frames with perspective-correct sampling and a depth
++ * attachment, without sampling the desktop or sending presentation feedback.
++ * Clip vertices are TL/TR/BL/BR. Draw translucent quads back-to-front.
++ * The returned buffer owns its RGBA/depth/workspace budget until dropped.
++ */
++struct wlr_buffer *wlr_scene_projected_snapshot(struct wlr_scene_output *output,
++	const struct wlr_scene_projected_quad *quads, size_t count,
++	int width, int height, const float background[4]);
 +
 +/** A non-input, non-opaque outer shadow, with no access to background pixels. */
 +struct wlr_scene_rect *wlr_scene_shadow_create(struct wlr_scene_tree *parent);
@@ -185,18 +280,17 @@ index 2292f1f..1ed5b98 100644
 +void wlr_scene_backdrop_clear(struct wlr_scene *scene);
 +struct wlr_scene_rect *wlr_scene_backdrop_create(struct wlr_scene_tree *parent,
 +	const struct wlr_box *box, float radius, float sigma, const float tint[static 4]);
-+
+ 
  /**
   * Add a node displaying a single surface to the scene-graph.
-  *
 diff --git a/meson.build b/meson.build
-index 7aea9f0..a0040e1 100644
 --- a/meson.build
 +++ b/meson.build
-@@ -20,6 +20,17 @@ versioned_name = '@0@-@1@.@2@'.format(meson.project_name(), version_major, versi
+@@ -19,6 +19,17 @@
+ 
  little_endian = target_machine.endian() == 'little'
  big_endian = target_machine.endian() == 'big'
- 
++
 +effects_sha256 = get_option('polly-effects-sha256')
 +effects_hash_check = run_command(find_program('python3'), '-c',
 +	'import re, sys; sys.exit(0 if re.fullmatch("[0-9a-f]{64}", sys.argv[1]) else 1)',
@@ -207,11 +301,10 @@ index 7aea9f0..a0040e1 100644
 +effects_config = configuration_data()
 +effects_config.set_quoted('WLR_SCENE_EFFECTS_SOURCE_SHA256', effects_sha256)
 +configure_file(output: 'polly-scene-effects.h', configuration: effects_config)
-+
+ 
  add_project_arguments([
  	'-D_POSIX_C_SOURCE=200809L',
- 	'-DWLR_USE_UNSTABLE',
-@@ -149,7 +160,7 @@ wlr_inc = include_directories('include')
+@@ -149,7 +160,7 @@
  symbols_file = 'wlroots.syms'
  symbols_flag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), symbols_file)
  lib_wlr = library(
@@ -220,7 +313,7 @@ index 7aea9f0..a0040e1 100644
  	dependencies: wlr_deps,
  	include_directories: [wlr_inc],
  	install: true,
-@@ -182,6 +193,7 @@ pkgconfig = import('pkgconfig')
+@@ -182,6 +193,7 @@
  pkgconfig.generate(
  	lib_wlr,
  	name: versioned_name,
@@ -229,7 +322,6 @@ index 7aea9f0..a0040e1 100644
  	subdirs: versioned_name,
  	url: 'https://gitlab.freedesktop.org/wlroots/wlroots',
 diff --git a/meson.options b/meson.options
-index 5863764..c0921df 100644
 --- a/meson.options
 +++ b/meson.options
 @@ -1,6 +1,7 @@
@@ -240,11 +332,46 @@ index 5863764..c0921df 100644
  option('icon_directory', description: 'Location used to look for cursors (default: ${datadir}/icons)', type: 'string', value: '')
  option('renderers', type: 'array', choices: ['auto', 'gles2', 'vulkan'], value: ['auto'], description: 'Select built-in renderers')
  option('backends', type: 'array', choices: ['auto', 'drm', 'libinput', 'x11'], value: ['auto'], description: 'Select built-in backends')
+diff --git a/render/allocator/shm.c b/render/allocator/shm.c
+--- a/render/allocator/shm.c
++++ b/render/allocator/shm.c
+@@ -1,6 +1,9 @@
+ #include <assert.h>
+ #include <drm_fourcc.h>
++#include <errno.h>
++#include <fcntl.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+ #include <wlr/interfaces/wlr_buffer.h>
+@@ -81,6 +84,17 @@
+ 		return NULL;
+ 	}
+ 
++	int error;
++	do {
++		error = posix_fallocate(buffer->shm.fd, 0, buffer->size);
++	} while (error == EINTR);
++	if (error != 0) {
++		wlr_log(WLR_ERROR, "Failed to reserve SHM buffer backing: %s", strerror(error));
++		close(buffer->shm.fd);
++		free(buffer);
++		return NULL;
++	}
++
+ 	buffer->shm.format = format->format;
+ 	buffer->shm.width = width;
+ 	buffer->shm.height = height;
 diff --git a/render/gles2/pass.c b/render/gles2/pass.c
-index b10ac04..fd1cf74 100644
 --- a/render/gles2/pass.c
 +++ b/render/gles2/pass.c
-@@ -5,6 +5,7 @@
+@@ -1,10 +1,12 @@
+ #include <stdlib.h>
+ #include <assert.h>
++#include <math.h>
+ #include <pixman.h>
+ #include <time.h>
  #include <unistd.h>
  #include <wlr/render/drm_syncobj.h>
  #include <wlr/util/transform.h>
@@ -252,7 +379,27 @@ index b10ac04..fd1cf74 100644
  #include "render/egl.h"
  #include "render/gles2.h"
  #include "util/matrix.h"
-@@ -60,7 +61,7 @@ static bool render_pass_submit(struct wlr_render_pass *wlr_pass) {
+@@ -17,6 +19,19 @@
+ 	assert(wlr_pass->impl == &render_pass_impl);
+ 	struct wlr_gles2_render_pass *pass = wl_container_of(wlr_pass, pass, base);
+ 	return pass;
++}
++
++static bool resume_render_pass(struct wlr_gles2_render_pass *pass) {
++	/* Nested cache passes and texture imports may leave the shared context on FBO 0. */
++	glBindFramebuffer(GL_FRAMEBUFFER, pass->buffer->fbo);
++	glViewport(0, 0, pass->buffer->buffer->width, pass->buffer->buffer->height);
++	glDisable(GL_SCISSOR_TEST);
++	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
++		wlr_log(WLR_ERROR, "Cannot resume the GLES2 render target");
++		pass->failed = true;
++		return false;
++	}
++	return true;
+ }
+ 
+ static bool render_pass_submit(struct wlr_render_pass *wlr_pass) {
+@@ -60,7 +75,7 @@
  		glFlush();
  	}
  
@@ -261,7 +408,7 @@ index b10ac04..fd1cf74 100644
  
  out:
  	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-@@ -157,10 +158,15 @@ static void setup_blending(enum wlr_render_blend_mode mode) {
+@@ -157,9 +172,14 @@
  	switch (mode) {
  	case WLR_RENDER_BLEND_MODE_PREMULTIPLIED:
  		glEnable(GL_BLEND);
@@ -269,15 +416,22 @@ index b10ac04..fd1cf74 100644
  		break;
  	case WLR_RENDER_BLEND_MODE_NONE:
  		glDisable(GL_BLEND);
- 		break;
++		break;
 +	case WLR_RENDER_BLEND_MODE_DESTINATION_IN:
 +		glEnable(GL_BLEND);
 +		glBlendFunc(GL_ZERO, GL_SRC_ALPHA);
-+		break;
+ 		break;
  	}
  }
+@@ -169,6 +189,7 @@
+ 	struct wlr_gles2_render_pass *pass = get_render_pass(wlr_pass);
+ 	struct wlr_gles2_renderer *renderer = pass->buffer->renderer;
+ 	struct wlr_gles2_texture *texture = gles2_get_texture(options->texture);
++	if (!resume_render_pass(pass)) return;
  
-@@ -223,7 +229,8 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+ 	struct wlr_gles2_tex_shader *shader = NULL;
+ 
+@@ -223,7 +244,8 @@
  		}
  	}
  
@@ -287,10 +441,11 @@ index b10ac04..fd1cf74 100644
  		WLR_RENDER_BLEND_MODE_NONE : options->blend_mode);
  
  	glUseProgram(shader->program);
-@@ -257,15 +264,29 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+@@ -257,15 +279,30 @@
  		const struct wlr_render_rect_options *options) {
  	struct wlr_gles2_render_pass *pass = get_render_pass(wlr_pass);
  	struct wlr_gles2_renderer *renderer = pass->buffer->renderer;
++	if (!resume_render_pass(pass)) return;
 +	if ((options->corner_radius > 0 || options->shadow_sigma > 0) && !renderer->effects_supported) {
 +		wlr_log(WLR_ERROR, "Scene effects require 23-bit fragment highp precision");
 +		pass->failed = true;
@@ -318,11 +473,242 @@ index b10ac04..fd1cf74 100644
  
  	set_proj_matrix(renderer->shaders.quad.proj, pass->projection_matrix, &box);
  	glUniform4f(renderer->shaders.quad.color, color->r, color->g, color->b, color->a);
+@@ -273,6 +310,221 @@
+ 	render(&box, options->clip, renderer->shaders.quad.pos_attrib);
+ 
+ 	pop_gles2_debug(renderer);
++}
++
++bool wlr_gles2_render_pass_blur(struct wlr_render_pass *wlr_pass,
++		const struct wlr_gles2_blur_options *options) {
++	if (!wlr_pass || wlr_pass->impl != &render_pass_impl) {
++		wlr_log(WLR_ERROR, "Backdrop filtering requires a GLES2 pass");
++		return false;
++	}
++	struct wlr_gles2_render_pass *pass = get_render_pass(wlr_pass);
++	struct wlr_gles2_renderer *renderer = pass->buffer->renderer;
++	struct wlr_buffer *target = pass->buffer->buffer;
++	if (!options || !renderer->shaders.blur.program || !renderer->effects_supported ||
++			!options->texture || options->texture->renderer != &renderer->wlr_renderer ||
++			!wlr_texture_is_gles2(options->texture) || !options->kernel ||
++			options->kernel_size < 1 || options->kernel_size > 385 || !(options->kernel_size & 1) ||
++			options->source.x < 0 || options->source.y < 0 ||
++			options->source.width != target->width || options->source.height != target->height ||
++			(int64_t)options->source.x + options->source.width > options->texture->width ||
++			(int64_t)options->source.y + options->source.height > options->texture->height ||
++			!isfinite(options->corner_radius) || options->corner_radius < 0 ||
++			options->corner_radius > fminf(target->width, target->height) / 2) {
++		wlr_log(WLR_ERROR, "Invalid bounded GLES2 backdrop filter request");
++		pass->failed = true;
++		return false;
++	}
++	struct wlr_gles2_texture *texture = gles2_get_texture(options->texture);
++	if (texture->target != GL_TEXTURE_2D || texture->buffer == pass->buffer) {
++		wlr_log(WLR_ERROR, "Backdrop filter requires a separate importable 2D source");
++		pass->failed = true;
++		return false;
++	}
++	for (unsigned index = 0; index < 4; index++) {
++		if (!isfinite(options->tint[index]) || options->tint[index] < 0 ||
++				options->tint[index] > (index == 3 ? 1 : options->tint[3])) {
++			wlr_log(WLR_ERROR, "Backdrop filter tint is not premultiplied RGBA");
++			pass->failed = true;
++			return false;
++		}
++	}
++	unsigned char packed[385 * 4];
++	double sum = 0;
++	for (uint32_t tap = 0; tap < options->kernel_size; tap++) {
++		float weight = options->kernel[tap];
++		if (!isfinite(weight) || weight < 0 || weight > 1) {
++			wlr_log(WLR_ERROR, "Backdrop filter kernel contains an invalid weight");
++			pass->failed = true;
++			return false;
++		}
++		sum += weight;
++		uint32_t value = (uint32_t)lroundf(weight * 16777215.0f);
++		packed[tap * 4] = (unsigned char)(value >> 16);
++		packed[tap * 4 + 1] = (unsigned char)(value >> 8);
++		packed[tap * 4 + 2] = (unsigned char)value;
++		packed[tap * 4 + 3] = 255;
++	}
++	if (fabs(sum - 1) > 0.0001) {
++		wlr_log(WLR_ERROR, "Backdrop filter kernel is not normalized");
++		pass->failed = true;
++		return false;
++	}
++	push_gles2_debug(renderer);
++	if (!resume_render_pass(pass)) {
++		pop_gles2_debug(renderer);
++		return false;
++	}
++	GLuint kernel = 0;
++	glGenTextures(1, &kernel);
++	glActiveTexture(GL_TEXTURE1);
++	glBindTexture(GL_TEXTURE_2D, kernel);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, options->kernel_size, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, packed);
++	glActiveTexture(GL_TEXTURE0);
++	glBindTexture(GL_TEXTURE_2D, texture->tex);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
++	glUseProgram(renderer->shaders.blur.program);
++	glUniform1i(renderer->shaders.blur.tex, 0);
++	glUniform1i(renderer->shaders.blur.kernel, 1);
++	glUniform1f(renderer->shaders.blur.kernel_size, options->kernel_size);
++	glUniform2f(renderer->shaders.blur.direction, options->vertical ? 0 : 1.0f / texture->wlr_texture.width,
++		options->vertical ? 1.0f / texture->wlr_texture.height : 0);
++	glUniform2f(renderer->shaders.blur.size, target->width, target->height);
++	glUniform4fv(renderer->shaders.blur.tint, 1, options->tint);
++	glUniform1f(renderer->shaders.blur.corner_radius, options->corner_radius);
++	struct wlr_box box = {.width = target->width, .height = target->height};
++	struct wlr_fbox source = {
++		.x = (double)options->source.x / texture->wlr_texture.width,
++		.y = (double)options->source.y / texture->wlr_texture.height,
++		.width = (double)options->source.width / texture->wlr_texture.width,
++		.height = (double)options->source.height / texture->wlr_texture.height,
++	};
++	set_proj_matrix(renderer->shaders.blur.proj, pass->projection_matrix, &box);
++	set_tex_matrix(renderer->shaders.blur.tex_proj, WL_OUTPUT_TRANSFORM_NORMAL, &source);
++	setup_blending(WLR_RENDER_BLEND_MODE_NONE);
++	GLboolean dither = glIsEnabled(GL_DITHER);
++	glDisable(GL_DITHER);
++	render(&box, NULL, renderer->shaders.blur.pos_attrib);
++	if (dither) glEnable(GL_DITHER);
++	glBindTexture(GL_TEXTURE_2D, 0);
++	glActiveTexture(GL_TEXTURE1);
++	glBindTexture(GL_TEXTURE_2D, 0);
++	glDeleteTextures(1, &kernel);
++	glActiveTexture(GL_TEXTURE0);
++	GLenum error = glGetError();
++	pop_gles2_debug(renderer);
++	if (error != GL_NO_ERROR) {
++		wlr_log(WLR_ERROR, "GLES2 backdrop filter failed: GL error 0x%x", error);
++		pass->failed = true;
++		return false;
++	}
++	return true;
++}
++
++bool wlr_gles2_render_pass_add_projected_texture(struct wlr_render_pass *wlr_pass,
++		const struct wlr_gles2_projected_texture_options *options) {
++	if (!wlr_pass || wlr_pass->impl != &render_pass_impl) {
++		wlr_log(WLR_ERROR, "Projected textures require a GLES2 pass");
++		return false;
++	}
++	struct wlr_gles2_render_pass *pass = get_render_pass(wlr_pass);
++	struct wlr_gles2_renderer *renderer = pass->buffer->renderer;
++	if (!options || !renderer->shaders.projected.program || !renderer->effects_supported ||
++			!options->texture || options->texture->renderer != &renderer->wlr_renderer ||
++			!wlr_texture_is_gles2(options->texture) || !isfinite(options->opacity) ||
++			options->opacity < 0 || options->opacity > 1) {
++		wlr_log(WLR_ERROR, "Invalid projected texture or opacity");
++		pass->failed = true;
++		return false;
++	}
++	for (unsigned index = 0; index < 16; index++) {
++		float value = options->vertices[index];
++		if (!isfinite(value) || fabsf(value) > 4096 || (index % 4 == 3 && value < 0.001f)) {
++			wlr_log(WLR_ERROR, "Projected texture clip coordinates are invalid");
++			pass->failed = true;
++			return false;
++		}
++	}
++	for (unsigned index = 0; index < 4; index++) {
++		if (!isfinite(options->background[index]) || options->background[index] < 0 ||
++				options->background[index] > (index == 3 ? 1 : options->background[3])) {
++			wlr_log(WLR_ERROR, "Projected texture background is not premultiplied RGBA");
++			pass->failed = true;
++			return false;
++		}
++	}
++	struct wlr_gles2_texture *texture = gles2_get_texture(options->texture);
++	if (texture->target != GL_TEXTURE_2D || texture->buffer == pass->buffer) {
++		wlr_log(WLR_ERROR, "Projected texture requires a separate importable 2D source");
++		pass->failed = true;
++		return false;
++	}
++	push_gles2_debug(renderer);
++	glBindFramebuffer(GL_FRAMEBUFFER, pass->buffer->fbo);
++	if (!pass->buffer->depth_rbo) {
++		glGenRenderbuffers(1, &pass->buffer->depth_rbo);
++		glBindRenderbuffer(GL_RENDERBUFFER, pass->buffer->depth_rbo);
++		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16,
++			pass->buffer->buffer->width, pass->buffer->buffer->height);
++		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
++			GL_RENDERBUFFER, pass->buffer->depth_rbo);
++		glBindRenderbuffer(GL_RENDERBUFFER, 0);
++	}
++	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
++		wlr_log(WLR_ERROR, "Cannot allocate a complete projected texture depth target");
++		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, 0);
++		glDeleteRenderbuffers(1, &pass->buffer->depth_rbo);
++		pass->buffer->depth_rbo = 0;
++		pass->failed = true;
++		pop_gles2_debug(renderer);
++		return false;
++	}
++	GLboolean depth = glIsEnabled(GL_DEPTH_TEST), write_depth;
++	GLint depth_function;
++	glGetBooleanv(GL_DEPTH_WRITEMASK, &write_depth);
++	glGetIntegerv(GL_DEPTH_FUNC, &depth_function);
++	glDepthMask(GL_TRUE);
++	if (!pass->projection_depth_cleared) {
++		glClearDepthf(1);
++		glClear(GL_DEPTH_BUFFER_BIT);
++		pass->projection_depth_cleared = true;
++	}
++	glEnable(GL_DEPTH_TEST);
++	glDepthFunc(GL_LEQUAL);
++	setup_blending(WLR_RENDER_BLEND_MODE_PREMULTIPLIED);
++	glUseProgram(renderer->shaders.projected.program);
++	glActiveTexture(GL_TEXTURE0);
++	glBindTexture(GL_TEXTURE_2D, texture->tex);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++	glUniform1i(renderer->shaders.projected.tex, 0);
++	glUniform1f(renderer->shaders.projected.opacity, options->opacity);
++	glUniform4fv(renderer->shaders.projected.background, 1, options->background);
++	const GLfloat texcoords[] = {0, 0, 1, 0, 0, 1, 1, 1};
++	glVertexAttribPointer(renderer->shaders.projected.position, 4, GL_FLOAT, GL_FALSE, 0, options->vertices);
++	glVertexAttribPointer(renderer->shaders.projected.texcoord, 2, GL_FLOAT, GL_FALSE, 0, texcoords);
++	glEnableVertexAttribArray(renderer->shaders.projected.position);
++	glEnableVertexAttribArray(renderer->shaders.projected.texcoord);
++	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++	glDisableVertexAttribArray(renderer->shaders.projected.position);
++	glDisableVertexAttribArray(renderer->shaders.projected.texcoord);
++	glBindTexture(GL_TEXTURE_2D, 0);
++	if (!depth) glDisable(GL_DEPTH_TEST);
++	glDepthFunc(depth_function);
++	glDepthMask(write_depth);
++	GLenum error = glGetError();
++	pop_gles2_debug(renderer);
++	if (error != GL_NO_ERROR) {
++		wlr_log(WLR_ERROR, "Projected texture rendering failed: GL error 0x%x", error);
++		pass->failed = true;
++		return false;
++	}
++	return true;
+ }
+ 
+ static const struct wlr_render_pass_impl render_pass_impl = {
 diff --git a/render/gles2/renderer.c b/render/gles2/renderer.c
-index e362dae..9438339 100644
 --- a/render/gles2/renderer.c
 +++ b/render/gles2/renderer.c
-@@ -40,6 +40,10 @@ struct wlr_gles2_renderer *gles2_get_renderer(
+@@ -22,6 +22,9 @@
+ 
+ #include "common_vert_src.h"
+ #include "quad_frag_src.h"
++#include "blur_frag_src.h"
++#include "projected_vert_src.h"
++#include "projected_frag_src.h"
+ #include "tex_rgba_frag_src.h"
+ #include "tex_rgbx_frag_src.h"
+ #include "tex_external_frag_src.h"
+@@ -40,6 +43,20 @@
  	return renderer;
  }
  
@@ -330,10 +716,37 @@ index e362dae..9438339 100644
 +	return gles2_get_renderer(renderer)->effects_supported;
 +}
 +
++bool wlr_gles2_renderer_supports_backdrop(struct wlr_renderer *renderer) {
++	struct wlr_gles2_renderer *gles2 = gles2_get_renderer(renderer);
++	return gles2->effects_supported && gles2->shaders.blur.program;
++}
++
++bool wlr_gles2_renderer_supports_projection(struct wlr_renderer *renderer) {
++	struct wlr_gles2_renderer *gles2 = gles2_get_renderer(renderer);
++	return gles2->effects_supported && gles2->shaders.projected.program;
++}
++
  bool wlr_render_timer_is_gles2(struct wlr_render_timer *timer) {
  	return timer->impl == &render_timer_impl;
  }
-@@ -527,6 +531,9 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
+@@ -61,6 +78,7 @@
+ 
+ 	glDeleteFramebuffers(1, &buffer->fbo);
+ 	glDeleteRenderbuffers(1, &buffer->rbo);
++	glDeleteRenderbuffers(1, &buffer->depth_rbo);
+ 	glDeleteTextures(1, &buffer->tex);
+ 
+ 	pop_gles2_debug(buffer->renderer);
+@@ -216,6 +234,8 @@
+ 
+ 	push_gles2_debug(renderer);
+ 	glDeleteProgram(renderer->shaders.quad.program);
++	glDeleteProgram(renderer->shaders.blur.program);
++	glDeleteProgram(renderer->shaders.projected.program);
+ 	glDeleteProgram(renderer->shaders.tex_rgba.program);
+ 	glDeleteProgram(renderer->shaders.tex_rgbx.program);
+ 	glDeleteProgram(renderer->shaders.tex_ext.program);
+@@ -527,6 +547,9 @@
  	}
  	wlr_renderer_init(&renderer->wlr_renderer, &renderer_impl, WLR_BUFFER_CAP_DMABUF);
  	renderer->wlr_renderer.features.output_color_transform = false;
@@ -343,7 +756,7 @@ index e362dae..9438339 100644
  
  	wl_list_init(&renderer->buffers);
  	wl_list_init(&renderer->textures);
-@@ -640,6 +647,11 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
+@@ -640,7 +663,42 @@
  	}
  	renderer->shaders.quad.proj = glGetUniformLocation(prog, "proj");
  	renderer->shaders.quad.color = glGetUniformLocation(prog, "color");
@@ -353,13 +766,86 @@ index e362dae..9438339 100644
 +	renderer->shaders.quad.shadow_box = glGetUniformLocation(prog, "shadow_box");
 +	renderer->shaders.quad.shadow_original_box = glGetUniformLocation(prog, "shadow_original_box");
  	renderer->shaders.quad.pos_attrib = glGetAttribLocation(prog, "pos");
++
++	if (renderer->effects_supported) {
++		renderer->shaders.projected.program = prog =
++			link_program(renderer, projected_vert_src, projected_frag_src);
++		if (prog) {
++			renderer->shaders.projected.tex = glGetUniformLocation(prog, "tex");
++			renderer->shaders.projected.opacity = glGetUniformLocation(prog, "opacity");
++			renderer->shaders.projected.background = glGetUniformLocation(prog, "background");
++			renderer->shaders.projected.position = glGetAttribLocation(prog, "position");
++			renderer->shaders.projected.texcoord = glGetAttribLocation(prog, "texcoord");
++		} else {
++			wlr_log(WLR_ERROR, "GLES2 projection shaders unavailable; 3D previews are disabled");
++		}
++		renderer->shaders.blur.program = prog =
++			link_program(renderer, common_vert_src, blur_frag_src);
++		if (prog) {
++			renderer->shaders.blur.proj = glGetUniformLocation(prog, "proj");
++			renderer->shaders.blur.tex_proj = glGetUniformLocation(prog, "tex_proj");
++			renderer->shaders.blur.tex = glGetUniformLocation(prog, "tex");
++			renderer->shaders.blur.kernel = glGetUniformLocation(prog, "kernel");
++			renderer->shaders.blur.kernel_size = glGetUniformLocation(prog, "kernel_size");
++			renderer->shaders.blur.direction = glGetUniformLocation(prog, "direction");
++			renderer->shaders.blur.size = glGetUniformLocation(prog, "size");
++			renderer->shaders.blur.tint = glGetUniformLocation(prog, "tint");
++			renderer->shaders.blur.corner_radius = glGetUniformLocation(prog, "corner_radius");
++			renderer->shaders.blur.pos_attrib = glGetAttribLocation(prog, "pos");
++		} else {
++			wlr_log(WLR_ERROR, "GLES2 backdrop shaders unavailable; regional effects are disabled");
++		}
++	}
  
  	renderer->shaders.tex_rgba.program = prog =
+ 		link_program(renderer, common_vert_src, tex_rgba_frag_src);
+@@ -694,6 +752,8 @@
+ 
+ error:
+ 	glDeleteProgram(renderer->shaders.quad.program);
++	glDeleteProgram(renderer->shaders.blur.program);
++	glDeleteProgram(renderer->shaders.projected.program);
+ 	glDeleteProgram(renderer->shaders.tex_rgba.program);
+ 	glDeleteProgram(renderer->shaders.tex_rgbx.program);
+ 	glDeleteProgram(renderer->shaders.tex_ext.program);
+diff --git a/render/gles2/shaders/blur.frag b/render/gles2/shaders/blur.frag
+--- /dev/null
++++ b/render/gles2/shaders/blur.frag
+@@ -0,0 +1,30 @@
++precision highp float;
++uniform sampler2D tex;
++uniform sampler2D kernel;
++uniform float kernel_size;
++uniform vec2 direction;
++uniform vec2 size;
++uniform vec4 tint;
++uniform float corner_radius;
++varying vec2 v_texcoord;
++varying highp vec2 v_position;
++
++void main() {
++	vec4 pixel = vec4(0.0);
++	for (int tap = 0; tap < 385; tap++) {
++		if (float(tap) >= kernel_size) {
++			break;
++		}
++		vec3 encoded = texture2D(kernel, vec2((float(tap) + 0.5) / kernel_size, 0.5)).rgb;
++		float weight = dot(encoded, vec3(65536.0, 256.0, 1.0)) * (255.0 / 16777215.0);
++		float offset = float(tap) - (kernel_size - 1.0) * 0.5;
++		pixel += texture2D(tex, v_texcoord + direction * offset) * weight;
++	}
++	float coverage = 1.0;
++	if (corner_radius > 0.0) {
++		vec2 q = abs(v_position * size - size * 0.5) - size * 0.5 + corner_radius;
++		float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - corner_radius;
++		coverage = clamp(0.5 - distance, 0.0, 1.0);
++	}
++	gl_FragColor = (tint + pixel * (1.0 - tint.a)) * coverage;
++}
 diff --git a/render/gles2/shaders/common.vert b/render/gles2/shaders/common.vert
-index f51548a..4349c82 100644
 --- a/render/gles2/shaders/common.vert
 +++ b/render/gles2/shaders/common.vert
-@@ -2,9 +2,11 @@ uniform mat3 proj;
+@@ -2,9 +2,11 @@
  uniform mat3 tex_proj;
  attribute vec2 pos;
  varying vec2 v_texcoord;
@@ -371,11 +857,53 @@ index f51548a..4349c82 100644
  	v_texcoord = (pos3 * tex_proj).xy;
 +	v_position = pos;
  }
+diff --git a/render/gles2/shaders/meson.build b/render/gles2/shaders/meson.build
+--- a/render/gles2/shaders/meson.build
++++ b/render/gles2/shaders/meson.build
+@@ -3,6 +3,9 @@
+ shaders = [
+ 	'common.vert',
+ 	'quad.frag',
++	'blur.frag',
++	'projected.vert',
++	'projected.frag',
+ 	'tex_rgba.frag',
+ 	'tex_rgbx.frag',
+ 	'tex_external.frag',
+diff --git a/render/gles2/shaders/projected.frag b/render/gles2/shaders/projected.frag
+--- /dev/null
++++ b/render/gles2/shaders/projected.frag
+@@ -0,0 +1,14 @@
++precision highp float;
++uniform sampler2D tex;
++uniform float opacity;
++uniform vec4 background;
++varying highp vec2 v_texcoord;
++
++void main() {
++	vec4 pixel = texture2D(tex, v_texcoord);
++	pixel = (pixel + background * (1.0 - pixel.a)) * opacity;
++	if (pixel.a <= 0.0) {
++		discard;
++	}
++	gl_FragColor = pixel;
++}
+diff --git a/render/gles2/shaders/projected.vert b/render/gles2/shaders/projected.vert
+--- /dev/null
++++ b/render/gles2/shaders/projected.vert
+@@ -0,0 +1,8 @@
++attribute vec4 position;
++attribute vec2 texcoord;
++varying highp vec2 v_texcoord;
++
++void main() {
++	gl_Position = position;
++	v_texcoord = texcoord;
++}
 diff --git a/render/gles2/shaders/quad.frag b/render/gles2/shaders/quad.frag
-index 97d3a31..fe48e80 100644
 --- a/render/gles2/shaders/quad.frag
 +++ b/render/gles2/shaders/quad.frag
-@@ -7,7 +7,46 @@ precision mediump float;
+@@ -7,7 +7,46 @@
  varying vec4 v_color;
  varying vec2 v_texcoord;
  uniform vec4 color;
@@ -387,7 +915,7 @@ index 97d3a31..fe48e80 100644
 +uniform highp float shadow;
 +uniform highp vec4 shadow_box;
 +uniform highp vec4 shadow_original_box;
-+
+ 
 +float rounded_distance(vec2 position, vec2 half_size, float radius) {
 +	vec2 q = abs(position) - half_size + radius;
 +	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
@@ -400,7 +928,7 @@ index 97d3a31..fe48e80 100644
 +		- 0.284496736) * t + 0.254829592) * t * exp(-z * z);
 +	return distance >= 0.0 ? 0.5 * erfc : 1.0 - 0.5 * erfc;
 +}
- 
++
 +void main() {
 +	float coverage = 1.0;
 +	vec2 position = v_position * size - size * 0.5;
@@ -423,7 +951,6 @@ index 97d3a31..fe48e80 100644
  }
 +#endif
 diff --git a/render/pixman/pass.c b/render/pixman/pass.c
-index 4ae742c..fab6df8 100644
 --- a/render/pixman/pass.c
 +++ b/render/pixman/pass.c
 @@ -1,5 +1,7 @@
@@ -434,7 +961,7 @@ index 4ae742c..fab6df8 100644
  #include "render/pixman.h"
  
  static const struct wlr_render_pass_impl render_pass_impl;
-@@ -21,9 +23,10 @@ static bool render_pass_submit(struct wlr_render_pass *wlr_pass) {
+@@ -21,9 +23,10 @@
  
  	wlr_buffer_end_data_ptr_access(pass->buffer->buffer);
  	wlr_buffer_unlock(pass->buffer->buffer);
@@ -446,7 +973,7 @@ index 4ae742c..fab6df8 100644
  }
  
  static pixman_op_t get_pixman_blending(enum wlr_render_blend_mode mode) {
-@@ -32,6 +35,8 @@ static pixman_op_t get_pixman_blending(enum wlr_render_blend_mode mode) {
+@@ -32,6 +35,8 @@
  		return PIXMAN_OP_OVER;
  	case WLR_RENDER_BLEND_MODE_NONE:
  		return PIXMAN_OP_SRC;
@@ -455,7 +982,7 @@ index 4ae742c..fab6df8 100644
  	}
  	abort();
  }
-@@ -198,6 +203,12 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+@@ -198,6 +203,12 @@
  	}
  }
  
@@ -468,7 +995,7 @@ index 4ae742c..fab6df8 100644
  static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
  		const struct wlr_render_rect_options *options) {
  	struct wlr_pixman_render_pass *pass = get_render_pass(wlr_pass);
-@@ -205,7 +216,9 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+@@ -205,7 +216,9 @@
  	struct wlr_box box;
  	wlr_render_rect_options_get_box(options, pass->buffer->buffer, &box);
  
@@ -479,7 +1006,7 @@ index 4ae742c..fab6df8 100644
  		WLR_RENDER_BLEND_MODE_NONE : options->blend_mode);
  
  	struct pixman_color color = {
-@@ -216,13 +229,50 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+@@ -216,13 +229,50 @@
  	};
  
  	pixman_image_t *fill = pixman_image_create_solid_fill(&color);
@@ -532,10 +1059,9 @@ index 4ae742c..fab6df8 100644
  
  static const struct wlr_render_pass_impl render_pass_impl = {
 diff --git a/types/scene/wlr_scene.c b/types/scene/wlr_scene.c
-index e823d62..f0f2f29 100644
 --- a/types/scene/wlr_scene.c
 +++ b/types/scene/wlr_scene.c
-@@ -1,10 +1,23 @@
+@@ -1,10 +1,24 @@
  #include <assert.h>
 +#include <errno.h>
 +#include <fcntl.h>
@@ -548,6 +1074,7 @@ index e823d62..f0f2f29 100644
 +#include <emmintrin.h>
 +#endif
  #include <wlr/backend.h>
++#include <wlr/interfaces/wlr_buffer.h>
  #include <wlr/render/swapchain.h>
  #include <wlr/render/drm_syncobj.h>
  #include <wlr/render/wlr_renderer.h>
@@ -559,7 +1086,7 @@ index e823d62..f0f2f29 100644
  #include <wlr/types/wlr_compositor.h>
  #include <wlr/types/wlr_damage_ring.h>
  #include <wlr/types/wlr_gamma_control_v1.h>
-@@ -16,6 +29,7 @@
+@@ -16,6 +30,7 @@
  #include <wlr/util/transform.h>
  #include "types/wlr_output.h"
  #include "types/wlr_scene.h"
@@ -567,10 +1094,11 @@ index e823d62..f0f2f29 100644
  #include "util/array.h"
  #include "util/env.h"
  #include "util/time.h"
-@@ -29,6 +43,185 @@
+@@ -28,6 +43,186 @@
+ 
  #define DMABUF_FEEDBACK_DEBOUNCE_FRAMES  30
  #define HIGHLIGHT_DAMAGE_FADEOUT_TIME   250
- 
++
 +struct scene_rounding_cache {
 +	struct wl_list link;
 +	struct wlr_scene_rounding *rounding;
@@ -589,6 +1117,7 @@ index e823d62..f0f2f29 100644
 +	struct wlr_scene_tree *tree;
 +	struct wlr_box box;
 +	float radius;
++	float opacity;
 +	struct wl_list caches;
 +};
 +
@@ -749,11 +1278,10 @@ index e823d62..f0f2f29 100644
 +	}
 +	return buffer;
 +}
-+
+ 
  struct wlr_scene_tree *wlr_scene_tree_from_node(struct wlr_scene_node *node) {
  	assert(node->type == WLR_SCENE_NODE_TREE);
- 	struct wlr_scene_tree *tree = wl_container_of(node, tree, node);
-@@ -108,6 +301,14 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
+@@ -108,6 +303,14 @@
  	wlr_scene_node_set_enabled(node, false);
  
  	struct wlr_scene *scene = scene_node_get_root(node);
@@ -768,7 +1296,7 @@ index e823d62..f0f2f29 100644
  	if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
  
-@@ -134,6 +335,11 @@ void wlr_scene_node_destroy(struct wlr_scene_node *node) {
+@@ -134,6 +337,11 @@
  		assert(wl_list_empty(&scene_buffer->events.frame_done.listener_list));
  	} else if (node->type == WLR_SCENE_NODE_TREE) {
  		struct wlr_scene_tree *scene_tree = wlr_scene_tree_from_node(node);
@@ -780,15 +1308,17 @@ index e823d62..f0f2f29 100644
  
  		if (scene_tree == &scene->tree) {
  			assert(!node->parent);
-@@ -173,10 +379,27 @@ struct wlr_scene *wlr_scene_create(void) {
+@@ -171,12 +379,29 @@
+ }
+ 
  struct wlr_scene *wlr_scene_create(void) {
 -	struct wlr_scene *scene = calloc(1, sizeof(*scene));
 -	if (scene == NULL) {
 +	const char *option = getenv("POLLY_EXPERIMENTAL_FIR");
 +	if (option && strcmp(option, "0") != 0 && strcmp(option, "1") != 0) {
 +		wlr_log(WLR_ERROR, "POLLY_EXPERIMENTAL_FIR must be exactly 0 or 1 (unset defaults to 0)");
-+		return NULL;
-+	}
+ 		return NULL;
+ 	}
 +	bool experimental = option && strcmp(option, "1") == 0;
 +#if !defined(__x86_64__) || !defined(__SSE2__)
 +	if (experimental) {
@@ -798,8 +1328,8 @@ index e823d62..f0f2f29 100644
 +#endif
 +	struct scene_effects *effects = calloc(1, sizeof(*effects));
 +	if (effects == NULL) {
- 		return NULL;
- 	}
++		return NULL;
++	}
 +	struct wlr_scene *scene = &effects->scene;
 +	effects->fir_backend = experimental ? BACKDROP_FIR_EXPERIMENTAL : BACKDROP_FIR_PRODUCTION;
 +	wlr_log(WLR_INFO, "Backdrop FIR backend: %s (POLLY_EXPERIMENTAL_FIR=%d; fixed for scene lifetime)",
@@ -810,7 +1340,7 @@ index e823d62..f0f2f29 100644
  
  	wl_list_init(&scene->outputs);
  	wl_list_init(&scene->linux_dmabuf_v1_destroy.link);
-@@ -256,12 +479,16 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
+@@ -256,12 +481,16 @@
  
  static void scene_node_opaque_region(struct wlr_scene_node *node, int x, int y,
  		pixman_region32_t *opaque) {
@@ -828,7 +1358,7 @@ index e823d62..f0f2f29 100644
  			return;
  		}
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
-@@ -329,12 +556,16 @@ struct render_data {
+@@ -329,12 +558,16 @@
  
  	struct wlr_render_pass *render_pass;
  	pixman_region32_t damage;
@@ -845,7 +1375,7 @@ index e823d62..f0f2f29 100644
  	wlr_region_transform(region, region, transform, data->trans_width, data->trans_height);
  }
  
-@@ -360,6 +591,8 @@ static void scale_box(struct wlr_box *box, float scale) {
+@@ -360,6 +593,8 @@
  static void transform_output_box(struct wlr_box *box, const struct render_data *data) {
  	enum wl_output_transform transform = wlr_output_transform_invert(data->transform);
  	scale_box(box, data->scale);
@@ -854,7 +1384,7 @@ index e823d62..f0f2f29 100644
  	wlr_box_transform(box, box, transform, data->trans_width, data->trans_height);
  }
  
-@@ -673,9 +906,69 @@ static void scene_update_region(struct wlr_scene *scene,
+@@ -673,9 +908,69 @@
  	pixman_region32_fini(&visible);
  }
  
@@ -924,7 +1454,7 @@ index e823d62..f0f2f29 100644
  
  	int x, y;
  	if (!wlr_scene_node_coords(node, &x, &y)) {
-@@ -711,6 +1004,65 @@ static void scene_node_update(struct wlr_scene_node *node,
+@@ -711,6 +1006,75 @@
  	pixman_region32_fini(damage);
  }
  
@@ -946,7 +1476,14 @@ index e823d62..f0f2f29 100644
 +
 +bool wlr_scene_tree_set_rounding(struct wlr_scene_tree *tree,
 +		const struct wlr_box *box, float radius) {
++	return wlr_scene_tree_set_composition(tree, box, radius, 1.0f);
++}
++
++bool wlr_scene_tree_set_composition(struct wlr_scene_tree *tree,
++		const struct wlr_box *box, float radius, float opacity) {
 +	if (!isfinite(radius) || radius < 0 || (!box && radius != 0) ||
++			!isfinite(opacity) || opacity < 0 || opacity > 1 ||
++			(!box && opacity != 1) ||
 +			(box && (box->width <= 0 || box->height <= 0 ||
 +			box->width > WLR_SCENE_EFFECTS_MAX_AXIS ||
 +			box->height > WLR_SCENE_EFFECTS_MAX_AXIS ||
@@ -954,7 +1491,7 @@ index e823d62..f0f2f29 100644
 +		wlr_log(WLR_ERROR, "Invalid isolated scene rounding geometry");
 +		return false;
 +	}
-+	if (radius == 0) {
++	if (radius == 0 && opacity == 1) {
 +		if (tree->rounding) {
 +			rounding_release_caches(tree->rounding);
 +			free(tree->rounding);
@@ -968,7 +1505,7 @@ index e823d62..f0f2f29 100644
 +		return false;
 +	}
 +	if (tree->rounding && wlr_box_equal(&tree->rounding->box, box) &&
-+			tree->rounding->radius == radius) {
++			tree->rounding->radius == radius && tree->rounding->opacity == opacity) {
 +		return true;
 +	}
 +	if (!tree->rounding) {
@@ -980,9 +1517,12 @@ index e823d62..f0f2f29 100644
 +		tree->rounding->tree = tree;
 +		wl_list_init(&tree->rounding->caches);
 +	}
-+	rounding_release_caches(tree->rounding);
++	if (!wlr_box_equal(&tree->rounding->box, box) || tree->rounding->radius != radius) {
++		rounding_release_caches(tree->rounding);
++	}
 +	tree->rounding->box = *box;
 +	tree->rounding->radius = radius;
++	tree->rounding->opacity = opacity;
 +	scene_node_update(&tree->node, NULL);
 +	return true;
 +}
@@ -990,10 +1530,12 @@ index e823d62..f0f2f29 100644
  struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
  		int width, int height, const float color[static 4]) {
  	assert(parent);
-@@ -731,6 +1083,94 @@ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
- 	return scene_rect;
- }
+@@ -729,6 +1093,98 @@
+ 	scene_node_update(&scene_rect->node, NULL);
  
+ 	return scene_rect;
++}
++
 +struct wlr_scene_rect *wlr_scene_shadow_create(struct wlr_scene_tree *parent) {
 +	struct wlr_scene_rect *shadow = wlr_scene_rect_create(parent, 1, 1, (float[4]){0});
 +	if (shadow) {
@@ -1002,7 +1544,11 @@ index e823d62..f0f2f29 100644
 +	return shadow;
 +}
 +bool wlr_scene_backdrop_supported(struct wlr_renderer *renderer) {
-+	return renderer && wlr_renderer_is_pixman(renderer);
++	return renderer && (wlr_renderer_is_pixman(renderer)
++#if WLR_HAS_GLES2_RENDERER
++		|| (wlr_renderer_is_gles2(renderer) && wlr_gles2_renderer_supports_backdrop(renderer))
++#endif
++		);
 +}
 +
 +struct wlr_scene_rect *wlr_scene_backdrop_create(struct wlr_scene_tree *parent,
@@ -1080,12 +1626,10 @@ index e823d62..f0f2f29 100644
 +	shadow->shadow_offset_y = offset_y;
 +	scene_node_update(&shadow->node, NULL);
 +	return true;
-+}
-+
+ }
+ 
  void wlr_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height) {
- 	if (rect->width == width && rect->height == height) {
- 		return;
-@@ -848,6 +1288,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
+@@ -848,6 +1304,7 @@
  
  void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buffer,
  		struct wlr_buffer *buffer, const struct wlr_scene_buffer_set_buffer_options *options) {
@@ -1093,18 +1637,18 @@ index e823d62..f0f2f29 100644
  	const struct wlr_scene_buffer_set_buffer_options default_options = {0};
  	if (options == NULL) {
  		options = &default_options;
-@@ -874,6 +1315,10 @@ void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buf
+@@ -873,6 +1330,10 @@
+ 	if (buffer != NULL && scene_buffer->dst_width == 0 && scene_buffer->dst_height == 0) {
  		update = update || scene_buffer->buffer_width != buffer->width ||
  			scene_buffer->buffer_height != buffer->height;
- 	}
++	}
 +	if (update || buffer != scene_buffer->buffer || !options->damage ||
 +			pixman_region32_not_empty(options->damage)) {
 +		backdrop_invalidate(scene_node_get_root(&scene_buffer->node), &scene_buffer->node);
-+	}
+ 	}
  
  	// If this is a buffer change, check if it's a single pixel buffer.
- 	// Cache that so we can still apply rendering optimisations even when
-@@ -1160,6 +1605,10 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
+@@ -1160,6 +1621,10 @@
  	}
  
  	node->enabled = enabled;
@@ -1115,7 +1659,7 @@ index e823d62..f0f2f29 100644
  
  	scene_node_update(node, &visible);
  }
-@@ -1182,7 +1631,7 @@ void wlr_scene_node_place_above(struct wlr_scene_node *node,
+@@ -1182,7 +1647,7 @@
  	if (node->link.prev == &sibling->link) {
  		return;
  	}
@@ -1124,7 +1668,7 @@ index e823d62..f0f2f29 100644
  	wl_list_remove(&node->link);
  	wl_list_insert(&sibling->link, &node->link);
  	scene_node_update(node, NULL);
-@@ -1196,7 +1645,7 @@ void wlr_scene_node_place_below(struct wlr_scene_node *node,
+@@ -1196,7 +1661,7 @@
  	if (node->link.next == &sibling->link) {
  		return;
  	}
@@ -1133,7 +1677,7 @@ index e823d62..f0f2f29 100644
  	wl_list_remove(&node->link);
  	wl_list_insert(sibling->link.prev, &node->link);
  	scene_node_update(node, NULL);
-@@ -1227,6 +1676,38 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
+@@ -1227,6 +1692,38 @@
  	if (node->parent == new_parent) {
  		return;
  	}
@@ -1172,7 +1716,7 @@ index e823d62..f0f2f29 100644
  
  	/* Ensure that a node cannot become its own ancestor */
  	for (struct wlr_scene_tree *ancestor = new_parent; ancestor != NULL;
-@@ -1308,6 +1789,10 @@ static bool scene_node_at_iterator(struct wlr_scene_node *node,
+@@ -1308,6 +1805,10 @@
  
  	double rx = at_data->lx - lx;
  	double ry = at_data->ly - ly;
@@ -1183,7 +1727,7 @@ index e823d62..f0f2f29 100644
  
  	if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-@@ -1357,12 +1842,35 @@ struct render_list_entry {
+@@ -1357,12 +1858,35 @@
  	int x, y;
  };
  
@@ -1220,7 +1764,7 @@ index e823d62..f0f2f29 100644
  	pixman_region32_translate(&render_region, -data->logical.x, -data->logical.y);
  	logical_to_buffer_coords(&render_region, data, true);
  	pixman_region32_intersect(&render_region, &render_region, &data->damage);
-@@ -1393,6 +1901,37 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1393,6 +1917,37 @@
  		break;
  	case WLR_SCENE_NODE_RECT:;
  		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
@@ -1258,7 +1802,7 @@ index e823d62..f0f2f29 100644
  
  		wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
  			.box = dst_box,
-@@ -1403,7 +1942,11 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1403,7 +1958,11 @@
  				.a = scene_rect->color[3],
  			},
  			.clip = &render_region,
@@ -1270,7 +1814,7 @@ index e823d62..f0f2f29 100644
  		break;
  	case WLR_SCENE_NODE_BUFFER:;
  		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
-@@ -1428,6 +1971,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1428,6 +1987,9 @@
  			data->output->output->renderer);
  		if (texture == NULL) {
  			scene_output_damage(data->output, &render_region);
@@ -1280,7 +1824,7 @@ index e823d62..f0f2f29 100644
  			break;
  		}
  
-@@ -1443,7 +1989,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1443,7 +2005,7 @@
  			.clip = &render_region,
  			.alpha = &scene_buffer->opacity,
  			.filter_mode = scene_buffer->filter_mode,
@@ -1289,7 +1833,7 @@ index e823d62..f0f2f29 100644
  					!pixman_region32_empty(&opaque) ?
  				WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
  			.wait_timeline = scene_buffer->wait_timeline,
-@@ -1454,7 +2000,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1454,7 +2016,9 @@
  			.output = data->output,
  			.direct_scanout = false,
  		};
@@ -1300,10 +1844,12 @@ index e823d62..f0f2f29 100644
  
  		if (entry->highlight_transparent_region) {
  			wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
-@@ -1471,6 +2019,826 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
- 	pixman_region32_fini(&render_region);
- }
+@@ -1469,6 +2033,1212 @@
  
+ 	pixman_region32_fini(&opaque);
+ 	pixman_region32_fini(&render_region);
++}
++
 +static void rounding_output_destroy(struct wl_listener *listener, void *data) {
 +	(void)data;
 +	struct scene_rounding_cache *cache = wl_container_of(listener, cache, output_destroy);
@@ -1508,6 +2054,7 @@ index e823d62..f0f2f29 100644
 +	wlr_render_pass_add_texture(data->render_pass, &(struct wlr_render_texture_options) {
 +		.texture = cache->texture, .dst_box = box,
 +		.transform = data->transform, .clip = &clip,
++		.alpha = &tree->rounding->opacity,
 +		.blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
 +	});
 +	pixman_region32_fini(&clip);
@@ -1516,10 +2063,339 @@ index e823d62..f0f2f29 100644
 +	}
 +}
 +
++bool wlr_scene_tree_prepare_composition(struct wlr_scene_tree *tree) {
++	if (!tree->rounding) {
++		return true;
++	}
++	int x, y;
++	if (!wlr_scene_node_coords(&tree->node, &x, &y)) {
++		return true;
++	}
++	struct wlr_scene *scene = scene_node_get_root(&tree->node);
++	struct wlr_scene_output *output;
++	wl_list_for_each(output, &scene->outputs, link) {
++		if (!output->output->enabled) {
++			continue;
++		}
++		struct wlr_box region = {.x = output->x, .y = output->y};
++		wlr_output_effective_resolution(output->output, &region.width, &region.height);
++		struct wlr_box box = tree->rounding->box, intersection;
++		box.x += x;
++		box.y += y;
++		if (!wlr_box_intersection(&intersection, &box, &region)) {
++			continue;
++		}
++		bool failed = false;
++		struct render_data data = {.output = output, .scale = output->output->scale,
++			.logical = {.x = output->x, .y = output->y}, .failed = &failed};
++		struct render_list_entry entry = {.node = &tree->node, .x = x, .y = y};
++		if (!rounding_prepare(&entry, &data) || failed) {
++			return false;
++		}
++	}
++	return true;
++}
++
 +static void backdrop_output_destroy(struct wl_listener *listener, void *data) {
 +	(void)data;
 +	struct backdrop_cache *cache = wl_container_of(listener, cache, output_destroy);
 +	backdrop_cache_destroy(cache);
++}
++
++struct scene_snapshot_buffer {
++	struct wlr_buffer base;
++	struct wlr_buffer *backing;
++	struct wlr_scene *scene;
++	size_t bytes;
++	struct wl_listener scene_destroy;
++};
++
++static void snapshot_unaccount(struct scene_snapshot_buffer *snapshot) {
++	if (snapshot->scene) {
++		assert(snapshot->scene->effects_cached_bytes >= snapshot->bytes);
++		snapshot->scene->effects_cached_bytes -= snapshot->bytes;
++		wl_list_remove(&snapshot->scene_destroy.link);
++		snapshot->scene = NULL;
++	}
++}
++
++static void snapshot_scene_destroy(struct wl_listener *listener, void *data) {
++	(void)data;
++	struct scene_snapshot_buffer *snapshot = wl_container_of(listener, snapshot, scene_destroy);
++	snapshot_unaccount(snapshot);
++}
++
++static void snapshot_destroy(struct wlr_buffer *buffer) {
++	struct scene_snapshot_buffer *snapshot = wl_container_of(buffer, snapshot, base);
++	snapshot_unaccount(snapshot);
++	if (snapshot->backing) {
++		wlr_buffer_drop(snapshot->backing);
++	}
++	wlr_buffer_finish(buffer);
++	free(snapshot);
++}
++
++static bool snapshot_dmabuf(struct wlr_buffer *buffer, struct wlr_dmabuf_attributes *attrs) {
++	struct scene_snapshot_buffer *snapshot = wl_container_of(buffer, snapshot, base);
++	return wlr_buffer_get_dmabuf(snapshot->backing, attrs);
++}
++
++static bool snapshot_shm(struct wlr_buffer *buffer, struct wlr_shm_attributes *attrs) {
++	struct scene_snapshot_buffer *snapshot = wl_container_of(buffer, snapshot, base);
++	return wlr_buffer_get_shm(snapshot->backing, attrs);
++}
++
++static bool snapshot_begin(struct wlr_buffer *buffer, uint32_t flags,
++		void **data, uint32_t *format, size_t *stride) {
++	struct scene_snapshot_buffer *snapshot = wl_container_of(buffer, snapshot, base);
++	return wlr_buffer_begin_data_ptr_access(snapshot->backing, flags, data, format, stride);
++}
++
++static void snapshot_end(struct wlr_buffer *buffer) {
++	struct scene_snapshot_buffer *snapshot = wl_container_of(buffer, snapshot, base);
++	wlr_buffer_end_data_ptr_access(snapshot->backing);
++}
++
++static const struct wlr_buffer_impl snapshot_impl = {
++	.destroy = snapshot_destroy,
++	.get_dmabuf = snapshot_dmabuf,
++	.get_shm = snapshot_shm,
++	.begin_data_ptr_access = snapshot_begin,
++	.end_data_ptr_access = snapshot_end,
++};
++
++static bool snapshot_tree_valid(struct wlr_scene_tree *tree,
++		int64_t x, int64_t y, unsigned depth, unsigned *count) {
++	if (depth > 64) {
++		return false;
++	}
++	struct wlr_scene_node *child;
++	wl_list_for_each(child, &tree->children, link) {
++		if (!child->enabled) {
++			continue;
++		}
++		int64_t cx = x + child->x, cy = y + child->y;
++		if (++*count > 512 || cx < INT32_MIN || cx > INT32_MAX ||
++				cy < INT32_MIN || cy > INT32_MAX) {
++			return false;
++		}
++		if (child->type == WLR_SCENE_NODE_TREE) {
++			struct wlr_scene_tree *subtree = wlr_scene_tree_from_node(child);
++			if (subtree->rounding || !snapshot_tree_valid(subtree, cx, cy, depth + 1, count)) {
++				return false;
++			}
++		} else if (child->type == WLR_SCENE_NODE_RECT &&
++				wlr_scene_rect_from_node(child)->backdrop) {
++			return false;
++		}
++	}
++	return true;
++}
++
++struct wlr_buffer *wlr_scene_tree_snapshot(struct wlr_scene_tree *tree,
++		struct wlr_scene_output *output, const struct wlr_box *box,
++		float radius, int width, int height) {
++	if (!tree || !output || !box || scene_node_get_root(&tree->node) != output->scene ||
++			width < 1 || height < 1 || width > 1024 || height > 640 ||
++			box->width < 1 || box->height < 1 ||
++			box->width > WLR_SCENE_EFFECTS_MAX_AXIS ||
++			box->height > WLR_SCENE_EFFECTS_MAX_AXIS ||
++			!isfinite(radius) || radius < 0 ||
++			radius > fminf(box->width, box->height) / 2) {
++		wlr_log(WLR_ERROR, "Invalid bounded subtree snapshot request");
++		return NULL;
++	}
++	struct wlr_output *target = output->output;
++	if (!wlr_renderer_is_pixman(target->renderer)
++#if WLR_HAS_GLES2_RENDERER
++			&& !(wlr_renderer_is_gles2(target->renderer) &&
++				wlr_gles2_renderer_supports_scene_effects(target->renderer))
++#endif
++			) {
++		wlr_log(WLR_ERROR, "Subtree snapshots require a paired renderer");
++		return NULL;
++	}
++	int64_t x = 0, y = 0;
++	for (struct wlr_scene_node *node = &tree->node; node; node = node->parent ? &node->parent->node : NULL) {
++		x += node->x;
++		y += node->y;
++	}
++	unsigned nodes = 0;
++	if (x < INT32_MIN || x > INT32_MAX || y < INT32_MIN || y > INT32_MAX ||
++			x + box->x < INT32_MIN || x + box->x > INT32_MAX ||
++			y + box->y < INT32_MIN || y + box->y > INT32_MAX ||
++			!snapshot_tree_valid(tree, x, y, 0, &nodes)) {
++		wlr_log(WLR_ERROR, "Subtree snapshot coordinates overflow");
++		return NULL;
++	}
++	x += box->x;
++	y += box->y;
++	struct wlr_scene *scene = output->scene;
++	size_t bytes = (size_t)width * height * 8;
++	if (bytes > WLR_SCENE_EFFECTS_MAX_BYTES - scene->effects_cached_bytes) {
++		wlr_log(WLR_ERROR, "Subtree snapshot exceeds aggregate backing/workspace budget");
++		return NULL;
++	}
++	const struct wlr_drm_format *format = wlr_drm_format_set_get(
++		wlr_renderer_get_render_formats(target->renderer), DRM_FORMAT_ARGB8888);
++	struct scene_snapshot_buffer *snapshot = calloc(1, sizeof(*snapshot));
++	if (!format || !snapshot) {
++		free(snapshot);
++		wlr_log(WLR_ERROR, "Cannot allocate subtree snapshot state or format");
++		return NULL;
++	}
++	wlr_buffer_init(&snapshot->base, &snapshot_impl, width, height);
++	snapshot->scene = scene;
++	snapshot->bytes = bytes;
++	scene->effects_cached_bytes += bytes;
++	if (scene->effects_cached_bytes > scene->effects_peak_bytes) {
++		scene->effects_peak_bytes = scene->effects_cached_bytes;
++	}
++	snapshot->scene_destroy.notify = snapshot_scene_destroy;
++	wl_signal_add(&scene->tree.node.events.destroy, &snapshot->scene_destroy);
++	snapshot->backing = effects_create_buffer(target, width, height, format);
++	struct wlr_render_pass *pass = snapshot->backing ?
++		wlr_renderer_begin_buffer_pass(target->renderer, snapshot->backing, NULL) : NULL;
++	if (!pass) {
++		wlr_log(WLR_ERROR, "Cannot allocate or begin subtree snapshot");
++		wlr_buffer_drop(&snapshot->base);
++		return NULL;
++	}
++	wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options) {
++		.box = {.width = width, .height = height},
++		.color = {0}, .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
++	});
++	float scale = fminf((float)width / box->width, (float)height / box->height);
++	int fitted_width = fminf(width, fmaxf(1, roundf(box->width * scale)));
++	int fitted_height = fminf(height, fmaxf(1, roundf(box->height * scale)));
++	int pad_x = (width - fitted_width) / 2, pad_y = (height - fitted_height) / 2;
++	bool failed = false;
++	struct render_data data = {
++		.output = output, .render_pass = pass, .scale = scale,
++		.logical = {.x = (int)x, .y = (int)y},
++		.trans_width = width, .trans_height = height,
++		.buffer_offset_x = -pad_x, .buffer_offset_y = -pad_y,
++		.isolated = true, .failed = &failed,
++	};
++	pixman_region32_init_rect(&data.damage, pad_x, pad_y, fitted_width, fitted_height);
++	struct wlr_scene_node *child;
++	wl_list_for_each(child, &tree->children, link) {
++		rounding_render_children(child, (int)(x - box->x), (int)(y - box->y), &data);
++	}
++	pixman_region32_fini(&data.damage);
++	wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options) {
++		.box = {pad_x, pad_y, fitted_width, fitted_height},
++		.color = {1, 1, 1, 1},
++		.blend_mode = WLR_RENDER_BLEND_MODE_DESTINATION_IN,
++		.corner_radius = fminf(radius * scale, fminf(fitted_width, fitted_height) / 2),
++	});
++	if (!wlr_render_pass_submit(pass) || failed) {
++		wlr_log(WLR_ERROR, "Subtree snapshot composition failed");
++		wlr_buffer_drop(&snapshot->base);
++		return NULL;
++	}
++	return &snapshot->base;
++}
++
++bool wlr_scene_projection_supported(struct wlr_renderer *renderer) {
++#if WLR_HAS_GLES2_RENDERER
++	return renderer && wlr_renderer_is_gles2(renderer) &&
++		wlr_gles2_renderer_supports_projection(renderer);
++#else
++	(void)renderer;
++	return false;
++#endif
++}
++
++struct wlr_buffer *wlr_scene_projected_snapshot(struct wlr_scene_output *output,
++		const struct wlr_scene_projected_quad *quads, size_t count,
++		int width, int height, const float background[4]) {
++	if (!output || !quads || !background || count < 1 ||
++			count > WLR_SCENE_PROJECTION_MAX_QUADS || width < 1 || height < 1 ||
++			width > WLR_SCENE_PROJECTION_MAX_WIDTH || height > WLR_SCENE_PROJECTION_MAX_HEIGHT ||
++			!wlr_scene_projection_supported(output->output->renderer)) {
++		wlr_log(WLR_ERROR, "Invalid or unsupported bounded projected snapshot");
++		return NULL;
++	}
++	for (unsigned channel = 0; channel < 4; channel++) {
++		if (!isfinite(background[channel]) || background[channel] < 0 ||
++				background[channel] > (channel == 3 ? 1 : background[3])) {
++			wlr_log(WLR_ERROR, "Projected snapshot background is not premultiplied RGBA");
++			return NULL;
++		}
++	}
++	for (size_t index = 0; index < count; index++) {
++		if (!quads[index].buffer || quads[index].buffer->width < 1 || quads[index].buffer->height < 1 ||
++				quads[index].buffer->width > WLR_SCENE_PROJECTION_MAX_WIDTH ||
++				quads[index].buffer->height > WLR_SCENE_PROJECTION_MAX_HEIGHT) {
++			wlr_log(WLR_ERROR, "Projected snapshot source exceeds bounded dimensions");
++			return NULL;
++		}
++	}
++#if WLR_HAS_GLES2_RENDERER
++	struct wlr_scene *scene = output->scene;
++	size_t bytes = (size_t)width * height * 10;
++	if (bytes > WLR_SCENE_EFFECTS_MAX_BYTES - scene->effects_cached_bytes) {
++		wlr_log(WLR_ERROR, "Projected snapshot exceeds RGBA/depth/workspace peak budget");
++		return NULL;
++	}
++	struct wlr_output *target = output->output;
++	const struct wlr_drm_format *format = wlr_drm_format_set_get(
++		wlr_renderer_get_render_formats(target->renderer), DRM_FORMAT_ARGB8888);
++	struct scene_snapshot_buffer *snapshot = calloc(1, sizeof(*snapshot));
++	if (!format || !snapshot) {
++		free(snapshot);
++		wlr_log(WLR_ERROR, "Cannot allocate projected snapshot state or alpha format");
++		return NULL;
++	}
++	wlr_buffer_init(&snapshot->base, &snapshot_impl, width, height);
++	snapshot->scene = scene;
++	snapshot->bytes = bytes;
++	scene->effects_cached_bytes += bytes;
++	if (scene->effects_cached_bytes > scene->effects_peak_bytes) {
++		scene->effects_peak_bytes = scene->effects_cached_bytes;
++	}
++	snapshot->scene_destroy.notify = snapshot_scene_destroy;
++	wl_signal_add(&scene->tree.node.events.destroy, &snapshot->scene_destroy);
++	snapshot->backing = effects_create_buffer(target, width, height, format);
++	struct wlr_texture *textures[WLR_SCENE_PROJECTION_MAX_QUADS] = {0};
++	bool ready = snapshot->backing != NULL;
++	for (size_t index = 0; index < count && ready; index++) {
++		textures[index] = wlr_texture_from_buffer(target->renderer, quads[index].buffer);
++		ready = textures[index] != NULL;
++	}
++	struct wlr_render_pass *pass = ready ?
++		wlr_renderer_begin_buffer_pass(target->renderer, snapshot->backing, NULL) : NULL;
++	bool rendered = false;
++	if (pass) {
++		wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
++			.box = {.width = width, .height = height},
++			.color = {background[0], background[1], background[2], background[3]},
++			.blend_mode = WLR_RENDER_BLEND_MODE_NONE,
++		});
++		rendered = true;
++		for (size_t index = 0; index < count && rendered; index++) {
++			struct wlr_gles2_projected_texture_options options = {
++				.texture = textures[index], .opacity = quads[index].opacity,
++			};
++			memcpy(options.vertices, quads[index].vertices, sizeof(options.vertices));
++			memcpy(options.background, quads[index].background, sizeof(options.background));
++			rendered = wlr_gles2_render_pass_add_projected_texture(pass, &options);
++		}
++		bool submitted = wlr_render_pass_submit(pass);
++		rendered = rendered && submitted;
++	}
++	for (size_t index = 0; index < count; index++)
++		if (textures[index]) wlr_texture_destroy(textures[index]);
++	if (!rendered) {
++		wlr_log(WLR_ERROR, "Projected snapshot allocation/import/drawing failed");
++		wlr_buffer_drop(&snapshot->base);
++		return NULL;
++	}
++	return &snapshot->base;
++#else
++	return NULL;
++#endif
 +}
 +
 +static struct backdrop_cache *backdrop_find(struct wlr_scene_backdrop *backdrop,
@@ -1541,6 +2417,13 @@ index e823d62..f0f2f29 100644
 +		return true;
 +	}
 +	if (!node->enabled) {
++		/* Hidden ancestors still locate the preflight stop, but contribute no pixels. */
++		for (struct wlr_scene_node *ancestor = stop; ancestor;
++				ancestor = ancestor->parent ? &ancestor->parent->node : NULL) {
++			if (ancestor == node) {
++				return true;
++			}
++		}
 +		return false;
 +	}
 +	x += node->x;
@@ -1892,6 +2775,45 @@ index e823d62..f0f2f29 100644
 +
 +#endif
 +
++#if WLR_HAS_GLES2_RENDERER
++static bool backdrop_gles2_filter(struct wlr_output *output, struct wlr_buffer *sample,
++		struct wlr_buffer *destination, const struct wlr_drm_format *format,
++		int width, int height, int pad, const float *kernel, float radius, const float tint[static 4]) {
++	struct wlr_buffer *middle = effects_create_buffer(output, width, height, format);
++	struct wlr_texture *source = middle ? wlr_texture_from_buffer(output->renderer, sample) : NULL;
++	struct wlr_render_pass *pass = source ?
++		wlr_renderer_begin_buffer_pass(output->renderer, middle, NULL) : NULL;
++	bool ok = false;
++	if (pass) {
++		struct wlr_gles2_blur_options options = {
++			.texture = source, .kernel = kernel, .kernel_size = (uint32_t)(2 * pad + 1),
++			.source = {.width = width, .height = height},
++		};
++		bool filtered = wlr_gles2_render_pass_blur(pass, &options);
++		bool submitted = wlr_render_pass_submit(pass);
++		ok = filtered && submitted;
++	}
++	if (source) wlr_texture_destroy(source);
++	source = ok ? wlr_texture_from_buffer(output->renderer, middle) : NULL;
++	pass = source ? wlr_renderer_begin_buffer_pass(output->renderer, destination, NULL) : NULL;
++	ok = false;
++	if (pass) {
++		struct wlr_gles2_blur_options options = {
++			.texture = source, .kernel = kernel, .kernel_size = (uint32_t)(2 * pad + 1),
++			.source = {pad, pad, destination->width, destination->height},
++			.vertical = true, .corner_radius = radius,
++		};
++		memcpy(options.tint, tint, sizeof(options.tint));
++		bool filtered = wlr_gles2_render_pass_blur(pass, &options);
++		bool submitted = wlr_render_pass_submit(pass);
++		ok = filtered && submitted;
++	}
++	if (source) wlr_texture_destroy(source);
++	if (middle) wlr_buffer_drop(middle);
++	return ok;
++}
++#endif
++
 +static bool backdrop_prepare(struct wlr_scene_rect *rect, const struct render_data *data) {
 +	struct wlr_scene_backdrop *backdrop = rect->backdrop;
 +	struct wlr_scene *scene = backdrop->scene;
@@ -1917,8 +2839,9 @@ index e823d62..f0f2f29 100644
 +		wlr_log(WLR_ERROR, "Unsupported backdrop renderer/scale or regional pixel budget");
 +		return false;
 +	}
++	bool gles2 = !wlr_renderer_is_pixman(output->renderer);
 +	size_t bytes = (size_t)width * height * 8 +
-+		(size_t)physical.width * physical.height * 8 + sizeof(float) * (2 * pad + 1);
++		(size_t)physical.width * physical.height * 8 + sizeof(float) * (2 * pad + 1) * (gles2 ? 3 : 1);
 +	if (bytes > WLR_SCENE_EFFECTS_MAX_BYTES - scene->effects_cached_bytes) {
 +		wlr_log(WLR_ERROR, "Backdrop old-plus-candidate/workspace peak budget exceeded");
 +		return false;
@@ -1943,9 +2866,9 @@ index e823d62..f0f2f29 100644
 +	struct wlr_buffer *sample = format ? effects_create_buffer(output, width, height, format) : NULL;
 +	cache->buffer = format ? effects_create_buffer(output,
 +		physical.width, physical.height, format) : NULL;
-+	uint32_t *temporary = malloc((size_t)width * height * 4);
++	uint32_t *temporary = gles2 ? NULL : malloc((size_t)width * height * 4);
 +	float *kernel = malloc(sizeof(float) * (2 * pad + 1));
-+	bool ok = sample && cache->buffer && temporary && kernel;
++	bool ok = sample && cache->buffer && (gles2 || temporary) && kernel;
 +	if (ok) {
 +		struct wlr_render_pass *pass = wlr_renderer_begin_buffer_pass(output->renderer, sample, NULL);
 +		ok = pass != NULL;
@@ -1968,23 +2891,32 @@ index e823d62..f0f2f29 100644
 +			ok = wlr_render_pass_submit(pass) && found && !failed;
 +		}
 +	}
-+	void *source = NULL, *destination = NULL;
-+	uint32_t source_format = 0, dest_format = 0;
-+	size_t source_stride = 0, dest_stride = 0;
-+	bool source_access = ok && wlr_buffer_begin_data_ptr_access(sample, WLR_BUFFER_DATA_PTR_ACCESS_READ,
-+		&source, &source_format, &source_stride);
-+	bool dest_access = source_access && wlr_buffer_begin_data_ptr_access(cache->buffer,
-+		WLR_BUFFER_DATA_PTR_ACCESS_WRITE, &destination, &dest_format, &dest_stride);
-+	ok = dest_access && source_format == DRM_FORMAT_ARGB8888 && dest_format == DRM_FORMAT_ARGB8888;
 +	if (ok) {
 +		double sum = 0;
 +		for (int i = -pad; i <= pad; i++) {
 +			kernel[i + pad] = expf(-(float)(i * i) / (2 * sigma * sigma));
 +			sum += kernel[i + pad];
 +		}
-+		for (int i = 0; i <= 2 * pad; i++) {
-+			kernel[i] /= sum;
-+		}
++		for (int i = 0; i <= 2 * pad; i++) kernel[i] /= sum;
++	}
++	void *source = NULL, *destination = NULL;
++	uint32_t source_format = 0, dest_format = 0;
++	size_t source_stride = 0, dest_stride = 0;
++	bool source_access = !gles2 && ok && wlr_buffer_begin_data_ptr_access(sample, WLR_BUFFER_DATA_PTR_ACCESS_READ,
++		&source, &source_format, &source_stride);
++	bool dest_access = source_access && wlr_buffer_begin_data_ptr_access(cache->buffer,
++		WLR_BUFFER_DATA_PTR_ACCESS_WRITE, &destination, &dest_format, &dest_stride);
++	if (gles2) {
++#if WLR_HAS_GLES2_RENDERER
++		ok = ok && backdrop_gles2_filter(output, sample, cache->buffer, format,
++			width, height, pad, kernel, rect->corner_radius * data->scale, rect->color);
++#else
++		ok = false;
++#endif
++	} else {
++		ok = dest_access && source_format == DRM_FORMAT_ARGB8888 && dest_format == DRM_FORMAT_ARGB8888;
++	}
++	if (ok && !gles2) {
 +#if defined(__x86_64__) && defined(__SSE2__)
 +		struct scene_effects *effects = scene_effects_from_scene(scene);
 +		const struct backdrop_filter_ops *ops = effects->fir_backend == BACKDROP_FIR_EXPERIMENTAL ?
@@ -2122,12 +3054,10 @@ index e823d62..f0f2f29 100644
 +		}
 +	}
 +	return true;
-+}
-+
+ }
+ 
  static void scene_handle_linux_dmabuf_v1_destroy(struct wl_listener *listener,
- 		void *data) {
- 	struct wlr_scene *scene =
-@@ -1756,7 +3124,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
+@@ -1756,7 +3526,7 @@
  	} else if (node->type == WLR_SCENE_NODE_RECT) {
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  
@@ -2136,7 +3066,7 @@ index e823d62..f0f2f29 100644
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
  
-@@ -1772,6 +3140,7 @@ struct render_list_constructor_data {
+@@ -1772,6 +3542,7 @@
  	bool calculate_visibility;
  	bool highlight_transparent_region;
  	bool fractional_scale;
@@ -2144,7 +3074,7 @@ index e823d62..f0f2f29 100644
  };
  
  static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer) {
-@@ -1786,6 +3155,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
+@@ -1786,6 +3557,39 @@
  static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		int lx, int ly, void *_data) {
  	struct render_list_constructor_data *data = _data;
@@ -2184,7 +3114,7 @@ index e823d62..f0f2f29 100644
  
  	if (scene_node_invisible(node)) {
  		return false;
-@@ -1800,7 +3202,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
+@@ -1800,7 +3604,7 @@
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  		float *black = (float[4]){ 0.f, 0.f, 0.f, 1.f };
  
@@ -2193,7 +3123,7 @@ index e823d62..f0f2f29 100644
  			return false;
  		}
  	}
-@@ -2046,6 +3448,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
+@@ -2046,6 +3850,7 @@
  
  bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		struct wlr_output_state *state, const struct wlr_scene_output_state_options *options) {
@@ -2201,7 +3131,7 @@ index e823d62..f0f2f29 100644
  	struct wlr_scene_output_state_options default_options = {0};
  	if (!options) {
  		options = &default_options;
-@@ -2073,6 +3476,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2073,6 +3878,8 @@
  		.logical = { .x = scene_output->x, .y = scene_output->y },
  		.output = scene_output,
  	};
@@ -2210,7 +3140,7 @@ index e823d62..f0f2f29 100644
  
  	int resolution_width, resolution_height;
  	output_pending_resolution(output, state,
-@@ -2117,6 +3522,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2117,6 +3924,37 @@
  
  	struct render_list_entry *list_data = list_con.render_list->data;
  	int list_len = list_con.render_list->size / sizeof(*list_data);
@@ -2248,7 +3178,7 @@ index e823d62..f0f2f29 100644
  
  	if (debug_damage == WLR_SCENE_DEBUG_DAMAGE_RERENDER) {
  		scene_output_damage_whole(scene_output);
-@@ -2330,7 +3766,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2330,7 +4168,7 @@
  	wlr_output_add_software_cursors_to_render_pass(output, render_pass, &render_data.damage);
  	pixman_region32_fini(&render_data.damage);
  
@@ -2257,34 +3187,3 @@ index e823d62..f0f2f29 100644
  		wlr_buffer_unlock(buffer);
  
  		// if we failed to render the buffer, it will have undefined contents
-diff --git a/render/allocator/shm.c b/render/allocator/shm.c
---- a/render/allocator/shm.c
-+++ b/render/allocator/shm.c
-@@ -1,6 +1,9 @@
- #include <assert.h>
- #include <drm_fourcc.h>
-+#include <errno.h>
-+#include <fcntl.h>
- #include <stdlib.h>
-+#include <string.h>
- #include <sys/mman.h>
- #include <unistd.h>
- #include <wlr/interfaces/wlr_buffer.h>
-@@ -81,6 +84,17 @@ static struct wlr_buffer *allocator_create_buffer(
- 		return NULL;
- 	}
- 
-+	int error;
-+	do {
-+		error = posix_fallocate(buffer->shm.fd, 0, buffer->size);
-+	} while (error == EINTR);
-+	if (error != 0) {
-+		wlr_log(WLR_ERROR, "Failed to reserve SHM buffer backing: %s", strerror(error));
-+		close(buffer->shm.fd);
-+		free(buffer);
-+		return NULL;
-+	}
-+
- 	buffer->shm.format = format->format;
- 	buffer->shm.width = width;
- 	buffer->shm.height = height;

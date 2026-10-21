@@ -30,6 +30,9 @@ static struct {
     bool backdrop_supported, capability_reply, backdrop_reply;
     bool shell_backdrop_supported, shell_capability_reply;
     bool start_backdrop_supported, start_capability_reply;
+    uint32_t opacity_serial, opacity_reply, opacity_percent;
+    bool opacity_received, opacity_accepted, opacity_changed, opacity_supported;
+    char opacity_error[192];
     uint32_t applied_serial, retired_serial, retired_mask, committing_serial;
     char retired_error[192];
     bool backdrop_changed;
@@ -158,6 +161,23 @@ static void backdrop_prepared(void *data, struct polly_appearance_v1 *appearance
     renderer.backdrop_reply = true; renderer.accepted = accepted;
     snprintf(renderer.error, sizeof(renderer.error), "%s", message);
 }
+static void window_opacity_status(void *data, struct polly_appearance_v1 *appearance,
+    uint32_t serial, uint32_t supported, uint32_t percent, uint32_t accepted, const char *message)
+{
+    (void)data; (void)appearance;
+    if (serial && serial != renderer.opacity_serial) return;
+    if (percent < 50 || percent > 100 || accepted > 1 || supported > 1) {
+        renderer.opacity_received = false;
+        return;
+    }
+    renderer.opacity_changed |= renderer.opacity_percent != percent || strcmp(renderer.opacity_error, message) != 0;
+    renderer.opacity_percent = percent;
+    renderer.opacity_supported = supported == 1;
+    renderer.opacity_reply = serial;
+    renderer.opacity_received = true;
+    renderer.opacity_accepted = accepted == 1;
+    snprintf(renderer.opacity_error, sizeof(renderer.opacity_error), "%s", message);
+}
 const struct polly_appearance_v1_listener pu_decoration_client_listener = {
     .prepared = prepared, .applied = applied, .renderer_enabled = enabled,
     .render_request = requested, .frame_result = frame_result, .render_cancelled = closed,
@@ -167,6 +187,7 @@ const struct polly_appearance_v1_listener pu_decoration_client_listener = {
     .shell_backdrop_capability = shell_backdrop_capability,
     .shell_backdrop_retired = shell_backdrop_retired,
     .start_backdrop_capability = start_backdrop_capability,
+    .window_opacity_status = window_opacity_status,
 };
 void pu_decoration_client_attach(struct polly_appearance_v1 *appearance, struct wl_display *display,
     int (*roundtrip)(struct wl_display *display))
@@ -348,6 +369,38 @@ JSValue pu_decoration_client_start_backdrop_capability(JSContext *ctx,
     if (!pu_desktop_wayland_roundtrip(display) || !renderer.start_capability_reply)
         return JS_ThrowInternalError(ctx, "Standard Start backdrop capability was not acknowledged");
     return JS_NewBool(ctx, renderer.start_backdrop_supported);
+}
+JSValue pu_decoration_client_window_opacity(JSContext *ctx, struct polly_appearance_v1 *appearance,
+    struct wl_display *display, int argc, JSValueConst *argv, bool set)
+{
+    if (!appearance || polly_appearance_v1_get_version(appearance) < 10)
+        return JS_ThrowTypeError(ctx, "Global window opacity requires paired appearance v10");
+    uint32_t percent = 100, serial = 0;
+    if (set) {
+        if (argc != 1 || !read_integer(ctx, argv[0], &percent) || percent < 50 || percent > 100)
+            return JS_ThrowRangeError(ctx, "Window opacity must be an integer from 50 to 100");
+        if (renderer.opacity_serial == UINT32_MAX)
+            return JS_ThrowInternalError(ctx, "Window opacity request serials exhausted");
+        serial = ++renderer.opacity_serial;
+    }
+    renderer.opacity_received = false;
+    if (set) polly_appearance_v1_set_window_opacity(appearance, serial, percent);
+    else polly_appearance_v1_get_window_opacity(appearance);
+    if (!pu_desktop_wayland_roundtrip(display) || !renderer.opacity_received || renderer.opacity_reply != serial)
+        return JS_ThrowInternalError(ctx, "Window opacity was not acknowledged; remote outcome is unknown");
+    if (set && !renderer.opacity_accepted)
+        return JS_ThrowInternalError(ctx, "%s", renderer.opacity_error);
+    if (set && renderer.opacity_percent != percent)
+        return JS_ThrowInternalError(ctx, "Window opacity acknowledgement differs from the request");
+    JSValue state = JS_NewObject(ctx);
+    if (JS_IsException(state)) return state;
+    if (!property(ctx, state, "supported", JS_NewBool(ctx, renderer.opacity_supported)) ||
+        !property(ctx, state, "percent", JS_NewUint32(ctx, renderer.opacity_percent)) ||
+        !property(ctx, state, "error", JS_NewString(ctx, renderer.opacity_error))) {
+        JS_FreeValue(ctx, state);
+        return JS_EXCEPTION;
+    }
+    return state;
 }
 static struct wl_surface *current_backdrop_surface(JSContext *ctx, JSValueConst handle)
 {
@@ -575,6 +628,11 @@ int pu_decoration_client_pump(void)
 {
     if (!renderer.ctx || renderer.stopping) return 0;
     int work = 0;
+    if (renderer.opacity_changed) {
+        renderer.opacity_changed = false;
+        work = notify("onWindowOpacityChanged");
+        if (work < 0) return work;
+    }
     if (renderer.backdrop_changed) {
         renderer.backdrop_changed = false;
         work = notify("onBackdropStatusChanged");
@@ -590,7 +648,7 @@ int pu_decoration_client_pump(void)
     return work;
 }
 bool pu_decoration_client_pending(void)
-{ return !renderer.stopping && (renderer.backdrop_changed || (renderer.painter &&
+{ return !renderer.stopping && (renderer.opacity_changed || renderer.backdrop_changed || (renderer.painter &&
     (renderer.requests || renderer.status_changed))); }
 void pu_decoration_client_cancel_requests(void)
 {
@@ -613,6 +671,9 @@ void pu_decoration_client_disconnect(void)
     renderer.retired_error[0] = renderer.backdrop_error[0] = '\0';
     renderer.backdrop_supported = renderer.shell_backdrop_supported = false;
     renderer.capability_reply = renderer.shell_capability_reply = renderer.backdrop_changed = false;
+    renderer.opacity_serial = renderer.opacity_reply = renderer.opacity_percent = 0;
+    renderer.opacity_error[0] = '\0';
+    renderer.opacity_received = renderer.opacity_changed = renderer.opacity_accepted = renderer.opacity_supported = false;
 }
 void pu_decoration_client_shutdown(void)
 {

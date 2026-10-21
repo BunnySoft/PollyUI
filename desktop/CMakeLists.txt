@@ -23,7 +23,19 @@ check_c_source_compiles("#define WLR_USE_UNSTABLE
 #endif
 _Static_assert(WLR_SCENE_BACKDROP_MAX_WIDTH == 4096 && WLR_SCENE_BACKDROP_MAX_HEIGHT == 768,
     \"Paired bounded backdrop extent required\");
-int main(void) { return wlr_scene_effects_abi_v4() != WLR_SCENE_EFFECTS_ABI ||
+_Static_assert(WLR_SCENE_PROJECTION_MAX_WIDTH == 2048 && WLR_SCENE_PROJECTION_MAX_HEIGHT == 1280 &&
+    WLR_SCENE_PROJECTION_MAX_QUADS == 9, \"Paired bounded projection API required\");
+int main(void) {
+    bool (*composition)(struct wlr_scene_tree *, const struct wlr_box *, float, float) =
+        wlr_scene_tree_set_composition;
+    bool (*prepare)(struct wlr_scene_tree *) = wlr_scene_tree_prepare_composition;
+    struct wlr_buffer *(*snapshot)(struct wlr_scene_tree *, struct wlr_scene_output *,
+        const struct wlr_box *, float, int, int) = wlr_scene_tree_snapshot;
+    bool (*projection)(struct wlr_renderer *) = wlr_scene_projection_supported;
+    struct wlr_buffer *(*projected_frame)(struct wlr_scene_output *,
+        const struct wlr_scene_projected_quad *, size_t, int, int, const float *) = wlr_scene_projected_snapshot;
+    return !composition || !prepare || !snapshot || !projection || !projected_frame ||
+    wlr_scene_effects_abi_v4() != WLR_SCENE_EFFECTS_ABI ||
     wlr_scene_effects_source_sha256_v4() == 0; }"
     PU_WLROOTS_EFFECTS_ABI_4)
 unset(CMAKE_REQUIRED_LIBRARIES)
@@ -31,6 +43,7 @@ if (NOT PU_WLROOTS_EFFECTS_ABI_4)
     message(FATAL_ERROR "Build the pinned PollyUI wlroots scene effects SDK; stock/old headers or libraries are unsupported")
 endif()
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
+pkg_check_modules(PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
@@ -120,6 +133,9 @@ add_library(pollywm-core STATIC
     "${PROTOCOL_DIR}/text-input-v3-server.h"
     compositor/server.c
     compositor/decoration.c
+    compositor/window-opacity.c
+    compositor/window-previews.c
+    compositor/workspace-cube.c
     compositor/workspace.c
     compositor/shell_process.c
     "${PROTOCOL_DIR}/polly-shortcuts-server.h" "${PROTOCOL_DIR}/polly-shortcuts.c"
@@ -145,7 +161,7 @@ target_compile_definitions(pollywm-core PRIVATE
     PU_CURSOR_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons")
 target_compile_options(pollywm-core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(pollywm-core PUBLIC
-    PkgConfig::WLROOTS PkgConfig::WAYLAND_SERVER PkgConfig::XKBCOMMON m)
+    PkgConfig::WLROOTS PkgConfig::WAYLAND_SERVER PkgConfig::XKBCOMMON PkgConfig::PIXMAN m)
 set_target_properties(pollywm-core PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
 
 add_executable(pollywm compositor/main.c)

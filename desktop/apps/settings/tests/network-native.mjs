@@ -62,7 +62,7 @@ async function until(predicate) {
 async function connect() {
   client = createSettingsClient(openDbusClient(address));
   const opening = bridge.open('network');
-  await settle(client.call('Connect')); await settle(opening);
+  await settle(client.call('Connect')); await settle(client.call('Ready')); await settle(opening);
 }
 async function action(action, target) {
   const state = await until(state => state.ready && state.registered && !state.operation && !state.refreshing);

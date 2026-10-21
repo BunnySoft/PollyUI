@@ -85,8 +85,9 @@ int main(int argc, char **argv)
     while ((!locked || configured != output_count) && !finished) if (wl_display_dispatch(display) < 0) return 1;
     if (!locked) return 1;
     if (!strcmp(argv[1], "crash")) { raise(SIGKILL); return 1; }
-    if (strcmp(argv[1], "unlock")) return 2;
-    struct timespec delay = {.tv_nsec = 100000000};
+    bool held = !strcmp(argv[1], "unlock-held");
+    if (strcmp(argv[1], "unlock") && !held) return 2;
+    struct timespec delay = {.tv_sec = held ? 1 : 0, .tv_nsec = held ? 0 : 100000000};
     nanosleep(&delay, NULL);
     ext_session_lock_v1_unlock_and_destroy(lock);
     if (wl_display_roundtrip(display) < 0) return 1;

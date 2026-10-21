@@ -54,7 +54,7 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 | Component | Mini | Compact | Standard |
 |---|---|---|---|
 | Distribution / libc | Alpine / musl | Debian / glibc | Debian / glibc |
-| Init and session | BusyBox / UID 1000 / seatd; no login | New-tier design TBD | Existing full-system design; alignment pending |
+| Init and session | BusyBox / UID 1000 / seatd; no login | New-tier design TBD | systemd / PAM / logind; current full image uses UID 1000 |
 | Window manager / Wayland compositor | PollyWM / wlroots | Same implementation | Same implementation |
 | Composition renderer | Pixman | Basic CPU/Pixman path | General-purpose graphics path |
 | UI execution and layout | QuickJS + Yoga | Same implementation | Same implementation |
@@ -65,6 +65,10 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 | Fonts and text | DejaVu Sans + Mono; Fontconfig / FreeType / HarfBuzz / ICU | Add Chinese fonts; inventory TBD | Chinese support retained; existing broad fonts |
 | Input method engine | Not compiled | Reuse Rime path; integration pending | Rime |
 | GPU / 3D components | ❌ Mesa / LLVM / WebGL2 / WebGPU | ❔; no vendor acceleration | Existing Mesa/LLVM closure; WebGPU not enabled by this recipe |
+| Common CLI commands | Basic BusyBox/Foot set | TBD | Full utility group: files, archives, process/network diagnostics, editors, download/SSH clients, Git |
+| Wired Ethernet firmware | Minimum necessary set | Basic set TBD | Common Intel/Realtek/USB Ethernet modules plus Realtek firmware; DHCP/DNS service |
+| Wi-Fi drivers and firmware | Not integrated in current image | TBD | Intel/Realtek/Qualcomm Atheros/Broadcom-Cypress/MediaTek open-driver paths and firmware; iwd |
+| Audio drivers and hardware configuration | Not integrated in current image | TBD | HDA/Realtek/HDMI/USB, Intel SOF/SST, AMD ACP and Cirrus paths; SOF/Intel/Cirrus firmware, ALSA UCM/topology and existing PipeWire core |
 
 A SKU name does not automatically imply audio, networking, PAM/login,
 installation, persistence, or updates. These have implementations in the
@@ -123,7 +127,29 @@ visible output is not proof of a fully verified physical driver chain.
 | SKU | Delivery status under the new definition |
 |---|---|
 | Compact | New Debian Chinese Shell + basic-display recipe not integrated; `--os compact --plan` is blocked and `--build` fails before external commands. Historical `thin` and minimal-zh images are not Compact deliveries |
-| Standard | New `standard.yaml` selects existing `standard-effects4` and internal `full` hardware; `--os standard` delegates to guarded config/lock assembly. No new Standard media or inherited boot qualification |
+| Standard | New `standard.yaml` selects `standard-effects4` and internal `full` hardware. The Wi-Fi/audio-expanded Full-profile ISO is 865.88 MB and USB image 918.55 MB; their actual identity remains `full`, built through frozen-runtime profile assembly, not the new configured product entry |
+
+The current Full image is at `D:\temp\PollyOS\full-wifi-audio-0f142c34a948\`.
+ISO SHA-256: `0f142c34a9488d6f770c52f30184bf6d847e011d83cdd5ac608b3fe3675dce9d`.
+It retains Nouveau/GP107/Mesa and wired networking, adds multi-vendor Wi-Fi and
+audio firmware plus ALSA UCM/topology, and checks 53 required module paths and
+63 command entry points. Its unchanged-condition ISO rerun and first read-only
+USB lane passed the UID 1000 desktop, Chinese input, clipboard and workspace
+checks. The initial ISO run missed its Chinese commit marker; that failure is
+retained, not labelled as fixed or first-pass success.
+
+The USB lane also passed emulated e1000e DHCP, gateway ping and system DNS,
+and enumerated ALSA playback/capture devices. It did not play audible sound or
+capture a microphone. Ordinary-user ping uses GID-1000 ICMP datagram permission,
+not added setuid or raw-socket privileges. Actual Wi-Fi association, physical
+audio and hardware compatibility remain unqualified.
+
+Physical P1000 output/acceleration and real Ethernet remain untested. The stock
+Debian kernel does not provide Mini's simpledrm fallback. Media/runtime source
+revisions, checksums, initial failures and qualification limits are recorded
+separately in the [delivery log](SKU-DELIVERY.md); old-image results are not reused.
+The previous `full-p1000-a734991cc8fb` image is preserved and does not inherit
+the new Wi-Fi/audio firmware/data additions.
 
 Historical filenames, checksums, build entry points, and failure records are
 preserved. New configurations must select existing, paired component variants.

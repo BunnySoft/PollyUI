@@ -17,6 +17,8 @@
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/types/wlr_input_method_v2.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -430,9 +432,167 @@ static void session_exit(struct wl_client *client, struct wl_resource *resource,
         pu_desktop_session_exit_windows(state->desktop, resource, serial);
     polly_session_status_v1_send_session_exit_status(resource, serial, phase, pending);
 }
+
+struct BackgroundActivity {
+    struct PuDesktop *desktop;
+    struct wl_resource *resource;
+    struct PuDesktopLayer *layer;
+    struct wlr_scene_buffer *buffer;
+    struct wl_listener outputs, buffer_destroy, tree_destroy, commit;
+    uint32_t state;
+    bool overlay;
+};
+static bool activity_role(struct PuDesktopLayer *layer, bool overlay)
+{
+    if (!overlay) return layer->surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+    return (layer->surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_TOP ||
+        layer->surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY) &&
+        layer->surface->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE &&
+        layer->surface->current.exclusive_zone == -1;
+}
+static void background_update(struct BackgroundActivity *watch)
+{
+    uint32_t state = POLLY_BACKGROUND_ACTIVITY_V1_STATE_INACTIVE;
+    if (!watch->layer) {
+        state = POLLY_BACKGROUND_ACTIVITY_V1_STATE_RETIRED;
+    } else if (watch->desktop->shell_client == wl_resource_get_client(watch->resource) &&
+        !pu_session_lock_active(watch->desktop) && watch->layer->presented &&
+        watch->layer->surface->surface->mapped && watch->buffer &&
+        watch->buffer->primary_output && watch->buffer->primary_output->output->enabled) {
+        state = POLLY_BACKGROUND_ACTIVITY_V1_STATE_ACTIVE;
+    }
+    if (state == watch->state) return;
+    watch->state = state;
+    polly_background_activity_v1_send_activity(watch->resource, state);
+}
+static void background_outputs(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct BackgroundActivity *watch = wl_container_of(listener, watch, outputs);
+    background_update(watch);
+}
+static void background_buffer_destroyed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct BackgroundActivity *watch = wl_container_of(listener, watch, buffer_destroy);
+    unlisten(&watch->outputs);
+    unlisten(&watch->buffer_destroy);
+    watch->buffer = NULL;
+    background_update(watch);
+}
+static void background_retired(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct BackgroundActivity *watch = wl_container_of(listener, watch, tree_destroy);
+    unlisten(&watch->outputs);
+    unlisten(&watch->buffer_destroy);
+    unlisten(&watch->tree_destroy);
+    unlisten(&watch->commit);
+    watch->buffer = NULL;
+    watch->layer = NULL;
+    background_update(watch);
+}
+static struct wlr_scene_buffer *background_buffer(struct wlr_scene_node *node,
+    struct wlr_surface *surface, unsigned depth, unsigned *count)
+{
+    if (depth > 64 || ++*count > 512) return NULL;
+    if (node->type == WLR_SCENE_NODE_BUFFER) {
+        struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
+        struct wlr_scene_surface *scene = wlr_scene_surface_try_from_buffer(buffer);
+        return scene && scene->surface == surface ? buffer : NULL;
+    }
+    if (node->type != WLR_SCENE_NODE_TREE) return NULL;
+    struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+    struct wlr_scene_node *child;
+    wl_list_for_each(child, &tree->children, link) {
+        struct wlr_scene_buffer *buffer = background_buffer(child, surface, depth + 1, count);
+        if (buffer) return buffer;
+    }
+    return NULL;
+}
+static void background_committed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct BackgroundActivity *watch = wl_container_of(listener, watch, commit);
+    if (!activity_role(watch->layer, watch->overlay)) {
+        background_retired(&watch->tree_destroy, NULL);
+        return;
+    }
+    unsigned count = 0;
+    struct wlr_scene_buffer *buffer = background_buffer(&watch->layer->content->node,
+        watch->layer->surface->surface, 0, &count);
+    if (buffer != watch->buffer) {
+        unlisten(&watch->outputs);
+        unlisten(&watch->buffer_destroy);
+        watch->buffer = buffer;
+        if (buffer) {
+            listen(&buffer->events.outputs_update, &watch->outputs, background_outputs);
+            listen(&buffer->node.events.destroy, &watch->buffer_destroy, background_buffer_destroyed);
+        }
+    }
+    background_update(watch);
+}
+static void background_destroyed(struct wl_resource *resource)
+{
+    struct BackgroundActivity *watch = wl_resource_get_user_data(resource);
+    unlisten(&watch->outputs);
+    unlisten(&watch->buffer_destroy);
+    unlisten(&watch->tree_destroy);
+    unlisten(&watch->commit);
+    free(watch);
+}
+static const struct polly_background_activity_v1_interface background_impl = {
+    .destroy = destroy_status,
+};
+static enum wl_iterator_result count_background(struct wl_resource *resource, void *data)
+{
+    unsigned *count = data;
+    if (wl_resource_instance_of(resource, &polly_background_activity_v1_interface, &background_impl)) ++*count;
+    return WL_ITERATOR_CONTINUE;
+}
+static void watch_activity(struct wl_client *client, struct wl_resource *resource,
+    uint32_t id, struct wl_resource *surface_resource, bool overlay)
+{
+    struct PuInputMethod *state = wl_resource_get_user_data(resource);
+    unsigned count = 0;
+    wl_client_for_each_resource(client, count_background, &count);
+    if (client != state->desktop->shell_client || count >= 64) {
+        wl_client_post_implementation_error(client, "Background watch requires the current Shell and at most 64 targets");
+        return;
+    }
+    struct BackgroundActivity *watch = calloc(1, sizeof(*watch));
+    if (!watch) { wl_resource_post_no_memory(resource); return; }
+    watch->resource = wl_resource_create(client, &polly_background_activity_v1_interface, 1, id);
+    if (!watch->resource) { free(watch); wl_client_post_no_memory(client); return; }
+    watch->desktop = state->desktop;
+    watch->overlay = overlay;
+    watch->state = UINT32_MAX;
+    wl_resource_set_implementation(watch->resource, &background_impl, watch, background_destroyed);
+    struct wlr_surface *surface = wlr_surface_from_resource(surface_resource);
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &state->desktop->layers, link) {
+        if (layer->surface->surface != surface || !activity_role(layer, overlay)) continue;
+        watch->layer = layer;
+        listen(&layer->tree->node.events.destroy, &watch->tree_destroy, background_retired);
+        listen(&surface->events.commit, &watch->commit, background_committed);
+        background_committed(&watch->commit, NULL);
+        return;
+    }
+    background_update(watch);
+}
+static void watch_background(struct wl_client *client, struct wl_resource *resource,
+    uint32_t id, struct wl_resource *surface)
+{
+    watch_activity(client, resource, id, surface, false);
+}
+static void watch_overlay(struct wl_client *client, struct wl_resource *resource,
+    uint32_t id, struct wl_resource *surface)
+{
+    watch_activity(client, resource, id, surface, true);
+}
 static const struct polly_session_status_v1_interface status_impl = {
     .destroy = destroy_status, .inspect = inspect_status, .input_method_initialized = initialized,
-    .session_exit = session_exit,
+    .session_exit = session_exit, .watch_background = watch_background, .watch_overlay = watch_overlay,
 };
 static enum wl_iterator_result request_logout(struct wl_resource *resource, void *data)
 {
@@ -622,7 +782,7 @@ bool pu_input_method_init(struct PuDesktop *desktop)
     struct wlr_text_input_manager_v3 *inputs = wlr_text_input_manager_v3_create(desktop->display);
     struct wlr_input_method_manager_v2 *methods = wlr_input_method_manager_v2_create(desktop->display);
     struct wlr_virtual_keyboard_manager_v1 *keyboards = wlr_virtual_keyboard_manager_v1_create(desktop->display);
-    state->status_global = wl_global_create(desktop->display, &polly_session_status_v1_interface, 2, state, bind_status);
+    state->status_global = wl_global_create(desktop->display, &polly_session_status_v1_interface, 4, state, bind_status);
     if (!state->tree || !inputs || !methods || !keyboards || !state->status_global) return false;
     listen(&inputs->events.text_input, &state->new_input, new_text_input);
     listen(&methods->events.input_method, &state->new_method, new_method);

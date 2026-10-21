@@ -14,7 +14,18 @@
     "intelGraphics": ["firmware-intel-graphics"],
     "nvidiaGraphics": ["firmware-nvidia-graphics"],
     "amdGraphics": ["firmware-amd-graphics"],
-    "physicalNetworkAudio": ["firmware-iwlwifi", "firmware-sof-signed"]
+    "physicalNetworkAudio": ["firmware-iwlwifi", "firmware-sof-signed", "firmware-realtek"],
+    "standardWirelessAudio": [
+      "firmware-atheros", "firmware-brcm80211", "firmware-mediatek",
+      "firmware-intel-sound", "firmware-cirrus"
+    ],
+    "standardUtilities": [
+      "bash", "coreutils", "findutils", "grep", "sed", "gawk", "procps", "psmisc",
+      "less", "nano", "vim-tiny", "tar", "gzip", "bzip2", "xz-utils=5.8.1-1+deb13u1", "unzip", "zip",
+      "curl=8.14.1-2+deb13u5", "wget", "openssh-client", "rsync", "lsof", "iputils-ping",
+      "iputils-tracepath", "traceroute", "bind9-dnsutils", "file", "git", "ca-certificates",
+      "alsa-ucm-conf", "alsa-topology-conf"
+    ]
   },
   "shared": [
     "One unchanged native application/Chinese IME/font runtime and paired SDK; no application or language trimming.",
@@ -61,12 +72,27 @@
       ]
     },
     "full": {
-      "packageGroups": ["common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics", "physicalNetworkAudio"],
+      "packageGroups": ["common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics", "physicalNetworkAudio", "standardWirelessAudio", "standardUtilities"],
       "displayPolicy": "native",
       "kernelPolicy": "stock",
-      "requiredModules": ["i915", "nouveau", "amdgpu", "igc", "iwlwifi", "snd_hda_intel", "xhci_pci", "usb_storage", "virtio_gpu"],
+      "requiredModules": [
+        "i915", "nouveau", "amdgpu", "virtio_gpu",
+        "e1000e", "igb", "igc", "r8169", "r8152", "asix", "ax88179_178a",
+        "iwlwifi", "iwlmvm", "iwldvm", "rtw88_8821ce", "rtw88_8822be", "rtw88_8822ce", "rtw88_8822bu",
+        "rtw89_8852ae", "rtw89_8852be", "rtw89_8852ce", "rtw89_8922ae", "rtl8xxxu",
+        "ath9k", "ath9k_htc", "ath10k_pci", "ath11k_pci", "ath12k", "brcmfmac", "brcmsmac",
+        "mt7921e", "mt7921u", "mt7925e", "mt7925u", "mt7615e", "mt76x2u",
+        "snd_hda_intel", "snd_hda_codec_realtek", "snd_hda_codec_hdmi", "snd_usb_audio",
+        "snd_sof_pci_intel_tgl", "snd_sof_pci_intel_mtl", "snd_sof_pci_intel_lnl",
+        "snd_sof_amd_rembrandt", "snd_pci_acp6x", "snd_hda_scodec_cs35l41_i2c", "snd_hda_scodec_cs35l41_spi",
+        "nvme", "ahci", "xhci_pci", "usb_storage", "usbhid", "hid_generic"
+      ],
       "support": [
-        "Current declared Intel UHD770 + NVIDIA RTX4070Ti/RTX4060Ti open-source Nouveau/Mesa route, I226-V and AX211/SOF firmware set.",
+        "Current declared Intel UHD770 + NVIDIA RTX4070Ti/RTX4060Ti and Quadro P1000 (GP107) open-source Nouveau/Mesa package route; exact hardware still requires physical testing.",
+        "Includes common Intel/Realtek/USB Ethernet kernel paths, Realtek firmware and wired DHCP/DNS tools. Actual link, address and connectivity require independent runtime checks.",
+        "Includes Intel/Realtek/Qualcomm Atheros/Broadcom-Cypress/MediaTek open-driver Wi-Fi paths and firmware with iwd; not every chipset, board-specific calibration or real connection is qualified.",
+        "Includes HDA/Realtek/HDMI/USB audio, Intel SOF/SST, AMD ACP and Cirrus paths, SOF/Intel/Cirrus firmware and ALSA UCM/topology data; physical speakers, microphones and HDMI routing remain unqualified.",
+        "Includes ordinary shell, file/archive, process, network diagnostic, download, SSH client, editor and Git commands; no SSH server or remote-login service is added.",
         "Adds the AMD amdgpu/firmware-amd-graphics package route and VM paths. This three-GPU firmware set is not all-model or all-hardware certification."
       ]
     },

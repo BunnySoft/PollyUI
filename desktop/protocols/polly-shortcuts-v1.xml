@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_shortcuts_v1">
-  <interface name="polly_shortcuts_v1" version="2">
+  <interface name="polly_shortcuts_v1" version="5">
     <description summary="trusted shortcut configuration and switcher presentation">
       Only the compositor-owned Shell connection may bind this interface.
       Actions are a fixed catalog, not commands or executable strings.
@@ -9,6 +9,11 @@
       Version 2 requires the ten-action catalog: the original seven numeric
       actions retain their order, followed by tile-left, tile-right and
       restore-floating. Version 1 bindings are rejected, not partially applied.
+      Version 3 adds bounded compositor-owned window previews. Version 2 retains
+      its original title-only presenter and ten-action catalog.
+      Version 4 adds native perspective/depth composition. It does not change
+      the version-3 rectangle format or grant foreign pixels to the presenter.
+      Version 5 adds opt-in native four-workspace cube policy and status.
     </description>
     <request name="destroy" type="destructor"/>
     <request name="set_binding">
@@ -59,5 +64,100 @@
     </event>
     <event name="switcher_done"/>
     <event name="switcher_closed"/>
+    <event name="preview_capability" since="3">
+      <arg name="supported" type="uint"/>
+    </event>
+    <request name="configure_previews" since="3">
+      <description summary="paint current candidate thumbnails in an owned selector surface">
+        Only the current authenticated Shell presenter may request this while
+        its exact switcher serial is active. Request IDs increase strictly.
+        Surface must be an owned, mapped and arranged overlay on an enabled
+        output, with a current matching buffer, fixed dimensions, no keyboard
+        interactivity and exclusive zone -1; its logical extent is at most
+        4096x768. This is not an input or window-placement grant.
+        Rectangles contain one to nine sets of five uints: candidate index,
+        surface-local x/y and logical width/height. Indices are unique, boxes
+        fit the actual surface, and each is at most 512x320. Background is RGB.
+        No foreign surface or pixel FD is
+        accepted or returned. Failure preserves the previous presentation.
+        Individual unavailable source/resource slots are reported through the
+        ready bitmask and visible error rather than disguised as live images.
+        Previews stop on selector close, owner loss, locking or target retirement.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="request" type="uint"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="background" type="uint"/>
+      <arg name="rectangles" type="array"/>
+    </request>
+    <event name="previews_status" since="3">
+      <arg name="serial" type="uint"/>
+      <arg name="request" type="uint"/>
+      <arg name="accepted" type="uint"/>
+      <arg name="ready" type="uint" summary="bit per requested rectangle, not candidate index"/>
+      <arg name="message" type="string"/>
+    </event>
+    <event name="projection_capability" since="4">
+      <arg name="supported" type="uint"/>
+    </event>
+    <request name="configure_projection" since="4">
+      <description summary="compose a bounded native 3D window stack">
+        Uses the same current-presenter, serial, monotonic request and owned
+        selector requirements as configure_previews. Viewport contains exactly
+        five uints: animate (0/1), surface-local x/y and logical width/height.
+        The compositor chooses up to nine actual candidate sources and camera
+        geometry. Pixels, source buffers and transforms are not exposed.
+        The existing previews_status ready mask uses bit zero for this single
+        composed viewport. Source failures are explicitly reported.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="request" type="uint"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="background" type="uint"/>
+      <arg name="viewport" type="array"/>
+    </request>
+    <request name="pick_projection" since="4">
+      <description summary="read-only depth-consistent hit test of the current native stack">
+        Coordinates are logical pixels relative to the configured viewport.
+        The current composed pose is used, not an uncommitted animation goal.
+        A miss returns UINT32_MAX and an empty error. Stale or invalid requests
+        return an explicit error. This request does not activate a window.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="probe" type="uint"/>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+    </request>
+    <event name="projection_hit" since="4">
+      <arg name="serial" type="uint"/>
+      <arg name="probe" type="uint"/>
+      <arg name="index" type="uint"/>
+      <arg name="error" type="string"/>
+    </event>
+    <request name="configure_cube" since="5">
+      <description summary="atomically select native workspace switching policy">
+        Enabled and motion are strict booleans (0/1). Enabling requires the
+        paired GLES renderer and exactly four workspaces. Failure preserves
+        policy. Configuration cancels an active selection without activation.
+        Sources remain compositor-owned and hidden workspaces are not activated
+        to sample them. Release the triggering modifiers to commit; Escape
+        cancels. Owner loss, lock, grabs and output/workspace changes cancel.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="enabled" type="uint"/>
+      <arg name="motion" type="uint"/>
+    </request>
+    <event name="cube_configured" since="5">
+      <arg name="serial" type="uint"/>
+      <arg name="error" type="string"/>
+    </event>
+    <event name="cube_status" since="5">
+      <arg name="supported" type="uint"/>
+      <arg name="enabled" type="uint"/>
+      <arg name="motion" type="uint"/>
+      <arg name="active" type="uint"/>
+      <arg name="selected" type="uint"/>
+      <arg name="error" type="string"/>
+    </event>
   </interface>
 </protocol>

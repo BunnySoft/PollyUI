@@ -116,6 +116,8 @@ int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
 int pu_image_set_argb(const char *key, int width, int height, const uint8_t *bytes, size_t length);
 int pu_image_set_bitmap(const char *key, const uint8_t *bytes, size_t length,
                         size_t pixel_limit, int *width, int *height);
+/* Native local-video helper frames: copied opaque BGRA, never a JS pixel transport. */
+int pu_image_set_video_frame(const char *key, int width, int height, const uint8_t *bytes, size_t length);
 void pu_image_remove(const char *key);
 
 /* Measure a UTF-8 string at `font_size` (px), weight (e.g. 400/700), slant, and

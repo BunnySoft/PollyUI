@@ -11,11 +11,14 @@ ROOT=/work/initroot
 rm -rf /work/build /work/prefix "$ROOT" /work/iso
 
 backends=drm
+effects_option=
 if [ "$variant" = shell ]; then
     backends=drm,libinput
     if ! grep -q polly-effects-sha256 /work/src/meson.options; then
         python3 /repo/desktop/release/debian/apply-wlroots-effects.py /work/src
     fi
+    effects_pin=$(python3 -c 'import json; print(json.load(open("/repo/desktop/release/debian/wlroots-effects.json"))["patchSha256"])')
+    effects_option="-Dpolly-effects-sha256=$effects_pin"
 fi
 
 python3 - <<'PY'
@@ -37,7 +40,7 @@ PY
 meson setup /work/build /work/src --prefix=/work/prefix --libdir=lib --buildtype=release \
     --wrap-mode=nofallback -Dexamples=true -Dxwayland=disabled \
     -Dbackends="$backends" -Drenderers= -Dallocators= \
-    -Dpolly-effects-sha256=7b58c4a0c4c8a0cfac4ab8016f1f3590b463d961405102fbe133e0054fcebf0e \
+    $effects_option \
     >/work/wlroots-setup.log 2>&1
 ninja -C /work/build -j "${PU_BUILD_JOBS:-2}" >/work/wlroots-build.log 2>&1
 ninja -C /work/build install >/work/wlroots-install.log 2>&1

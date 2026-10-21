@@ -7,6 +7,7 @@
 #include "shared/thread.h"
 #if defined(PU_LAYER_SHELL)
 #include "native/windows.h"
+#include "native/video-client.h"
 #include "native/notifications.h"
 #include "native/tray.h"
 #include "native/audio.h"
@@ -668,6 +669,7 @@ int pu_applications_install(JSContext *ctx)
     JS_SetPropertyStr(ctx, desktop_api, "onExit", JS_NULL);
 #if defined(PU_LAYER_SHELL)
     if (!pu_desktop_windows_install(ctx, desktop_api)) return 0;
+    if (!pu_video_client_install(ctx, desktop_api)) return 0;
     if (!pu_notifications_install(ctx, desktop_api)) return 0;
     if (!pu_tray_install(ctx, desktop_api)) return 0;
     if (!pu_audio_install(ctx, desktop_api)) return 0;
@@ -714,6 +716,7 @@ int pu_applications_pump(void)
     }
 #if defined(PU_LAYER_SHELL)
     worked += pu_desktop_windows_pump();
+    worked += pu_video_client_pump();
     worked += pu_notifications_pump();
     worked += pu_tray_pump();
     worked += pu_audio_pump();
@@ -737,6 +740,7 @@ void pu_applications_shutdown(void)
     pu_audio_shutdown();
     pu_tray_shutdown();
     pu_notifications_shutdown();
+    pu_video_client_shutdown();
     pu_desktop_windows_shutdown();
 #endif
     pu_install_targets_shutdown();

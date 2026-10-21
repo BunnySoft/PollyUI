@@ -56,6 +56,14 @@ struct SystemMenuRequest {
     char output_name[128];
 };
 
+struct BackgroundWatch {
+    struct BackgroundWatch *next;
+    struct polly_background_activity_v1 *proxy;
+    JSValue owner;
+    uint32_t id, state;
+    bool ready;
+};
+
 static struct {
     JSContext *ctx;
     JSValue api;
@@ -64,11 +72,15 @@ static struct {
     struct wl_display *display;
     struct zwlr_foreign_toplevel_manager_v1 *manager;
     struct wl_seat *seat;
+    struct wl_compositor *compositor;
     struct polly_appearance_v1 *appearance;
     struct polly_session_status_v1 *session_status;
     uint32_t status_serial, status_reply, input_method_state;
     uint32_t exit_serial, exit_reply, exit_phase, exit_pending;
     bool logout_requested;
+    struct BackgroundWatch *backgrounds;
+    uint32_t next_background;
+    bool backgrounds_changed;
     struct ext_workspace_manager_v1 *workspace_manager;
     struct ext_workspace_group_handle_v1 *workspace_group;
     struct polly_workspace_toplevel_manager_v1 *workspace_toplevels;
@@ -95,6 +107,13 @@ static struct {
     uint32_t system_menu_last_serial, system_menu_reply;
     bool system_menu_accepted;
 } control;
+
+static void release_background_watch(struct BackgroundWatch *watch)
+{
+    if (watch->proxy) polly_background_activity_v1_destroy(watch->proxy);
+    JS_FreeValue(control.ctx, watch->owner);
+    free(watch);
+}
 
 static void session_status(void *data, struct polly_session_status_v1 *status, uint32_t serial, uint32_t input_method)
 {
@@ -545,8 +564,13 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
     (void)data;
     if (pu_shortcut_client_bind(control.display, registry, name, interface, version)) return;
     if (pu_output_client_bind(control.display, registry, name, interface, version)) return;
+    if (!control.compositor && !strcmp(interface, "wl_compositor")) {
+        control.compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 1);
+        if (!control.compositor) control.failed = 1;
+        return;
+    }
     if (!control.session_status && !strcmp(interface, polly_session_status_v1_interface.name)) {
-        control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, version >= 2 ? 2 : 1);
+        control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, version >= 4 ? 4 : version);
         if (!control.session_status ||
             polly_session_status_v1_add_listener(control.session_status, &session_status_listener, NULL) < 0)
             control.failed = control.changed = 1;
@@ -559,7 +583,8 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             control.failed = control.changed = 1;
     } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
         if (version < 7) { control.failed = control.changed = 1; return; }
-        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, version >= 9 ? 9 : version >= 8 ? 8 : 7);
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface,
+            version >= 10 ? 10 : version >= 9 ? 9 : version >= 8 ? 8 : 7);
         if (!control.appearance ||
             polly_appearance_v1_add_listener(control.appearance, &pu_decoration_client_listener, NULL) < 0)
             control.failed = control.changed = 1;
@@ -614,6 +639,11 @@ static int roundtrip(void)
 
 static void disconnect_control(void)
 {
+    while (control.backgrounds) {
+        struct BackgroundWatch *watch = control.backgrounds;
+        control.backgrounds = watch->next;
+        release_background_watch(watch);
+    }
     JS_FreeValue(control.ctx, control.placement_menu);
     control.placement_menu = JS_UNDEFINED;
     control.menu_epoch = control.menu_target = 0;
@@ -643,6 +673,8 @@ static void disconnect_control(void)
         zwlr_foreign_toplevel_manager_v1_destroy(control.manager);
     }
     if (control.seat) wl_seat_destroy(control.seat);
+    if (control.compositor) wl_compositor_destroy(control.compositor);
+    control.compositor = NULL;
     if (control.appearance) polly_appearance_v1_destroy(control.appearance);
     if (control.session_status) polly_session_status_v1_destroy(control.session_status);
     control.session_status = NULL;
@@ -682,6 +714,157 @@ static int property(JSContext *ctx, JSValueConst object, const char *name, JSVal
 
 int pu_desktop_windows_ready(JSContext *ctx) { return ensure_control(ctx); }
 int pu_desktop_windows_roundtrip(void) { return roundtrip(); }
+
+static void background_activity(void *data, struct polly_background_activity_v1 *proxy, uint32_t state)
+{
+    (void)proxy;
+    struct BackgroundWatch *watch = data;
+    if (state > POLLY_BACKGROUND_ACTIVITY_V1_STATE_RETIRED ||
+        (watch->ready && watch->state == POLLY_BACKGROUND_ACTIVITY_V1_STATE_RETIRED &&
+         state != POLLY_BACKGROUND_ACTIVITY_V1_STATE_RETIRED)) {
+        control.failed = 1;
+        return;
+    }
+    watch->state = state;
+    watch->ready = true;
+    control.backgrounds_changed = true;
+}
+static const struct polly_background_activity_v1_listener background_listener = {
+    .activity = background_activity,
+};
+static JSValue background_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int overlay)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return JS_NewBool(ctx, control.session_status &&
+        polly_session_status_v1_get_version(control.session_status) >= (overlay ? 4u : 3u));
+}
+static JSValue watch_background(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int overlay)
+{
+    (void)self;
+    if (argc != 1) return JS_ThrowTypeError(ctx, "One live owned background Window is required");
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    if (!control.session_status || polly_session_status_v1_get_version(control.session_status) < (overlay ? 4u : 3u))
+        return JS_ThrowTypeError(ctx, "Background activity requires session status v3");
+    unsigned count = 0;
+    for (struct BackgroundWatch *watch = control.backgrounds; watch; watch = watch->next) ++count;
+    if (count >= 64 || control.next_background == UINT32_MAX)
+        return JS_ThrowRangeError(ctx, "Background watch capacity or identifiers exhausted");
+    PuWindow *owned = pu_gui_window_from_value(ctx, argv[0]);
+    struct wl_surface *surface = owned ? pu_window_layer_surface(owned) : NULL;
+    if (!surface) return JS_HasException(ctx) ? JS_EXCEPTION :
+        JS_ThrowTypeError(ctx, "A live owned background layer Window is required");
+    struct BackgroundWatch *watch = calloc(1, sizeof(*watch));
+    if (!watch) return JS_ThrowOutOfMemory(ctx);
+    watch->owner = JS_DupValue(ctx, argv[0]);
+    watch->id = ++control.next_background;
+    watch->proxy = overlay ? polly_session_status_v1_watch_overlay(control.session_status, surface) :
+        polly_session_status_v1_watch_background(control.session_status, surface);
+    if (!watch->proxy ||
+        polly_background_activity_v1_add_listener(watch->proxy, &background_listener, watch) < 0) {
+        release_background_watch(watch);
+        return JS_ThrowInternalError(ctx, "Cannot create the background activity watch");
+    }
+    bool ready = roundtrip() && watch->ready;
+    owned = pu_gui_window_from_value(ctx, watch->owner);
+    if (!ready || !owned || pu_window_layer_surface_peek(owned) != surface ||
+        watch->state == POLLY_BACKGROUND_ACTIVITY_V1_STATE_RETIRED) {
+        release_background_watch(watch);
+        return JS_HasException(ctx) ? JS_EXCEPTION :
+            JS_ThrowInternalError(ctx, "Background watch target is retired or its initial state is unknown");
+    }
+    watch->next = control.backgrounds;
+    control.backgrounds = watch;
+    return JS_NewUint32(ctx, watch->id);
+}
+
+static JSValue set_overlay_input(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (argc != 2 || !JS_IsArray(argv[1]))
+        return JS_ThrowTypeError(ctx, "An owned layer Window and bounded input rectangles are required");
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    JSValue owner = JS_DupValue(ctx, argv[0]);
+    int32_t rectangles[64][4];
+    uint32_t count = 0;
+    JSValue length = JS_GetPropertyStr(ctx, argv[1], "length");
+    double raw;
+    bool valid = !JS_IsException(length) && JS_IsNumber(length) && JS_ToFloat64(ctx, &raw, length) == 0 &&
+        isfinite(raw) && raw >= 0 && raw <= 64 && raw == floor(raw);
+    if (valid) count = (uint32_t)raw;
+    JS_FreeValue(ctx, length);
+    for (uint32_t index = 0; valid && index < count; index++) {
+        JSValue row = JS_GetPropertyUint32(ctx, argv[1], index);
+        if (JS_IsException(row)) { valid = false; break; }
+        length = JS_GetPropertyStr(ctx, row, "length");
+        valid = JS_IsArray(row) && !JS_IsException(length) && JS_IsNumber(length) &&
+            JS_ToFloat64(ctx, &raw, length) == 0 && raw == 4;
+        JS_FreeValue(ctx, length);
+        for (unsigned field = 0; valid && field < 4; field++) {
+            JSValue value = JS_GetPropertyUint32(ctx, row, field);
+            valid = !JS_IsException(value) && JS_IsNumber(value) && JS_ToFloat64(ctx, &raw, value) == 0 &&
+                isfinite(raw) && raw >= 0 && raw <= 32768 && raw == floor(raw);
+            if (valid) rectangles[index][field] = (int32_t)raw;
+            JS_FreeValue(ctx, value);
+        }
+        JS_FreeValue(ctx, row);
+        if (valid) valid = rectangles[index][2] > 0 && rectangles[index][3] > 0;
+    }
+    PuWindow *window = valid ? pu_gui_window_from_value(ctx, owner) : NULL;
+    PuWindowState state;
+    struct wl_surface *surface = window ? pu_window_layer_surface_peek(window) : NULL;
+    valid = valid && surface && pu_window_get_state(window, &state) && state.width > 0 && state.height > 0;
+    for (uint32_t index = 0; valid && index < count; index++)
+        valid = rectangles[index][0] + rectangles[index][2] <= state.width &&
+            rectangles[index][1] + rectangles[index][3] <= state.height;
+    if (!valid || !control.compositor) {
+        JS_FreeValue(ctx, owner);
+        return JS_HasException(ctx) ? JS_EXCEPTION : JS_ThrowRangeError(ctx, "Input rectangles require a live owned layer and actual bounds");
+    }
+    struct wl_region *region = wl_compositor_create_region(control.compositor);
+    if (!region) { JS_FreeValue(ctx, owner); return JS_ThrowOutOfMemory(ctx); }
+    for (uint32_t index = 0; index < count; index++)
+        wl_region_add(region, rectangles[index][0], rectangles[index][1], rectangles[index][2], rectangles[index][3]);
+    wl_surface_set_input_region(surface, region);
+    wl_region_destroy(region);
+    pu_window_redraw(window);
+    bool sent = roundtrip();
+    window = pu_gui_window_from_value(ctx, owner);
+    sent = sent && window && pu_window_layer_surface_peek(window) == surface;
+    JS_FreeValue(ctx, owner);
+    return sent ? JS_NewBool(ctx, true) : JS_HasException(ctx) ? JS_EXCEPTION :
+        JS_ThrowInternalError(ctx, "Owned layer input update was not acknowledged; target may be retired");
+}
+static JSValue background_state(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int release)
+{
+    (void)self;
+    double id;
+    if (argc != 1 || !JS_IsNumber(argv[0]) || JS_ToFloat64(ctx, &id, argv[0]) < 0 ||
+        !(id > 0 && id <= UINT32_MAX) || id != (uint32_t)id)
+        return JS_ThrowTypeError(ctx, "A current background watch ID is required");
+    if (release == 2 && !roundtrip())
+        return JS_ThrowInternalError(ctx, "Cannot synchronize owned overlay activity");
+    struct BackgroundWatch **entry = &control.backgrounds;
+    while (*entry && (*entry)->id != (uint32_t)id) entry = &(*entry)->next;
+    if (!*entry) return JS_ThrowTypeError(ctx, "Background watch is closed");
+    struct BackgroundWatch *watch = *entry;
+    if (release == 1) {
+        *entry = watch->next;
+        release_background_watch(watch);
+        if (control.display && wl_display_flush(control.display) < 0 && errno != EAGAIN && errno != EINTR)
+            return JS_ThrowInternalError(ctx, "Cannot flush background watch retirement");
+        return JS_UNDEFINED;
+    }
+    if (control.failed || !control.display || wl_display_get_error(control.display) || !watch->ready)
+        return JS_ThrowInternalError(ctx, "Background activity transport is unavailable");
+    JSValue result = JS_NewObject(ctx);
+    if (!property(ctx, result, "active", JS_NewBool(ctx, watch->state == POLLY_BACKGROUND_ACTIVITY_V1_STATE_ACTIVE)) ||
+        !property(ctx, result, "retired", JS_NewBool(ctx, watch->state == POLLY_BACKGROUND_ACTIVITY_V1_STATE_RETIRED))) {
+        JS_FreeValue(ctx, result);
+        return JS_EXCEPTION;
+    }
+    return result;
+}
 
 static JSValue services(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
@@ -1407,6 +1590,25 @@ static JSValue start_backdrop_capability(JSContext *ctx, JSValueConst self, int 
     return pu_decoration_client_start_backdrop_capability(ctx, control.appearance, control.display);
 }
 
+static JSValue window_opacity_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    if (!control.appearance || polly_appearance_v1_get_version(control.appearance) < 10)
+        return JS_NewBool(ctx, false);
+    JSValue state = pu_decoration_client_window_opacity(ctx, control.appearance, control.display, 0, NULL, false);
+    if (JS_IsException(state)) return state;
+    JSValue supported = JS_GetPropertyStr(ctx, state, "supported");
+    JS_FreeValue(ctx, state);
+    return supported;
+}
+static JSValue window_opacity(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int set)
+{
+    (void)self;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return pu_decoration_client_window_opacity(ctx, control.appearance, control.display, argc, argv, set != 0);
+}
+
 int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
 {
     control.ctx = ctx;
@@ -1416,6 +1618,22 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     if (!pu_shortcut_client_install(ctx, api)) return 0;
     if (!pu_output_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "sessionServices", JS_NewCFunction(ctx, services, "sessionServices", 0))) return 0;
+    if (!property(ctx, api, "backgroundActivityCapability",
+            JS_NewCFunctionMagic(ctx, background_capability, "backgroundActivityCapability", 0, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "watchBackground",
+            JS_NewCFunctionMagic(ctx, watch_background, "watchBackground", 1, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "overlayActivityCapability",
+            JS_NewCFunctionMagic(ctx, background_capability, "overlayActivityCapability", 0, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "watchDesktopOverlay",
+            JS_NewCFunctionMagic(ctx, watch_background, "watchDesktopOverlay", 1, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "setOverlayInput", JS_NewCFunction(ctx, set_overlay_input, "setOverlayInput", 2)) ||
+        !property(ctx, api, "backgroundActivity",
+            JS_NewCFunctionMagic(ctx, background_state, "backgroundActivity", 1, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "overlayActivity",
+            JS_NewCFunctionMagic(ctx, background_state, "overlayActivity", 1, JS_CFUNC_generic_magic, 2)) ||
+        !property(ctx, api, "releaseBackground",
+            JS_NewCFunctionMagic(ctx, background_state, "releaseBackground", 1, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "onBackgroundActivityChanged", JS_NULL)) return 0;
     if (!property(ctx, api, "onSessionExitRequested", JS_NULL)) return 0;
     const char *exit_names[] = { "sessionExitState", "beginSessionExit", "cancelSessionExit", "sealSessionExit" };
     for (int i = 0; i < 4; i++)
@@ -1446,6 +1664,12 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
         !property(ctx, api, "arrangeWindows", JS_NewCFunctionMagic(ctx, place_window,
             "arrangeWindows", 3, JS_CFUNC_generic_magic, 3))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 2))) return 0;
+    if (!property(ctx, api, "windowOpacityCapability",
+        JS_NewCFunction(ctx, window_opacity_capability, "windowOpacityCapability", 0)) ||
+        !property(ctx, api, "windowOpacityState",
+        JS_NewCFunctionMagic(ctx, window_opacity, "windowOpacityState", 0, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "setWindowOpacity",
+        JS_NewCFunctionMagic(ctx, window_opacity, "setWindowOpacity", 1, JS_CFUNC_generic_magic, 1))) return 0;
     if (!property(ctx, api, "backdropCapability", JS_NewCFunction(ctx, backdrop_capability, "backdropCapability", 0))) return 0;
     if (!property(ctx, api, "shellBackdropCapability",
         JS_NewCFunction(ctx, shell_backdrop_capability, "shellBackdropCapability", 0))) return 0;
@@ -1485,6 +1709,10 @@ static void notify(const char *name)
 
 int pu_desktop_windows_pump(void)
 {
+    if (control.ctx && control.backgrounds_changed) {
+        control.backgrounds_changed = false;
+        notify("onBackgroundActivityChanged");
+    }
     if (control.ctx && control.logout_requested) {
         control.logout_requested = false;
         notify("onSessionExitRequested");

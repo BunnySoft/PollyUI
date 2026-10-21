@@ -335,6 +335,44 @@ podman run --rm --pull=never --network=none \
 依赖根；不能依靠旧开发镜像碰巧装过它们。SDK 中原源码目录的 Git metadata、
 许可证和 Mesa `.deb` 及其 JSON 都必须保留，只有 `.so/.a` 不足以打包。
 
+### 可选本地视频解码 SDK
+
+视频壁纸使用独立辅助进程，`PU_DESKTOP_VIDEO` 默认 OFF，不为 Mini 隐式加入 FFmpeg。
+需要此功能时，在上面的配对 SDK 上叠加独立镜像，不修改或覆盖原 SDK。
+新的 Standard 产品媒体必须包含它；普通桌面/GUI 和 Mini 的默认值仍为 OFF：
+
+```sh
+VIDEO_CONTEXT="$OUT/video-sdk-inputs"
+mkdir "$VIDEO_CONTEXT"
+cp desktop/release/debian/{Containerfile.video-codecs,build-video-codecs.py,video-codecs.json} "$VIDEO_CONTEXT/"
+curl --fail --location https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz \
+  --output "$VIDEO_CONTEXT/ffmpeg-9.0.2.tar.xz"
+curl --fail --location https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz.asc \
+  --output "$VIDEO_CONTEXT/ffmpeg-9.0.2.tar.xz.asc"
+curl --fail --location https://ffmpeg.org/ffmpeg-devel.asc \
+  --output "$VIDEO_CONTEXT/ffmpeg-devel.asc"
+podman build --build-arg "SDK_IMAGE=$SDK_ID" \
+  --file "$VIDEO_CONTEXT/Containerfile.video-codecs" \
+  --tag localhost/polly-video-sdk "$VIDEO_CONTEXT"
+SDK_ID=$(podman image inspect --format '{{.Id}}' localhost/polly-video-sdk)
+export SDK_ID
+```
+
+配方核对三个输入的固定 SHA-512 和官方签名指纹，再编译独立前缀
+`/opt/pollyui-video-codecs`。只启用 H264/VP8/VP9 和 MOV/Matroska；
+无音频、网络协议、GPL/nonfree 或硬件解码。不使用系统 FFmpeg CLI。
+下方 configure 命令额外加 `-DPU_DESKTOP_VIDEO=ON` 才启用功能；
+需要 Linux SDL desktop、launcher、desktop services 和 layer-shell，非法组合直接报错。
+打包会运行实际 helper 的 `--build-info`，记录四个私有库、完整源码/签名、
+许可证、构建参数及 SBOM，不接受 SDK 与源码配方不一致。
+这不是对专利、法律合规、实机性能或新媒体资格的保证。
+
+规范产品 `standard.yaml` 的媒体入口还核对实际 SDK 的 GLES2 编译能力、
+视频辅助进程、全部新特效脚本/资源以及运行包与当前源码的完整字节清单。
+缺少任何能力或使用旧源码运行包会在创建媒体输出前被拒绝。旧硬件 profile
+和历史产物不因此获得新功能。`dirty=false`、真实 Git 来源、签名锁及媒体
+校验仍必须满足；不能把已通过的开发运行包直接改标签当作冻结发行输入。
+
 ### Configure / build
 
 ```sh
@@ -475,6 +513,44 @@ SOF（也不带 AMD graphics），保虚拟显示/存储/输入/网络模块和�
 runtime、Apps、中文 IME/字体**，所以不是“完全无其它厂商驱动”。不删除单个
 `.so` 或破坏 dpkg 依赖。深度拆 kernel/Mesa 包及其配对 SDK 是后续工作。
 Early Plymouth、64 MiB bootstrap、RAMroot/READY、账户/PAM与诊断保持不变。
+
+#### Standard/full：P1000、有线网络与常用命令
+
+`full` 当前额外声明常用 CLI 包组 `standardUtilities`，包含 shell/文件和压缩工具、
+进程查看、less/nano/vi、curl/wget、SSH 客户端、rsync、Git、ping/tracepath/traceroute、
+dig/nslookup 等。只加客户端，不启用 SSH server 或远程登录。
+Full 将 ICMP 数据报 socket 限于 GID 1000，使 Live 普通用户可直接运行 ping；
+不为命令添加 setuid 或额外 raw-socket 权限。通过 systemd-sysctl 在目标系统启动时应用，
+不在容器构建中修改宿主 sysctl。
+curl 命令固定为 `8.14.1-2+deb13u5`，xz-utils 固定为 `5.8.1-1+deb13u1`，
+分别与当前配对 runtime 的 libcurl4t64、liblzma5 同源版本一致；
+不能让新 CLI 安装顺带升级被冻结的原生运行库。换 SDK/runtime 时需要重新核对该约束。
+物理网络固件组加入 `firmware-realtek`；full 明确核验 Intel e1000e/igb/igc、
+Realtek r8169/r8152、ASIX/AX88179 USB Ethernet 模块。原有 dhcpcd 有线 DHCP、
+openresolv/DNS 和网卡自动发现保持，静态包校验不代表真实连线和联网通过。
+
+Full 另加 `standardWirelessAudio` 固件组：`firmware-atheros`、
+`firmware-brcm80211`、`firmware-mediatek`、`firmware-intel-sound`、
+`firmware-cirrus`，保留已有 Intel Wi-Fi、Realtek 和 Intel SOF 固件。
+同时加入 `alsa-ucm-conf`、`alsa-topology-conf`，让已有 ALSA/PipeWire 枚举路径
+获得声卡用例和拓扑配置，不仅检查内核 `.ko` 是否存在。
+Full 显式核验 Intel、rtw88/rtw89、Atheros ath9k/ath10k/ath11k/ath12k、
+brcmfmac/brcmsmac、MediaTek PCIe/USB 无线驱动，以及 HDA/Realtek/HDMI/USB、
+Intel SOF、AMD ACP、Cirrus 音频模块；Wi-Fi 服务仍为 iwd。
+NVMe/AHCI、USB 控制器/存储和 HID 键鼠模块也纳入 Full 必需项。
+
+这不是所有芯片和笔记本的兼容承诺：未加入 Broadcom STA 闭源驱动；
+部分设备仍需板级校准/NVRAM、OEM 音频配置或额外 AMD DSP 固件。
+目标 stock 内核与稳定仓库的组合优先，不为新增固件升级冻结的原生库。
+实际 Wi-Fi 扫描/连接、扬声器播放和麦克风录音仍需要对应实机验证。
+
+Quadro P1000（GP107）使用 `nouveau` + `firmware-nvidia-graphics` 中的 GP107
+固件 + Mesa Nouveau 路线，不加入私有 NVIDIA 内核模块。运行
+`python3 /usr/lib/polly-hardware/standard-hardware.py` 可检查目标内核模块、
+设备类别 alias、固件、Mesa 和命令载荷；验收明确为 payload-only。
+P1000 的实际端口、模式和加速性能仍需实机测试，不能用 QEMU 代替。
+目前 stock Debian 内核未启用 simpledrm，完整镜像不能直接继承 Alpine Mini 的
+GOP 桌面保底；基础绘图使用原生 DRM/KMS + Pixman，GPU 菜单另走 GLES。
 
 输出为：
 
@@ -730,7 +806,16 @@ podman run --rm --pull=never --network=none \
 2 vCPU、只读介质、无 guest 硬盘/NIC/宿主共享或 host audio。失败要保留首次日志，
 不能把换内存/超时后的通过重标首次通过。QMP quit 不是用户关机资格。
 `--new-architecture` 另需实际截图审批、精确 runtime/harness revision 等输入，
-不能通过空参数当作完整 Apps 验收。此节提供用户执行方法，本次写文档不运行 VM。
+不能通过空参数当作完整 Apps 验收。命令示例本身不是通过证据，实际结果见交付记录。
+
+`--wired-network --harness-revision "$HARNESS_REVISION"` 是单独的有线网络场景；
+使用包含测试器的完整 40 位提交。它保留普通用户桌面、中文提交、剪贴板和工作区检查，
+另加 QEMU e1000e/user-network，并以 UID 1000 核验 DHCP 地址、默认网关、系统 DNS、
+网关 ping 和 `example.com A` 查询。需要允许工具容器访问外网，不能沿用上例的
+`--network=none`；客机不接宿主真实网卡或磁盘。可配合 `--usb` 检查只读 USB `.img`。
+结果明确记为模拟有线网络，不代表实物网卡或 P1000 资格；不得覆盖首次失败证据。
+另加 `--audio-devices` 可要求同一客机的 `aplay -l` / `arecord -l` 实际枚举到
+模拟 HDA 播放与采集设备；不向宿主声卡播放或录音，也不等于实机音频通过。
 
 ### 冻结交付级：实际 ISO 内容与运行时绑定
 

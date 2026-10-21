@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(PU_BUILD_DESKTOP "Build the experimental Linux Wayland compositor" OFF)
 option(PU_BUILD_LAUNCHER "Build the application launcher with SysRT system capabilities" ON)
+option(PU_DESKTOP_VIDEO "Build the optional isolated local-video wallpaper decoder" OFF)
 option(PU_WEBGPU "Build the native Dawn WebGPU backend" OFF)
 if(PU_WEBGPU)
     set(PU_DAWN_ROOT "" CACHE PATH "Checksum-pinned Dawn package or source-build installation")
@@ -99,6 +100,11 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     option(PU_DESKTOP_SERVICES "Enable explicit Linux desktop application APIs" ${PU_BUILD_DESKTOP})
+    option(PU_LAYER_SHELL "Support custom Wayland layer surfaces in the SDL host" ON)
+endif()
+if (PU_DESKTOP_VIDEO AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT PU_BUILD_DESKTOP OR
+    NOT PU_BUILD_LAUNCHER OR NOT PU_DESKTOP_SERVICES OR NOT PU_LAYER_SHELL OR NOT PU_HOST STREQUAL "sdl"))
+    message(FATAL_ERROR "PU_DESKTOP_VIDEO requires the Linux SDL desktop, launcher, desktop services and layer-shell host")
 endif()
 add_subdirectory(shared)
 add_subdirectory(gui)
@@ -198,7 +204,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(polly-app PRIVATE polly-bundles)
         install(TARGETS polly-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
         target_sources(pollyui PRIVATE desktop/native/applications.c desktop/native/documents.c
-            desktop/native/install-targets.c desktop/native/session-bus.c)
+            desktop/native/install-targets.c desktop/native/session-bus.c desktop/native/video-client.c)
         target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
         target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS polly-bundles)
         target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
@@ -210,6 +216,43 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_options(pollyui-app-launcher PRIVATE -fno-sanitize=all)
         add_dependencies(pollyui pollyui-app-launcher polly-app)
         install(TARGETS pollyui-app-launcher RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
+        if (PU_DESKTOP_VIDEO)
+            pkg_check_modules(VIDEO_CODECS REQUIRED IMPORTED_TARGET
+                "libavformat=63.1.102" "libavcodec=63.1.102" "libavutil=61.1.102" "libswscale=10.1.102")
+            pkg_get_variable(PU_VIDEO_CODECS_PREFIX libavcodec prefix)
+            find_package(Python3 REQUIRED COMPONENTS Interpreter)
+            execute_process(COMMAND "${Python3_EXECUTABLE}" -I -B -c
+                "import json,sys; assert json.load(open(sys.argv[1])) == json.load(open(sys.argv[2])), 'Video codec SDK recipe differs from product source'"
+                "${CMAKE_SOURCE_DIR}/desktop/release/debian/video-codecs.json"
+                "${PU_VIDEO_CODECS_PREFIX}/share/polly-video-codecs.json"
+                RESULT_VARIABLE PU_VIDEO_RECIPE_RESULT)
+            if (NOT PU_VIDEO_RECIPE_RESULT EQUAL 0)
+                message(FATAL_ERROR "Build the exact pinned local-only LGPL video decoder SDK")
+            endif()
+            add_executable(polly-video-decoder desktop/native/video-decoder.c)
+            target_include_directories(polly-video-decoder PRIVATE desktop)
+            target_link_libraries(polly-video-decoder PRIVATE PkgConfig::VIDEO_CODECS)
+            target_compile_options(polly-video-decoder PRIVATE -Wall -Wextra -Wpedantic -Werror)
+            set_target_properties(polly-video-decoder PROPERTIES INSTALL_RPATH "$ORIGIN/video")
+            file(RELATIVE_PATH PU_VIDEO_HELPER_FROM_BIN "${CMAKE_INSTALL_FULL_BINDIR}"
+                "${CMAKE_INSTALL_FULL_LIBDIR}/pollyui/polly-video-decoder")
+            target_compile_definitions(pollyui PRIVATE PU_DESKTOP_VIDEO
+                PU_VIDEO_BUILD_DIRECTORY="${CMAKE_BINARY_DIR}"
+                PU_VIDEO_HELPER_FROM_BIN="${PU_VIDEO_HELPER_FROM_BIN}")
+            add_dependencies(pollyui polly-video-decoder)
+            install(TARGETS polly-video-decoder RUNTIME DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui" COMPONENT PollyDesktop)
+            foreach(PU_VIDEO_LIBRARY IN ITEMS avcodec avformat avutil swscale)
+                get_filename_component(PU_VIDEO_REAL_LIBRARY "${PU_VIDEO_CODECS_PREFIX}/lib/lib${PU_VIDEO_LIBRARY}.so" REALPATH)
+                get_filename_component(PU_VIDEO_REAL_NAME "${PU_VIDEO_REAL_LIBRARY}" NAME)
+                if (NOT PU_VIDEO_REAL_NAME MATCHES "^lib${PU_VIDEO_LIBRARY}[.]so[.]([0-9]+)[.]")
+                    message(FATAL_ERROR "Cannot determine the pinned video library SONAME")
+                endif()
+                install(FILES "${PU_VIDEO_REAL_LIBRARY}" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/video"
+                    RENAME "lib${PU_VIDEO_LIBRARY}.so.${CMAKE_MATCH_1}" COMPONENT PollyDesktop)
+            endforeach()
+            install(DIRECTORY "${PU_VIDEO_CODECS_PREFIX}/share/licenses/pollyui-video-codecs"
+                DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pollyui" COMPONENT PollyDesktop)
+        endif()
     endif()
 
     find_package(PkgConfig REQUIRED)
@@ -218,7 +261,6 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_compile_definitions(pollyui-engine PUBLIC PU_COMPLEX_TEXT)
     # Match the official Release Skia ABI even when the host is a Debug build.
     target_compile_definitions(pollyui-engine PUBLIC _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
-    option(PU_LAYER_SHELL "Support custom Wayland layer surfaces in the SDL host" ON)
     if (PU_HOST STREQUAL "sdl")
         pkg_check_modules(WAYLAND_HOST REQUIRED IMPORTED_TARGET wayland-client)
         target_link_libraries(pollyui-engine PUBLIC PkgConfig::WAYLAND_HOST)
@@ -779,6 +821,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
         add_executable(pollyui-layer-client-test desktop/tests/runtime-client.c)
         pkg_check_modules(PIXMAN_UI_TEST REQUIRED IMPORTED_TARGET pixman-1)
         target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
+        target_link_options(pollyui-layer-client-test PRIVATE "-Wl,--wrap=wlr_allocator_autocreate")
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         if (PU_DESKTOP_SERVICES)
             target_compile_definitions(pollyui-layer-client-test PRIVATE PU_TEST_DECORATOR)
@@ -903,6 +946,51 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                 set_tests_properties(desktop-settings-${mode} PROPERTIES TIMEOUT 330
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native")
             endforeach()
+            add_test(NAME desktop-window-previews-native
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/window-previews-native.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    --evidence "${CMAKE_BINARY_DIR}/window-previews-evidence")
+            set_tests_properties(desktop-window-previews-native PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-window-preview")
+            add_test(NAME desktop-window-projection-native
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/window-previews-native.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui> --projection
+                    --evidence "${CMAKE_BINARY_DIR}/window-projection-evidence")
+            set_tests_properties(desktop-window-projection-native PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-window-projection")
+            add_test(NAME desktop-workspace-cube-native
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/window-previews-native.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui> --cube
+                    --evidence "${CMAKE_BINARY_DIR}/workspace-cube-evidence")
+            set_tests_properties(desktop-workspace-cube-native PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-workspace-cube")
+            add_test(NAME desktop-companion-native
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/window-previews-native.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui> --companion
+                    --evidence "${CMAKE_BINARY_DIR}/companion-evidence")
+            set_tests_properties(desktop-companion-native PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-desktop-companion")
+            if (PU_DESKTOP_VIDEO)
+                add_test(NAME desktop-video-decoder
+                    COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/video-decoder.py"
+                        $<TARGET_FILE:polly-video-decoder>)
+                set_tests_properties(desktop-video-decoder PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-video")
+                add_test(NAME desktop-video-wallpaper-native
+                    COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/window-previews-native.py"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui> --video
+                        --evidence "${CMAKE_BINARY_DIR}/video-wallpaper-evidence")
+                set_tests_properties(desktop-video-wallpaper-native PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-video")
+            endif()
+            add_test(NAME desktop-procedural-wallpaper-native
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --bus
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    "${CMAKE_SOURCE_DIR}/desktop/tests/procedural-wallpaper-native.mjs" wallpaper)
+            set_tests_properties(desktop-procedural-wallpaper-native PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+                ENVIRONMENT "PU_RENDERER=raster;PU_DESKTOP_FIXTURE_LOCK=$<TARGET_FILE:polly-lock-test-client>"
+                LABELS "private-wallpaper")
             add_test(NAME desktop-settings-network
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
@@ -987,7 +1075,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                 set_tests_properties(desktop-display-persistence-${renderer} PROPERTIES TIMEOUT 180
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-switcher-shell-${renderer}
-                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --bus
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
                         "${CMAKE_SOURCE_DIR}/desktop/tests/switcher-shell.mjs" switcher)
                 set_tests_properties(desktop-switcher-shell-${renderer} PROPERTIES TIMEOUT 120

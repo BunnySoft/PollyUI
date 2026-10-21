@@ -14,6 +14,7 @@ import { audioSettingsView } from './desktop/apps/settings/ui/audio.mjs';
 import { shortcutsView } from './desktop/apps/settings/ui/keyboard.mjs';
 import { createWallpaperMaterial } from './desktop/shared/ui/material.mjs';
 import { parseMaterialSource } from './desktop/client/settings-contract.mjs';
+import { showFileDialog } from './desktop/client/file-dialog.mjs';
 
 export function createSettingsApp({ client, page = 'appearance', host = window, report = console.error,
   identity = typeof application === 'undefined' ? { id: SETTINGS_APP_ID } : application,
@@ -22,6 +23,8 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   let surface = null, timer = null, pageTimer = null, stopped = false, revision = 0, details = false;
   let material = null, materialUnsubscribe = null, materialKey = '', materialInput = '', materialStatusPaint = false;
   let materialGeneration = 0, materialReady = false, materialError = '', materialSource = null, materialLoading = false;
+  let transparencyPreview = null, previewError = '';
+  let videoDialog = null, videoChoiceError = '';
   const ownBuild = runtimeBuild(identity);
   let currentTheme = getDesktopTheme(DEFAULT_DESKTOP_THEME);
   const networkClient = createSettingsNetworkClient(client, report);
@@ -29,6 +32,81 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   const pages = createSettingsPages({ client, changed: paint, report });
   const displays = createDisplayPage();
   const controller = createSettingsController({ client, page, changed: paint, report });
+  async function chooseVideoWallpaper() {
+    if (stopped || !surface || surface.closed || videoDialog || controller.getState().busy) return;
+    const current = controller.getState().appearance?.wallpaper;
+    if (!current?.videoAvailable) return;
+    try {
+      const path = current.video?.path;
+      videoChoiceError = '';
+      const dialog = showFileDialog({ parent: surface, optInTheme: true,
+        settings: { mode: 'open', initialDirectory: path ? path.slice(0, path.lastIndexOf('/')) || '/' : null,
+          filters: [{ label: 'Local MP4 / WebM video', extensions: ['mp4', 'm4v', 'mov', 'webm'] }] },
+        notice: 'Video only; no audio. H264 MP4 or VP8/VP9 WebM, up to 1920x1080 and 2GiB.',
+        reportError: message => report('[settings video] ' + message) });
+      videoDialog = dialog;
+      const choice = await dialog.result;
+      if (stopped || surface.closed || videoDialog !== dialog) return;
+      videoDialog = null;
+      if (choice.status !== 'selected') return;
+      await controller.setWallpaper({ mode: 'video', reducedMotion: current.reducedMotion,
+        video: { path: choice.path, loop: current.video?.loop ?? true, paused: false } });
+    } catch (failure) {
+      videoDialog?.dispose(); videoDialog = null;
+      videoChoiceError = 'Could not select local video: ' + String(failure);
+      report('[settings] ' + videoChoiceError);
+      paint();
+    }
+  }
+  function closeTransparencyPreview() {
+    const current = transparencyPreview;
+    transparencyPreview = null;
+    if (current && !current.closed) current.close();
+  }
+  function paintTransparencyPreview() {
+    if (!transparencyPreview || transparencyPreview.closed) return;
+    const theme = currentTheme;
+    render(h('view', { id: 'settings-transparency-preview-content', style: {
+      width: '100%', height: '100%', padding: 24, gap: 16, backgroundColor: '#20304a80',
+    } },
+    themedText(theme, 'Real window transparency', '#ffffff', 22, { fontWeight: 600 }),
+    themedText(theme, 'Move this window over the wallpaper or another application.',
+      '#ffffff', 15, { flexShrink: 1 }),
+    themedText(theme, 'The background is translucent. Text stays opaque. Transparent pixels still receive input.',
+      '#ffffff', 14, { flexShrink: 1 }),
+    desktopCommand('settings-transparency-preview-close', 'Close preview', theme, closeTransparencyPreview)),
+    transparencyPreview.document.body);
+  }
+  function openTransparencyPreview() {
+    if (stopped || !surface || surface.closed) return;
+    try {
+      if (host.capabilities?.().transparent !== true)
+        throw new Error('This window backend does not support per-pixel transparency.');
+      if (transparencyPreview && !transparencyPreview.closed) {
+        transparencyPreview.document.body.focus();
+        return;
+      }
+      const candidate = host.create({ title: 'Transparency preview', width: 480, height: 280,
+        transparent: true, parent: surface });
+      transparencyPreview = candidate;
+      candidate.onclose = () => { if (transparencyPreview === candidate) transparencyPreview = null; };
+      candidate.document.body.style.backgroundColor = 'transparent';
+      candidate.document.body.tabIndex = 0;
+      candidate.document.body.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !event.isComposing && !event.defaultPrevented) {
+          event.preventDefault(); event.stopPropagation(); closeTransparencyPreview();
+        }
+      });
+      previewError = '';
+      paintTransparencyPreview();
+      candidate.document.body.focus();
+    } catch (failure) {
+      closeTransparencyPreview();
+      previewError = 'Transparent window preview unavailable: ' + String(failure.message || failure);
+      report('[settings] ' + previewError);
+    }
+    paint();
+  }
   function materialPresentation() {
     if (!surface || surface.closed || stopped) return;
     const root = surface.document.getElementById('shell-system-settings');
@@ -136,7 +214,46 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
         state.appearance?.themeFilesAvailable ? { enabled: state.appearance.themeFilesEnabled,
           reload: available(controller.reload), restore: available(controller.restore) } : null,
         null, true, state.busy ? 'Waiting for Shell acknowledgement...' : state.appearance?.status || '',
-        state.appearance?.catalog.themes);
+        state.appearance?.catalog.themes, {
+          ...(state.appearance?.transparency ?? { mode: 'theme', available: false, target: '',
+            reason: 'The connected Shell does not expose desktop transparency controls.' }),
+          enabled: !!state.appearance?.transparency && !state.busy && !state.unavailable,
+          select: available(controller.setTransparency),
+          preview: guarded(openTransparencyPreview),
+          previewAvailable: host.capabilities?.().transparent === true,
+          previewReason: host.capabilities?.().transparent === true ? '' :
+            'This window backend does not expose per-pixel transparency.',
+          previewError,
+        }, {
+          ...(state.appearance?.windowOpacity ?? { available: false, percent: null, requestedPercent: 100,
+            reason: 'The connected Shell does not expose global window opacity controls.', error: '' }),
+          enabled: !!state.appearance?.windowOpacity && !state.busy && !state.unavailable,
+          select: available(controller.setWindowOpacity),
+        }, {
+          ...(state.appearance?.switcher ?? { style: 'list', available: false,
+            reason: 'The connected Shell does not expose window preview settings.' }),
+          enabled: !!state.appearance?.switcher && !state.busy && !state.unavailable,
+          select: available(controller.setSwitcherStyle),
+          setMotion: state.appearance?.switcher && Object.hasOwn(state.appearance.switcher, 'motion') ?
+            available(controller.setSwitcherMotion) : null,
+        }, {
+          ...(state.appearance?.wallpaper ?? { mode: 'theme', reducedMotion: false, available: false, error: '',
+            reason: 'The connected Shell does not expose procedural wallpaper settings.' }),
+          enabled: !!state.appearance?.wallpaper && !state.busy && !state.unavailable,
+          select: available(controller.setWallpaper),
+          choose: guarded(chooseVideoWallpaper),
+          chooseError: videoChoiceError,
+        }, {
+          ...(state.appearance?.companion ?? { enabled: false, reducedMotion: false, available: false, error: '',
+            reason: 'The connected Shell does not expose desktop companions.' }),
+          enabledControl: !!state.appearance?.companion && !state.busy && !state.unavailable,
+          select: available(controller.setCompanion),
+        }, {
+          ...(state.appearance?.workspaceCube ?? { enabled: false, motion: true, available: false, error: '',
+            reason: 'The connected Shell does not expose workspace cube controls.' }),
+          enabledControl: !!state.appearance?.workspaceCube && !state.busy && !state.unavailable,
+          select: available(controller.setWorkspaceCube),
+        });
     } else if (state.page === 'network') {
       content = h('view', { id: 'settings-network-slot', style: { minHeight: 0, flexGrow: 1, flexBasis: 0 },
         onMount: node => network.attach(surface, node) });
@@ -219,6 +336,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     }
     disable(tree);
     render(tree, surface.document.body);
+    paintTransparencyPreview();
     syncMaterial();
     if (state.page === 'network') network.refresh();
     if (state.page === 'displays' && pages.getState().snapshot) {
@@ -241,6 +359,8 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   function stop() {
     if (stopped) return;
     stopped = true; revision++;
+    videoDialog?.dispose(); videoDialog = null;
+    closeTransparencyPreview();
     materialUnsubscribe?.(); materialUnsubscribe = null;
     retireMaterial();
     if (timer !== null) clearInterval(timer);
@@ -254,6 +374,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     getMaterialState: () => Object.freeze({ ready: materialReady, error: materialError, stats: material?.stats || null }),
     present(page) {
       if (stopped) throw new Error('Settings instance is closed');
+      if (page === 'appearance' && controller.getState().page === page) return controller.refresh();
       return navigate(page);
     },
     start() {

@@ -1330,9 +1330,10 @@ fail composition rather than producing an unreported square or missing shadow.
 Runtime library identity, headers, effects ABI 4, distinct SONAME and the packaged
 patch hash must match.
 Stock SDKs are explicitly rejected rather than producing a square fallback.
-Current desktop builds use the paired Debian SDK; historical Alpine build and
-packaging entry points explicitly remain unsupported until that pairing is
-ported. Public theme JSON stays version 1; old private WM/Shell/decorator
+Current desktop builds use the paired SDK; the Mini recipe builds its pinned
+CPU/Pixman variant without enabling GLES, GBM or LLVM. A successful glibc
+CPU-only dependency build does not qualify a new musl image. Public theme JSON
+stays version 1; old private WM/Shell/decorator
 combinations fail rather than silently negotiating down.
 
 Actual Pixman output checks cover overlapping real subsurfaces, alpha, source
@@ -1341,7 +1342,11 @@ occlusion/reveal, cache reuse, budget refusal, locking and external shadow
 lifecycle. Actual GUI strip pixels verify one outer-corner coverage rather than
 its square. Software llvmpipe checks exercise the pinned GLSL primitives at
 2048/4096/8192 widths; this is not a full WM GLES/DRM or physical-GPU qualification.
-The complete WM GLES path remains unqualified without a usable DRM device.
+The desktop-effects stage-5 lane additionally runs real native GLES scene and
+UID1000 Shell fixtures with virtio DRM/GBM DMA-BUF buffers inside an isolated VM,
+using llvmpipe. It covers regional Gaussian composition over rounded/opacity
+groups and actual Flip 3D source frames, depth, input and lock lifetime.
+This is not physical GPU, KMS scanout or stock-media qualification.
 The original effects2 results remain historical qualifications of that frozen
 stack. A later current-source private GUI/WM pair passed the original caption
 and seven-mode decorator lifecycle checks; those frozen effects3 results remain
@@ -1350,6 +1355,44 @@ None of these software/headless results is physical GPU or original-OS pixel
 qualification.
 
 ### Opt-in regional Dock backdrop
+
+Appearance Settings can now choose theme-default, opaque, or transparent desktop
+bars without editing this JSON. The saved Shell policy projects a temporary
+effective catalog; restoring theme-default recovers the loaded source values.
+Compatible Mac-style bars retain background-only alpha, and fluent taskbars
+retain their capability-checked regional material. Foreground text/icons do
+not fade. A separate Settings slider controls whole ordinary-window opacity,
+including text, through compositor-owned appearance v10; it is not another theme
+material token. See [Shell preferences](SHELL-CONFIGURATION.md) for persistence,
+security-role exclusions and explicit geometry/resource recovery.
+
+Appearance Settings also offers original procedural Aurora wallpaper and reduced
+motion, separately from theme-file data. The optional Shell preference does not
+rewrite `desktop.layers` or `desktop.asset`. Its bounded Canvas drawing is behind
+desktop icons, needs no GLES dependency, and stops scheduling when its actual
+background is hidden or locked. Theme wallpaper restores the existing art and
+releases animation resources. Existing wallpaper-derived client material keeps
+its static theme/bitmap projection; compositor regional material samples the
+actual animated desktop. See [Shell preferences](SHELL-CONFIGURATION.md) for
+limits, persistence, source/media boundaries and failure recovery.
+
+The optional Polly companion is Shell policy, not a theme asset override.
+`tools/generate-companion.py` derives an original rabbit atlas and exact
+per-frame alpha/input rectangles from Polly's own cursor masters. Its paired
+PNG/module are installed together. No proprietary mascot artwork or executable
+character plugins are bundled. Settings controls visibility and reduced motion;
+finite actions, click-through transparency, keyboard-focus preservation,
+drag/cancel, lock and output lifetimes are described in
+[Shell preferences](SHELL-CONFIGURATION.md).
+
+The paired GLES renderer now provides the same bounded, separable regional
+Gaussian instead of silently dropping material in a graphics session. Its
+normalized kernel uses an auxiliary packed-weight texture, two native passes,
+premultiplied tint and one final rounded coverage; no JS readback is involved.
+The existing maximum scaled sigma of 64 bounds the shader to 385 taps.
+Nested scene caches and texture imports explicitly restore the current render
+target before drawing. Capability, allocation and framebuffer failures remain
+explicit rather than substituting a success-shaped solid effect.
 
 `panel.regionalBackdrop` is optional public-schema-1 data with integer `sigma`
 1-32, RGB `tint` and integer `opacityPercent` 0-100. Only Big Sur explicitly sets
