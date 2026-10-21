@@ -136,7 +136,8 @@ run('cmake', ['-S', repo, '-B', build]);
 if (/-fsanitize=/.test(readFileSync(path.join(build, 'build.ninja'), 'utf8')))
   throw new Error('Use a non-sanitized Ninja build for the runtime package');
 run('python3', [path.join(repo, 'sysrt/tools/generate-files-abi.py'), '--cc', setting('CMAKE_C_COMPILER'), '--check']);
-run('cmake', ['--build', build, '--clean-first', '--target', 'pollyui', 'pollywm', '-j', '2'],
+run('cmake', ['--build', build, '--clean-first', '--target', 'pollyui', 'pollywm',
+  ...(setting('PU_BUILD_SESSION_AUTH') === 'ON' ? ['polly-auth-check'] : []), '-j', '2'],
   { timeout: 600000, env: { ...process.env, CCACHE_DISABLE: '1' } });
 
 mkdirSync(path.dirname(output), { recursive: true });
