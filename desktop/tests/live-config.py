@@ -163,6 +163,14 @@ class ConfiguredAdapterTests(unittest.TestCase):
             files = command[command.index("install") + 1:]
             self.assertTrue(files)
             self.assertTrue(all(item.startswith(str(self.inputs / "packages")) for item in files))
+            cache_option = next(item for item in command if item.startswith("Dir::Cache::archives="))
+            cache = Path(cache_option.split("=", 1)[1])
+            for item in self.lock["archives"]:
+                if str(self.inputs / item["path"]) not in files:
+                    continue
+                filename = item["name"] + "_" + item["version"].replace(":", "%3a") + "_" + item["architecture"] + ".deb"
+                self.assertEqual((cache / filename).read_bytes(), (self.inputs / item["path"]).read_bytes())
+            self.assertFalse(any("Sandbox::User" in item for item in command))
         else:
             raise AssertionError("Unexpected mocked APT command")
         self.runs.append(command)

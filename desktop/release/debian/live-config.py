@@ -222,7 +222,17 @@ def install(directory, stage):
     authenticate(directory, lock)
     archives = [item for item in lock["archives"] if item["stage"] == stage]
     if archives:
-        subprocess.run(apt_arguments(directory, archives, False), check=True, timeout=1800)
+        with tempfile.TemporaryDirectory(prefix="polly-apt-archives-") as temporary:
+            cache = Path(temporary)
+            cache.chmod(0o755)
+            for item in archives:
+                version = item["version"].replace(":", "%3a")
+                name = item["name"] + "_" + version + "_" + item["architecture"] + ".deb"
+                shutil.copyfile(checked_file(directory, item), cache / name)
+                (cache / name).chmod(0o644)
+            command = apt_arguments(directory, archives, False)
+            command[1:1] = ["-o", "Dir::Cache::archives=" + str(cache) + "/"]
+            subprocess.run(command, check=True, timeout=1800)
     actual = installed()
     for spec in plan["stages"][stage]:
         name, _, version = spec.partition("=")

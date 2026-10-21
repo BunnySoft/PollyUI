@@ -217,6 +217,10 @@ platform 包之前执行，不能依赖之后才安装的验签器；APT 自身�
 --no-remove`；最终检查实际 dpkg 全量集合严格等于锁。
 配置路径的 platform/live `podman build` 也显式使用 `--network=none`，
 覆盖 basic 安装器及包维护脚本的网络边界；旧联网 APT 构建入口不改变网络策略。
+
+归档在输入锁中仍使用 SHA256 文件名。安装阶段额外建立一次性的已验证 APT
+cache，用标准包名/版本/架构命名，供 `--no-download` 查找本地归档；含 epoch
+的版本按 APT 规则编码。不会删除 `--no-download`、放开网络或禁用 APT sandbox。
 旧 CLI 的原有签名 APT 联网流程不改成“信任这个 JSON”；新配置路径是明确的
 离线输入接口。签名过期/源版本消失时重新准备真实解析输入，不能关校验追绿。
 
