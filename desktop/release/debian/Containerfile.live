@@ -105,6 +105,8 @@ ENTRYPOINT []
 CMD ["/bin/sh"]
 
 FROM platform-base AS live-base
+ARG HARDWARE_SKU=standard
+ARG CONFIGURED_BUILD=0
 COPY release/debian/account-profile /tmp/polly-account-profile
 RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
     sh /tmp/polly-account-profile live && rm /tmp/polly-account-profile
