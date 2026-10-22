@@ -11,7 +11,7 @@ Products: mini, compact, standard (smallest to general-purpose).
   mini       Former Micro: Alpine/musl CPU desktop; no Chinese, IME or 3D.
   compact    Debian Chinese CPU desktop with basic GOP/simpledrm display, no vendor editions.
              Build blocked until its paired native/Chinese/boot recipe is integrated.
-  standard   Debian desktop with the full existing general-purpose driver/firmware set.
+  standard   Debian desktop with the complete existing general-purpose driver/firmware set.
 Debian build options: --lock DIR --runtime-bundle DIR --runtime-image ID --tools-image ID
 --plan is read-only and needs no output, runtime, Linux, Podman or APT lock.
 Product --plan takes no build inputs; use the legacy --config --plan --lock entry for lock-aware plans.
@@ -22,7 +22,7 @@ General-purpose drivers do not certify all physical hardware.
 Mini reuses MICRO_BUILDER, MICRO_SHELL_BUILDER, MICRO_SDK and PU_BUILD_JOBS.
 Mini outputs mini.iso and mini.json; direct historical Micro scripts keep micro-shell.*.
 Old --live --sku/--skus and direct prototype scripts remain compatible.
-Use --os --help for this help. Micro/Thin/Full are historical names, not extra products.`;
+Use --os --help for this help. Micro/Thin are historical names, not extra products.`;
 
 export function parseArguments(args) {
   if (args.length === 1 && args[0] === '--help') return { help: true };
@@ -83,7 +83,7 @@ export async function runCLI(args, backend = {}) {
     plan.configurationFile = 'desktop/release/debian/configs/standard.yaml';
     configPath = path.join(repo, plan.configurationFile);
     const configuration = await (backend.loadConfig ?? loadConfig)(configPath);
-    const hardware = 'full';
+    const hardware = 'standard';
     if (configuration.name !== 'standard' ||
         configuration.hardware !== hardware || configuration.nativeVariant !== 'standard-effects4')
       throw new Error('Product configuration does not match its declared name, hardware and native variant');

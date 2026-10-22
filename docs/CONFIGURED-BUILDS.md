@@ -9,8 +9,8 @@ IME 和 3D），Compact 是 Debian 中文 CPU 桌面（只基础 GOP/simpledrm�
 [新产品构建入口](BUILDING.md#current-product-builds)。
 
 新增 `desktop/release/debian/configs/standard.yaml`，其配置名为 `standard`，
-底层硬件仍为 `full`，原生变体仍为 `standard-effects4`。这只是新构建身份与
-原有组件集合的显式绑定，不是把旧 full ISO 改名；原包闭包、锁和来源校验保持。
+底层硬件仍为 `standard`，原生变体仍为 `standard-effects4`。这只是新构建身份与
+原有组件集合的显式绑定，不是把旧 Standard ISO 改名；原包闭包、锁和来源校验保持。
 该配方仍含原 WebGL2/Mesa/LLVM，不能称为已实现新的精简 native。
 Mini 不使用这个 Debian YAML/锁，Compact 新配方缺失时明确 blocked；
 不存在已接通的 `compact-intel` 等厂商分版配置。
@@ -60,8 +60,8 @@ bash tools/build.sh --live --config desktop/release/debian/configs/standard-vm.y
 ## 2. 每个 SKU 一份配置
 
 配置位于 `desktop/release/debian/configs/`：
-`standard-{basic,vm,intel,nvidia,amd,full}.yaml`，
-以及 `minimal-zh-{basic,vm,full}.yaml`。没有继承、表达式、脚本钩子，
+`standard-{basic,vm,intel,nvidia,amd}.yaml`，
+以及 `minimal-zh-{basic,vm}.yaml`。没有继承、表达式、脚本钩子，
 也没有另一套 JSON 输入配置。JSON 只用于输出的计划、依赖锁与收据。
 
 | 字段 | 当前允许的含义 |
@@ -70,7 +70,7 @@ bash tools/build.sh --live --config desktop/release/debian/configs/standard-vm.y
 | `name` | 小写字母起始、最多 48 字符的字母/数字/连字符名称；进入文件名，但不决定能力 |
 | `description` | 非空说明文字，不参与包选择或命令推断 |
 | `target` | `{distribution: debian13, architecture: x86_64}` |
-| `hardware` | `basic/vm/intel/nvidia/amd/full`；显示策略、模块和内核合同由现有硬件清单解析 |
+| `hardware` | `basic/vm/intel/nvidia/amd/standard`；显示策略、模块和内核合同由现有硬件清单解析 |
 | `media` | 当前仅 `live-iso-usb`，保持内存 SquashFS 根、tmpfs overlay 和 ISO/USB 双输出 |
 | `nativeVariant` | 白名单 `standard-effects4` 或尚不可用的 `minimal-zh-cpu` |
 | `capabilities` | 必须与变体完全匹配的 `renderer/webgl2/vulkan/fonts/ime/audio` |
@@ -88,7 +88,7 @@ bash tools/build.sh --live --config desktop/release/debian/configs/standard-vm.y
 YAML 使用成熟解析器的安全核心 schema，再经过集中严格验证。
 未知字段、重复 key、多文档、错类型、空安装列表、恶意 tag、
 anchor/alias、merge key、非法包版本和超出 64 KiB 的配置都拒绝。
-不能通过 `name: standard-full` 获得默认发布权限。
+不能通过 `name: standard` 获得默认发布权限。
 配置不是一个任意布尔组合空间：没有实现的编译组合不能自行变为 available。
 
 ### 标准版和中文极简版
@@ -121,7 +121,7 @@ Debian Luna 包硬依赖 stroke，本配置仍让 APT 保持这条合法依赖�
 `Build-Depends` 属于 native 构建环境，不当作运行时 `Depends`，
 也不能反过来因为不分发编译器就声称不需要 LLVM 运行库。
 
-`full` 即使功能变小仍保其原固件集合；`vm` 不代表物理通用版。
+`standard` 即使功能变小仍保其原固件集合；`vm` 不代表物理通用版。
 `basic` 仍需明确的独立 basic 内核包，不能拿 stock 内核改标签。
 换字体不自动要求重编内核；显示模式仍受硬件合同约束。
 
@@ -266,7 +266,7 @@ minimal 配置即使给了旧标准输入也会在任何构建动作前因 varia
 ```sh
 bash tools/build.sh --live "$OUTPUT" \
   --runtime-bundle "$RUNTIME_BUNDLE" --runtime-image "$RUNTIME_IMAGE_ID" \
-  --tools-image "$TOOLS_IMAGE_ID" --skus vm,intel,nvidia,amd,full
+  --tools-image "$TOOLS_IMAGE_ID" --skus vm,intel,nvidia,amd,standard
 bash tools/build.sh --live --sku vm --plan
 ```
 
@@ -281,7 +281,7 @@ bash tools/build.sh --live --sku vm --plan
 | --- | --- |
 | 解析/计划 | 安全 YAML → 严格规范化 → 阶段顶层请求/能力约束；可输出 unresolved/blocked |
 | 冻结/预检 | 源码、原 runtime、lock/snapshot/archive 独立复制；记录 hash；真实签名及 APT 模拟先于任何镜像 build |
-| runtime | 消费已有 frozen native；原包 pins、ABI、Mesa/SDL 修复与源码合同保持，不从 full bundle 删除文件 |
+| runtime | 消费已有 frozen native；原包 pins、ABI、Mesa/SDL 修复与源码合同保持，不从 standard bundle 删除文件 |
 | platform | Containerfile 接收冻结配置 context，安装其 platform archive，保留硬件/kernel/PAM/网络校验 |
 | boot/live | 同配置的 boot archive 与早期 Plymouth，实际全包集合与 lock 比较；保留独立 basic kernel 检查 |
 | overlay/export | 记录实际 plan/lock、原 native manifest、覆盖文件和 dpkg status；保留原来源/权限/namespace 验证 |
@@ -297,7 +297,7 @@ bash tools/build.sh --live --sku vm --plan
 manifest、origin、root、sizeReport 和发布器必须一致。
 
 组装入口**不自动发布，也不更新 `PollyOS.iso`**。
-配置路径即使 hardware=full 或 name=standard-full，只有精确匹配原标准 full
+配置路径即使 hardware=standard 或 name=standard，只有精确匹配Standard
 能力、阶段请求与策略才有显式更新 alias 的资格；
 添加额外包、改变能力等都没有该资格。非标准配置只能版本化发布。
 旧无配置字段的 schema 1/2、已有标准 SKU 继续按旧合同只读验证，

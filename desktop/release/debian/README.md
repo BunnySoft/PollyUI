@@ -9,7 +9,7 @@ new machine.
 ## Declarative hardware SKUs
 
 [`live-profiles.json`](live-profiles.json) defines `basic`, `vm`, `intel`, `nvidia`,
-`amd` and `full` (default): package groups, required modules, display/kernel policies,
+`amd` and `standard` (default): package groups, required modules, display/kernel policies,
 supported scope and the parts that
 remain shared. [`live-profile.py`](live-profile.py) owns strict selection and
 package/metadata qualification. See [the build entry](../../../docs/BUILDING.md#hardware-sku-live-builds)
@@ -22,7 +22,7 @@ Exact runtime Mesa pins remain checked after assembly.
 `tools/build.sh --live` dispatches to this same entry before any native prerequisites.
 Use `--sku NAME` or `--skus NAME,...`; `--live --help` needs no runtime inputs and
 creates no output. Native build flags cannot be mixed into Live arguments.
-AMD/full add `firmware-amd-graphics` and the amdgpu module closure. Other profiles
+AMD/standard add `firmware-amd-graphics` and the amdgpu module closure. Other profiles
 do not acquire AMD graphics firmware. Intel CPU microcode is independent of GPU
 choice; AMD CPU microcode is not added.
 
@@ -42,11 +42,11 @@ The multi-SKU entry retains both immutable platform and Live IDs in
 `build-run.json` under `artifacts[]`, with unique per-run/SKU tags.
 Platform images contain locked `template` accounts; only the final Live stage
 adds public presets and the Live boot overlay. LiveCD does not contain a new
-installer. To select the full platform for the separate existing Install flow:
+installer. To select the standard platform for the separate existing Install flow:
 
 ```sh
-# PLATFORM_ID is artifacts[].platformImageID for sku=full in this run's build-run.json.
-POLLY_PLATFORM_IMAGE="$PLATFORM_ID" sh desktop/tools/build-installed.sh "$OUT/install-full"
+# PLATFORM_ID is artifacts[].platformImageID for sku=standard in this run's build-run.json.
+POLLY_PLATFORM_IMAGE="$PLATFORM_ID" sh desktop/tools/build-installed.sh "$OUT/install-standard"
 ```
 
 Do not guess a shared tag or pass a Live ID. A reduced template can be checked

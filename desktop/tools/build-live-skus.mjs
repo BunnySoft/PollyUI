@@ -20,9 +20,9 @@ export const usage = 'Usage: sh desktop/tools/build-live.sh --debian OUTPUT --ru
   '--runtime-image ID --tools-image ID [--basic-kernel-pack DIR]\n' +
   '--plan prints JSON without output creation or external commands; --config requires --plan or --build.\n' +
   'Current product names: Mini/Compact/Standard; use tools/build.sh --os --help.\n' +
-  'Standard uses standard.yaml (full hardware set); old config names remain compatible.\n' +
+  'Standard uses standard.yaml (general-purpose hardware set); old config names remain compatible.\n' +
   'minimal-zh-* configured plans remain blocked; separate prototypes do not qualify this build path.\n' +
-  'Legacy hardware profiles: basic,vm,intel,nvidia,amd,full (default: full; not product tiers)\n' +
+  'Legacy hardware profiles: basic,vm,intel,nvidia,amd,standard (default: standard; not product tiers)\n' +
   'One frozen runtime; sequential independent Live media. No native rebuild or stable publication.\n' +
   'basic requires an explicit verified dedicated simpledrm kernel pack; stock kernel is unsupported.\n' +
   'Use --help alone for this help without runtime inputs or output creation.';

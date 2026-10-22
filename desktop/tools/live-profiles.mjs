@@ -5,7 +5,7 @@ import { configurationLabel } from './configuration-receipt.mjs';
 
 const manifestBytes = readFileSync(new URL('../release/debian/live-profiles.json', import.meta.url));
 export const profileManifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
-export const hardwareSkus = ['basic', 'vm', 'intel', 'nvidia', 'amd', 'full'];
+export const hardwareSkus = ['basic', 'vm', 'intel', 'nvidia', 'amd', 'standard'];
 const names = hardwareSkus;
 const fail = message => { throw new Error(message); };
 const keys = (value, expected) => {
@@ -21,7 +21,7 @@ const strings = (value, pattern) => {
 export function validateProfileManifest(value) {
   keys(value, ['schemaVersion', 'distribution', 'architecture', 'defaultSku', 'packageGroups', 'shared', 'displayPolicies', 'profiles']);
   if (value.schemaVersion !== 1 || value.distribution !== 'debian13' ||
-      value.architecture !== 'x86_64' || value.defaultSku !== 'full')
+      value.architecture !== 'x86_64' || value.defaultSku !== 'standard')
     fail('Unsupported hardware profile manifest');
   keys(value.packageGroups, ['common', 'stockKernel', 'intelGraphics', 'nvidiaGraphics', 'amdGraphics', 'physicalNetworkAudio',
     'standardWirelessAudio', 'standardUtilities']);

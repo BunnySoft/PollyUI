@@ -17,7 +17,7 @@ const inputs = ['--lock', 'lock', '--runtime-bundle', 'runtime', '--runtime-imag
 test('only three product names are accepted, with explicit execution mode', () => {
   assert.deepEqual(products, ['mini', 'compact', 'standard']);
   for (const args of [
-    [], ['micro', '--plan'], ['thin', '--plan'], ['full', '--plan'],
+    [], ['micro', '--plan'], ['thin', '--plan'],
     ['mini'], ['mini', '--plan', '--build'], ['mini', '--build'],
     ['mini', 'one', 'two', '--plan'], ['mini', '--plan', '--plan'],
     ['compact', '--hardware', 'intel', '--plan'], ['mini', '--runtime-image', 'x', '--plan'],
@@ -52,21 +52,21 @@ test('Compact explicitly blocks rather than relabelling a historical demo or ven
   }), /Compact build blocked/);
 });
 
-test('Standard new configuration preserves the real full hardware/package contract', async () => {
+test('Standard new configuration preserves the real standard hardware/package contract', async () => {
   const configuration = await loadConfig(configFile);
   assert.equal(configuration.name, 'standard');
-  assert.equal(configuration.hardware, 'full');
+  assert.equal(configuration.hardware, 'standard');
   assert.ok(packageStages(configuration).runtime.includes('gpgv'),
     'The actual configured runtime must provide its pinned-signature verifier before offline preflight');
-  assert.deepEqual(packageStages(configuration), packageStages(legacyConfig('full')));
+  assert.deepEqual(packageStages(configuration), packageStages(legacyConfig('standard')));
   const plan = await runCLI(['standard', '--plan']);
   assert.equal(plan.debian.configuration.name, 'standard');
-  assert.equal(plan.hardware, 'full');
+  assert.equal(plan.hardware, 'standard');
   assert.equal(plan.configurationFile, 'desktop/release/debian/configs/standard.yaml');
   assert.equal(plan.debian.native.nativeVariant, 'standard-effects4');
   assert.equal(plan.status, 'unresolved');
   assert.equal(plan.debian.size.isoBytes, null);
-  assert.notEqual(plan.debian.configSha256, resolvePlan(legacyConfig('full')).configSha256);
+  assert.notEqual(plan.debian.configSha256, resolvePlan(legacyConfig('standard')).configSha256);
 });
 
 test('Mini build forwards output and explicit product identity without changing the legacy default', async () => {
@@ -94,20 +94,20 @@ test('Standard delegates to the existing guarded config/lock build, not the lega
   });
   assert.deepEqual(args, [path.resolve('out'), '--config', configFile, '--build', ...inputs]);
   assert.equal(result.product, 'standard');
-  assert.equal(result.hardware, 'full');
+  assert.equal(result.hardware, 'standard');
   await assert.rejects(runCLI(['standard', 'out', '--build'], {
     platform: 'linux', runLive() { assert.fail('Missing lock cannot reach builder'); },
   }), /requires lock/);
   await assert.rejects(runCLI(['mini', 'out', '--build'], { platform: 'win32' }), /require Linux/);
 });
 
-test('legacy hardware selection and default full are unchanged', () => {
-  assert.deepEqual(parseLegacy(['--plan']).skus, ['full']);
+test('legacy hardware selection and default standard are unchanged', () => {
+  assert.deepEqual(parseLegacy(['--plan']).skus, ['standard']);
   assert.deepEqual(parseLegacy(['--sku', 'intel', '--plan']).skus, ['intel']);
 });
 
 test('top-level --os help bypasses native prerequisites and rejects mixed modes', () => {
-  const help = spawnSync('bash', [path.join(root, 'tools/build.sh'), '--os', '--help'],
+  const help = spawnSync('bash', ['tools/build.sh', '--os', '--help'],
     { cwd: root, encoding: 'utf8' });
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /Products: mini, compact, standard/);

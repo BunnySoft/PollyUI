@@ -5,12 +5,10 @@ the HTML with `node desktop/tools/render-sku-matrix.mjs` from the repository roo
 
 Updated: 2026-10-21. Current product names: **Mini / Compact / Standard**.
 Chinese fonts and input are included from Compact upward. There is no `-zh` suffix
-or separate Full tier.
-
+or separate hardware tier.
 Mini is the former Alpine Micro desktop. Compact is the Debian Chinese
 lightweight target, using basic GOP/simpledrm display rather than vendor-specific
-editions. Standard carries the full existing driver/firmware selection.
-Historical Micro/Thin/full/minimal-zh artifact identities remain unchanged.
+editions. Standard carries the complete existing driver/firmware selection.
 Use `bash tools/build.sh --os --help` for the canonical product build entry.
 
 This document records confirmed product boundaries and implementation status;
@@ -58,7 +56,7 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 | Component | Mini | Compact | Standard |
 |---|---|---|---|
 | Distribution / libc | Alpine / musl | Debian / glibc | Debian / glibc |
-| Init and session | BusyBox / UID 1000 / seatd; no login | New-tier design TBD | systemd / PAM / logind; current full image uses UID 1000 |
+| Init and session | BusyBox / UID 1000 / seatd; no login | New-tier design TBD | systemd / PAM / logind; current Standard image uses UID 1000 |
 | Window manager / Wayland compositor | PollyWM / wlroots | Same implementation | Same implementation |
 | Composition renderer | Pixman | Basic CPU/Pixman path | Pixman default; paired GLES GPU startup option |
 | UI execution and layout | QuickJS + Yoga | Same implementation | Same implementation |
@@ -69,7 +67,7 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 | Fonts and text | DejaVu Sans + Mono; Fontconfig / FreeType / HarfBuzz / ICU | Add Chinese fonts; inventory TBD | Chinese support retained; existing broad fonts |
 | Input method engine | Not compiled | Reuse Rime path; integration pending | Rime |
 | GPU / 3D components | ❌ Mesa / LLVM / WebGL2 / WebGPU | ❔; no vendor acceleration | Existing Mesa/LLVM closure; WebGPU not enabled by this recipe |
-| Common CLI commands | Basic BusyBox/Foot set | TBD | Full utility group: files, archives, process/network diagnostics, editors, download/SSH clients, Git |
+| Common CLI commands | Basic BusyBox/Foot set | TBD | Standard utility group: files, archives, process/network diagnostics, editors, download/SSH clients, Git |
 | Wired Ethernet firmware | Minimum necessary set | Basic set TBD | Common Intel/Realtek/USB Ethernet modules plus Realtek firmware; DHCP/DNS service |
 | Wi-Fi drivers and firmware | Not integrated in current image | TBD | Intel/Realtek/Qualcomm Atheros/Broadcom-Cypress/MediaTek open-driver paths and firmware; iwd |
 | Audio drivers and hardware configuration | Not integrated in current image | TBD | HDA/Realtek/HDMI/USB, Intel SOF/SST, AMD ACP and Cirrus paths; SOF/Intel/Cirrus firmware, ALSA UCM/topology and existing PipeWire core |
@@ -77,7 +75,7 @@ Mini explicitly excludes Mesa/LLVMpipe, Softpipe, Lavapipe, and other software
 
 A SKU name does not automatically imply audio, networking, PAM/login,
 installation, persistence, or updates. These have implementations in the
-existing full system, but their required scope in the new tiers remains to be
+existing Standard system, but their required scope in the new tiers remains to be
 defined. The Decorator and minimum application set must also be explicitly
 specified, packaged, and started. Mini's existing Alpine recipe integrates the basic application
 set below; current Standard also includes it, while Compact integration is not finalized.
@@ -132,31 +130,18 @@ visible output is not proof of a fully verified physical driver chain.
 | SKU | Delivery status under the new definition |
 |---|---|
 | Compact | New Debian Chinese Shell + basic-display recipe not integrated; `--os compact --plan` is blocked and `--build` fails before external commands. Historical `thin` and minimal-zh images are not Compact deliveries |
-| Standard | Current canonical `--os standard` media includes the complete selected effects: ISO 882.16 MB, USB 934.28 MB; SHA prefixes `902838e30046` / `9fbfc057a787`. Clean source, signed offline lock and exact payload checks pass; UEFI optical/USB and separate stock GLES/KMS guest startup pass. Physical hardware remains unqualified; historical Full images are unchanged |
+| Standard | Current canonical `--os standard` media includes the complete selected effects: ISO 882.16 MB, USB 934.28 MB; SHA prefixes `902838e30046` / `9fbfc057a787`. Clean source, signed offline lock and exact payload checks pass; UEFI optical/USB and separate stock GLES/KMS guest startup pass. Physical hardware remains unqualified |
 
-The current Full image is at `D:\temp\PollyOS\full-wifi-audio-0f142c34a948\`.
-ISO SHA-256: `0f142c34a9488d6f770c52f30184bf6d847e011d83cdd5ac608b3fe3675dce9d`.
-It retains Nouveau/GP107/Mesa and wired networking, adds multi-vendor Wi-Fi and
-audio firmware plus ALSA UCM/topology, and checks 53 required module paths and
-63 command entry points. Its unchanged-condition ISO rerun and first read-only
-USB lane passed the UID 1000 desktop, Chinese input, clipboard and workspace
-checks. The initial ISO run missed its Chinese commit marker; that failure is
-retained, not labelled as fixed or first-pass success.
+The current Standard image contains the former complete hardware payload: Nouveau/GP107/Mesa,
+wired networking, multi-vendor Wi-Fi and audio firmware plus ALSA UCM/topology,
+the standard utility group and the complete stock kernel/modules. Actual Wi-Fi
+association, physical audio, P1000 output and hardware compatibility remain
+unqualified.
 
-The USB lane also passed emulated e1000e DHCP, gateway ping and system DNS,
-and enumerated ALSA playback/capture devices. It did not play audible sound or
-capture a microphone. Ordinary-user ping uses GID-1000 ICMP datagram permission,
-not added setuid or raw-socket privileges. Actual Wi-Fi association, physical
-audio and hardware compatibility remain unqualified.
+Media/runtime source revisions, checksums, initial failures and qualification
+limits are recorded separately in the [delivery log](SKU-DELIVERY.md);
+old-image results are not reused.
 
-Physical P1000 output/acceleration and real Ethernet remain untested. The stock
-Debian kernel does not provide Mini's simpledrm fallback. Media/runtime source
-revisions, checksums, initial failures and qualification limits are recorded
-separately in the [delivery log](SKU-DELIVERY.md); old-image results are not reused.
-The previous `full-p1000-a734991cc8fb` image is preserved and does not inherit
-the new Wi-Fi/audio firmware/data additions.
-
-Historical filenames, checksums, build entry points, and failure records are
-preserved. New configurations must select existing, paired component variants.
+New configurations must select existing, paired component variants.
 Missing implementations or dependencies must block execution explicitly;
 renaming, runtime switches, or deleting files do not replace a proper build.

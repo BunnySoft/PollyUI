@@ -11,7 +11,7 @@ producer 身份不随合并改变。
 新入口接受每 SKU 一份 YAML，包含说明和 runtime/platform/boot 的顶层包集合，
 集中严格解析并生成确定的构建计划。已有 6 份 standard 与 3 份中文 minimal 配置，
 旧 `--sku/--skus` 行为保留；standard/native 合同、硬件 profile、实际包清单和
-配置身份绑定，非标准 full 配置不能因名称冒默认发布资格。
+配置身份绑定，非 Standard 配置不能因名称冒默认发布资格。
 在另一台电脑上的准备和完整步骤见 [配置构建说明](CONFIGURED-BUILDS.md)。
 
 ```sh
@@ -39,13 +39,12 @@ minimal 的 CPU native/字体闭包变体尚未制作，计划明确 `blocked`�
 **`basic` 的本次专用内核构建失败，尚无内核 pack/ISO；没有运行本批次的 VM/物理启动。**
 固定 `D:\temp\PollyOS\PollyOS.iso` 仍是旧 8e6，未自动更新。
 
-| SKU | ISO 字节 | USB `.img` 字节 | ISO 相对本批 full 缩小 | 全包摘要数 |
+| SKU | ISO 字节 | USB `.img` 字节 | ISO 相对本批 Standard 缩小 | 全包摘要数 |
 | --- | ---: | ---: | ---: | ---: |
 | vm | 577,619,968 | 630,194,176 | 20.47% | 211 |
 | intel | 651,823,104 | 704,643,072 | 10.25% | 214 |
 | nvidia | 682,092,544 | 735,051,776 | 6.09% | 214 |
 | amd | 668,428,288 | 721,420,288 | 7.97% | 214 |
-| full | 726,300,672 | 779,091,968 | 基准 | 217 |
 
 这是同一 native/stock kernel 批次的**实际压缩媒体大小**，不是 dpkg 展开字节估算。
 目录均位于 `D:\temp\PollyOS\`：
@@ -56,7 +55,6 @@ minimal 的 CPU native/字体闭包变体尚未制作，计划明确 `blocked`�
 | intel | `pollydesktop-0.1.0-alpha.8-debian13-intel-8e6ca02-cd7472e-fd417a5fae27` |
 | nvidia | `pollydesktop-0.1.0-alpha.8-debian13-nvidia-8e6ca02-cd7472e-ef8aa42bb0ea` |
 | amd | `pollydesktop-0.1.0-alpha.8-debian13-amd-8e6ca02-cd7472e-be7b3a611c79` |
-| full | `pollydesktop-0.1.0-alpha.8-debian13-full-8e6ca02-cd7472e-53cfbbb846f1` |
 
 每个目录的 ISO 名为 `pollydesktop-0.1.0-alpha.8-debian13-<sku>-x86_64-uefi-live.iso`，
 并含完整 `...-uefi-usb.img`、生成 GRUB、manifest/origin、sizeReport、实际 OS 包和
@@ -68,14 +66,13 @@ minimal 的 CPU native/字体闭包变体尚未制作，计划明确 `blocked`�
 | intel | `fd417a5fae271d965897b69e68b420761880b3aa08b89e7636e36abb4963db50` |
 | nvidia | `ef8aa42bb0ea82d29ea33721053562f68db56a9cebf9e48fbb0f68191df38b87` |
 | amd | `be7b3a611c79ea338015ce7898a15bf8485e6da2e8b4f8d8a5372153313e5f0e` |
-| full | `53cfbbb846f115d845b10a56006be7b1801cab1237660170d1c98d707b2a5d4b` |
 
 本批媒体 producer 为 clean `cd7472e3029220c60488a7d61c8ffce03b2a417c`，
 tree `7a17d7f5c6594d127273738526ff9d35264fe067`；复用已资格 native
 `8e6ca02e50ed6b40a2d81a9f5aad854e70c1197f`，没有伪称 native 重编。
 干净公共镜像 `aa2463c48fdb009bea52b1c76fb7c9a4ff1c7b6b2b59c861871ef9263fe17ab3`
 从纯 OS 底座、精确缺包与原 native bundle 组装，核对六个修补 Mesa 实际库字节，
-不使用已有 full Live 镜像删 metadata 冒精简底座。各 SKU 的 240 native pins 均
+不使用已有完整硬件 Live 镜像删 metadata 冒精简底座。各 SKU 的 240 native pins 均
 由 assembled 原验证器实际执行并通过，公共已有包零升级；stock kernel 为
 `6.12.113+deb13-amd64`，工具仍 `125f203e...`，SDK 配对不变。
 
@@ -124,7 +121,7 @@ API listener、helper 和容器全部为 0，没有安装 zstd 或擅自启动�
 
 后续源码 `b9b2042b` 和审阅修正 `365fdcf6552729f6315735c3a752a3815865bd77`
 已正常合入 `40f760869925eaa7ad0b87758f6155ffd142ef94`。
-可选 `basic | vm | intel | nvidia | amd | full`，默认仍为 `full`。
+可选 `basic | vm | intel | nvidia | amd | standard`，默认 `standard`。
 顶层 Linux/WSL 构建脚本新增独立 `--live` 模式，不先检查 Skia/CMake 或执行
 native build；Windows MSVC `tools/build.ps1` 不变。
 
@@ -132,13 +129,13 @@ native build；Windows MSVC `tools/build.ps1` 不变。
 bash tools/build.sh --live --help
 bash tools/build.sh --live "$OUT/live-amd" --sku amd \
   --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
-bash tools/build.sh --live "$OUT/live-skus" --skus vm,intel,nvidia,amd,full \
+bash tools/build.sh --live "$OUT/live-skus" --skus vm,intel,nvidia,amd,standard \
   --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
 ```
 
 `--sku` 单选与 `--skus` 多选互斥；未知/重复/空参数、混入 native 参数均拒绝，
 help 不要求 runtime/kernel 输入或创建输出。AMD 增加 amdgpu/Mesa 与
-`firmware-amd-graphics` 路线，full 扩为三家 GPU 固件合集，不冒全型号认证。
+`firmware-amd-graphics` 路线，standard 扩为三家 GPU 固件合集，不冒全型号认证。
 其它五类保原 stock kernel；所有类保 Intel CPU 微码，本轮没有加入 AMD CPU 微码。
 
 **basic 需要显式 `--basic-kernel-pack`，不能直接使用当前 stock 内核。**
@@ -173,15 +170,15 @@ Secure Boot 信任。producer 的最终包拒绝也保留唯一原始失败日�
 
 源码 `68a40ae9` 和审阅修正 `487e55e6200fcb50e23cfe328bbd83b92dcf372f`
 已正常合入 `311940e9d1a51bbb9db94c345ecfc7098f5cebe2`。
-同一入口从干净的公共 native Runtime 分别组装 `full`、`vm`、`intel`、`nvidia`，
-默认 `full`；共享固定源码、原生 bundle 和 runtime/tools immutable ID，串行生成
+同一入口从干净的公共 native Runtime 分别组装 `standard`、`vm`、`intel`、`nvidia`，
+默认 `standard`；共享固定源码、原生 bundle 和 runtime/tools immutable ID，串行生成
 独立目录与平台/Live 标签，不为每个 SKU 重编 native 或 SDK。
 实际命令及输入准备见 [构建指南](BUILDING.md#hardware-sku-live-builds)：
 
 ```sh
 sh desktop/tools/build-live.sh --debian "$OUT/live-skus" \
   --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" \
-  --tools-image "$TOOLS_ID" --skus full,vm,intel,nvidia
+  --tools-image "$TOOLS_ID" --skus standard,vm,intel,nvidia
 ```
 
 以上在 Linux/WSL 的已准备构建环境中运行；公共 Runtime 不能用包含全部固件的
@@ -196,11 +193,11 @@ firmware，保 Wi-Fi/音频和与 GPU 独立的 Intel CPU 微码。NVIDIA 是原
 root/bootstrap/ISO/USB 尺寸；根和 bootstrap 中的 profile 与实际包清单、媒体回执
 绑定。未知/重复 SKU、缺包/禁止包和不匹配 profile 都拒绝。
 新显式 SKU 的文件名与发布目录含 SKU；默认仅版本化发布，不改 `PollyOS.iso`，
-仅 `full --update-alias` 可明确更新它，精简版不能最后完成便覆盖稳定入口。
+仅 `standard --update-alias` 可明确更新它，精简版不能最后完成便覆盖稳定入口。
 旧无 SKU schema 1/2 仍兼容，新 SKU 不能绕旧 initramfs 路径隐去身份。
 
 LiveCD 与 Install 载荷独立，没有把新增安装器捆进 LiveCD。每 SKU 有独立 locked
-platform；当前旧 Install 流程只接受 full 平台，精简 Install 的文件名/manifest
+platform；当前旧 Install 流程只接受 standard 平台，精简 Install 的文件名/manifest
 尚未接线，两个入口会明确拒绝，不能据此声称新多 SKU 安装版或物理安装器已交。
 
 父只读审计了当前正式 8e6 的 root export（SHA

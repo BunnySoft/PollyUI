@@ -151,7 +151,7 @@ export async function parseConfig(textValue) {
 export const loadConfig = async file => parseConfig(fs.readFileSync(file, 'utf8'));
 export function legacyConfig(sku) {
   return normalizeConfig({
-    schemaVersion: 1, name: 'standard-' + sku, description: 'Unchanged standard desktop and hardware selection.',
+    schemaVersion: 1, name: sku === 'standard' ? 'standard' : 'standard-' + sku, description: 'Unchanged standard desktop and hardware selection.',
     target: { distribution: 'debian13', architecture: 'x86_64' }, hardware: sku, media: 'live-iso-usb',
     nativeVariant: 'standard-effects4', capabilities: { ...standardCapabilities },
     packageGroups: [
@@ -196,8 +196,8 @@ export function resolvePlan(value, lock = null) {
     archiveTrust: read('archive-trust.json'),
     resolution: { status: 'unresolved', packages: null,
       explanation: 'Top-level requests only; no APT dependency/provider/architecture solution has been supplied.' },
-    stableAliasEligible: isDeepStrictEqual(stages, packageStages(legacyConfig('full'))) &&
-      config.hardware === 'full' && isDeepStrictEqual(config.capabilities, standardCapabilities) &&
+    stableAliasEligible: isDeepStrictEqual(stages, packageStages(legacyConfig('standard'))) &&
+      config.hardware === 'standard' && isDeepStrictEqual(config.capabilities, standardCapabilities) &&
       config.nativeVariant === 'standard-effects4' && config.policy.forbidden.length === 0 &&
       config.policy.pins.length === 0,
     size: { kind: 'unmeasured', isoBytes: null, archiveBytesProxy: null },

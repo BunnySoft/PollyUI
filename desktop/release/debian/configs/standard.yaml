@@ -1,8 +1,8 @@
 schemaVersion: 1
 name: standard
-description: Standard desktop with the full existing general-purpose driver and firmware selection, not all-hardware certification.
+description: Standard desktop with the complete existing general-purpose driver and firmware selection, not all-hardware certification.
 target: {distribution: debian13, architecture: x86_64}
-hardware: full
+hardware: standard
 media: live-iso-usb
 nativeVariant: standard-effects4
 capabilities: {renderer: raster, webgl2: true, vulkan: true, fonts: wide, ime: luna-pinyin, audio: standard}

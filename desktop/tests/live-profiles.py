@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[2]
 profiles = runpy.run_path(str(REPO / "desktop/release/debian/live-profile.py"))
 verify = runpy.run_path(str(REPO / "desktop/tools/verify-live-runtime.py"))
 root_tools = runpy.run_path(str(REPO / "desktop/tools/live-root.py"))
-SKUS = ("basic", "vm", "intel", "nvidia", "amd", "full")
+SKUS = ("basic", "vm", "intel", "nvidia", "amd", "standard")
 BASIC_CONFIG = "\n".join(name + "=y" for name in (
     "CONFIG_DEVTMPFS", "CONFIG_TMPFS", "CONFIG_PROC_FS", "CONFIG_SYSFS", "CONFIG_EFI_PARTITION",
     "CONFIG_MSDOS_PARTITION", "CONFIG_VT", "CONFIG_VT_CONSOLE", "CONFIG_FB_EFI", "CONFIG_FRAMEBUFFER_CONSOLE",
@@ -84,7 +84,7 @@ class HardwareProfiles(unittest.TestCase):
                              "alsa-ucm-conf", "alsa-topology-conf")) + "\n")
             profiles["clean_runtime"](root)
 
-    def test_six_package_sets_missing_forbidden_and_legacy_full(self):
+    def test_six_package_sets_missing_forbidden_and_legacy_standard(self):
         for sku in SKUS:
             with self.subTest(sku=sku), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
@@ -93,7 +93,7 @@ class HardwareProfiles(unittest.TestCase):
                 installed = profiles["packages"](root)
                 self.assertIn("intel-microcode", installed)
                 self.assertIn("mesa-libgallium", installed)
-                if sku == "full":
+                if sku == "standard":
                     profiles["installed_input"](root)
                 else:
                     with self.assertRaisesRegex(ValueError, "Install SKU filenames/manifests are not wired"):
@@ -106,22 +106,22 @@ class HardwareProfiles(unittest.TestCase):
                 for name in [*selected["forbiddenPackages"], "firmware-unknown"]:
                     with self.assertRaisesRegex(ValueError, "Forbidden|Undeclared"):
                         profiles["verify_packages"]({**installed, name: {"version": "1"}}, selected)
-                if sku != "full":
+                if sku != "standard":
                     with self.assertRaisesRegex(ValueError, "metadata/source"):
                         profiles["verify"](root)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            seed(root, "full", marked=False)
+            seed(root, "standard", marked=False)
             status = root / "var/lib/dpkg/status"
             status.write_text("\n\n".join(block for block in status.read_text().split("\n\n")
                                          if not block.startswith("Package: firmware-amd-graphics\n")))
-            self.assertEqual(profiles["verify"](root)["sku"], "full")
+            self.assertEqual(profiles["verify"](root)["sku"], "standard")
             with self.assertRaises(FileNotFoundError):
-                profiles["verify"](root, "full")
+                profiles["verify"](root, "standard")
 
     def test_strict_sku_selection_and_manifest_fields(self):
         self.assertEqual(profiles["select"](",".join(SKUS)), list(SKUS))
-        for value in ("", "full,", ",vm", "vm,vm", "VM", "unknown", "intel, nvidia", "vm;id"):
+        for value in ("", "standard,", ",vm", "vm,vm", "VM", "unknown", "intel, nvidia", "vm;id"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 profiles["select"](value)
         manifest = profiles["load"]()
@@ -171,7 +171,7 @@ class HardwareProfiles(unittest.TestCase):
     def test_clean_runtime_refuses_full_base_even_without_profile_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            seed(root, "full", marked=False)
+            seed(root, "standard", marked=False)
             with self.assertRaisesRegex(ValueError, "clean common runtime"):
                 profiles["clean_runtime"](root)
             status = root / "var/lib/dpkg/status"
@@ -186,7 +186,7 @@ class HardwareProfiles(unittest.TestCase):
                 path.unlink()
             stripped = root / "usr/lib/firmware/unowned.bin"
             stripped.parent.mkdir(parents=True)
-            stripped.write_bytes(b"full firmware without dpkg metadata is still not a clean runtime")
+            stripped.write_bytes(b"standard firmware without dpkg metadata is still not a clean runtime")
             with self.assertRaisesRegex(ValueError, "clean common runtime"):
                 profiles["clean_runtime"](root)
 
@@ -213,7 +213,7 @@ class HardwareProfiles(unittest.TestCase):
             directory = Path(temporary)
             root = directory / "root"
             root.mkdir()
-            seed(root, "full")
+            seed(root, "standard")
             (root / profiles["MARKER"]).unlink()
             export = directory / "root.tar"
             with tarfile.open(export, "w") as archive:
@@ -226,12 +226,12 @@ class HardwareProfiles(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_direct_legacy_live_entry_refuses_new_profile_artifacts_and_sku_origins(self):
-        for kind in ("full", "vm", "orphan-copy", "sku-origin"):
+        for kind in ("standard", "vm", "orphan-copy", "sku-origin"):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 root = directory / "root"
                 root.mkdir()
-                seed(root, "full" if kind == "full" else "vm")
+                seed(root, "standard" if kind == "standard" else "vm")
                 if kind == "orphan-copy":
                     (root / profiles["MARKER"]).unlink()
                 elif kind == "sku-origin":
@@ -255,7 +255,7 @@ class HardwareProfiles(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "root"
             root.mkdir()
-            seed(root, "full", marked=False)
+            seed(root, "standard", marked=False)
             origin = root / "usr/share/pollyui/runtime-origin.json"
             origin.parent.mkdir()
             origin.write_text(json.dumps({"schemaVersion": 1, "runtimeSourceRevision": "a" * 40}))
@@ -313,7 +313,7 @@ class HardwareProfiles(unittest.TestCase):
                                       "uncompressedBytes": total, "files": records,
                                       "graphicsModules": ["hyperv_drm", "virtio_gpu"]}}
             verify["check_bootstrap"](path, pack())
-            for content, mode in ((profiles["marker"]("full"), 0o644), (profiles["marker"]("vm"), 0o666)):
+            for content, mode in ((profiles["marker"]("standard"), 0o644), (profiles["marker"]("vm"), 0o666)):
                 (root / "etc/polly-live-hardware").write_bytes(content)
                 (root / "etc/polly-live-hardware").chmod(mode)
                 layout = pack()

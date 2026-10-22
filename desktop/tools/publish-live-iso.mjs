@@ -85,7 +85,7 @@ export function verifyBundle(directory) {
       !Number.isSafeInteger(iso.size) || iso.size <= 0 || regular(path.join(directory, iso.name)).size !== iso.size)
     throw new Error('Actual ISO does not match the Live manifest');
   for (const revision of [manifest.sourceRevision, origin.runtimeSourceRevision, origin.mediaProducerRevision])
-    if (typeof revision !== 'string' || !/^[0-9a-f]{40}$/.test(revision)) throw new Error('Missing full source revision');
+    if (typeof revision !== 'string' || !/^[0-9a-f]{40}$/.test(revision)) throw new Error('Missing source revision');
   if (manifest.sourceDirty !== false || origin.runtimeSourceDirty !== false || origin.fixtureOnly === true ||
       origin.isoSha256 !== iso.sha256 || origin.mediaProducerRevision !== manifest.sourceRevision ||
       origin.runtimeImageID !== manifest.runtimeImage ||
@@ -117,10 +117,10 @@ export function publish(directory, destination = DEFAULT_DESTINATION, options = 
   const { manifest, origin, checksums } = verifyBundle(directory);
   const updateAlias = options.updateAlias ?? !Object.hasOwn(manifest, 'sku');
   if (typeof updateAlias !== 'boolean') throw new Error('updateAlias must be an explicit boolean');
-  if (updateAlias && Object.hasOwn(manifest, 'sku') && manifest.sku !== 'full')
-    throw new Error('Only the explicit full hardware SKU may update PollyOS.iso; publish reduced SKUs versioned-only');
+  if (updateAlias && Object.hasOwn(manifest, 'sku') && manifest.sku !== 'standard')
+    throw new Error('Only the explicit standard hardware SKU may update PollyOS.iso; publish reduced SKUs versioned-only');
   if (updateAlias && manifest.configuration && !manifest.configuration.stableAliasEligible)
-    throw new Error('Only the exact standard full capability/package contract may update PollyOS.iso');
+    throw new Error('Only the exact standard capability/package contract may update PollyOS.iso');
   const relative = path.relative(directory, destination);
   if (!relative || relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))
     throw new Error('Publication destination must not be inside its source bundle');

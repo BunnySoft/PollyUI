@@ -151,7 +151,7 @@ multi-output, suspend/resume and performance remain unqualified.
 For the three-tier product definition, see `docs/SKU-SIZES.md`: Mini is this
 Alpine desktop; Compact adds Debian and Chinese input using basic GOP/simpledrm;
 Standard includes general-purpose drivers/firmware. Compact has no separate
-vendor editions. Full is no longer a separate product.
+vendor editions. There is no separate hardware product.
 
 ## Historical demo
 

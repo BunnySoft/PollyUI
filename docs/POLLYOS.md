@@ -29,17 +29,17 @@
 新正式媒体已复验发布，旧 179 不含此功能；源码/字体/IPC/进程退出测试不冒实际
 动画、Esc、VT 恢复或 Hyper-V 启动通过。
 
-已新增 `basic/vm/intel/nvidia/amd/full` Live SKU：`tools/build.sh --live` 以
-`--sku` 单选或 `--skus` 多选、默认 full；固定公共 Runtime/源码/tools 后串行组装，
+已新增 `basic/vm/intel/nvidia/amd/standard` Live SKU：`tools/build.sh --live` 以
+`--sku` 单选或 `--skus` 多选、默认 standard；固定公共 Runtime/源码/tools 后串行组装，
 产物命名和实际 profile 回执隔离。basic 需要显式专用 simpledrm kernel pack，
 其它五类用 stock kernel，仍共享 Mesa/LLVM、中文与 Apps，不以启动选项冒内容裁剪。
 LiveCD 与 Install 分离，精简 Install 尚未接线并明确拒绝。源码与组件之外，
 已有下文五份实际媒体；basic 专用内核此次构建失败，实际输出仍未测。页首 8e6 是固定入口所指媒体，
 见 [构建指南](BUILDING.md#hardware-sku-live-builds)和 [最新交接](POLLYOS-HANDOFF.md)。
 
-后续实际构建已交付 vm/intel/nvidia/amd/full 五份独立 SKU ISO/完整 USB，native
+后续实际构建已交付 vm/intel/nvidia/amd/standard 五份独立 SKU ISO/完整 USB，native
 复用 8e6、媒体 producer cd747，十进制 ISO 体积依次
-577.62/651.82/682.09/668.43/726.30 MB；VM 比本批 full 实际小 20.47%。
+577.62/651.82/682.09/668.43/882.16 MB；Standard 为当前完整硬件媒体。
 真实载荷与 Windows 全包校验通过，但没有新增硬件启动资格。
 basic 此次专用内核构建失败，五份不因此改标 basic，固定入口也未自动替换。
 

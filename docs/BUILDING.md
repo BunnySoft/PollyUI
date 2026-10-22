@@ -11,12 +11,12 @@
 当前产品档位 **Mini / Compact / Standard** 的合同、体积依据和状态见
 [SKU 技术栈与尺寸](SKU-SIZES.md)和[功能/组件矩阵](SKU-MATRIX.md)。
 Mini 沿用原 Alpine Micro；Compact 是 Debian 中文轻量档，仅基础通用显示；
-Standard 带完整驱动/固件，不再另设厂商分版产品或 Full 档。历史脚本、配置和
+Standard 带完整驱动/固件，不再另设厂商分版产品或单独硬件档。历史脚本、配置和
 产物目录不随产品展示名改写。可启动的 micro 原型构建入口见
 [desktop/release/micro](../desktop/release/micro/README.md)，thin 原型见
 [desktop/release/thin](../desktop/release/thin/README.md)，minimal-zh 的 CPU native
 进展见 [desktop/release/minimal-zh](../desktop/release/minimal-zh/README.md)。
-旧 `--sku/--skus` 是内部硬件选择，默认 `full` 语义不变；配置文件不是已经构建的 ISO。
+旧 `--sku/--skus` 是内部硬件选择，默认 `standard` 语义不变；配置文件不是已经构建的 ISO。
 
 <a id="current-product-builds"></a>
 ### 新产品构建入口
@@ -54,12 +54,12 @@ bash tools/build.sh --os standard /absolute/output/standard --build \
 |---|---|---|
 | Mini | `desktop/release/micro/build-shell.sh`，显式 `MICRO_PRODUCT=mini` | Alpine、无中文/IME/3D；构建新名称/品牌/报告，不改名旧 ISO |
 | Compact | 新 Debian CPU/中文/GOP 配方尚缺 | plan 为 blocked，build 在外部动作前报错；不借旧 thin/minimal-zh 冒成功 |
-| Standard | `configs/standard.yaml` → 既有 `build-live-skus.mjs` | `standard-effects4` + 内部 `full`，保留原包集合/驱动与所有锁、ABI、clean-source 校验 |
+| Standard | `configs/standard.yaml` → 既有 `build-live-skus.mjs` | `standard-effects4` + 内部 `standard`，保留原包集合/驱动与所有锁、ABI、clean-source 校验 |
 
 Mini 仍兼容 `MICRO_BUILDER`、`MICRO_SHELL_BUILDER`、`MICRO_SDK` 和
 `PU_BUILD_JOBS`。旧 Micro 直接构建默认仍输出 `micro-shell.*`；历史 Thin 脚本、
-`standard-{vm,intel,nvidia,amd,full,basic}.yaml`、`minimal-zh-*.yaml` 和
-`--live --sku/--skus` 不变。`full` 仍是底层硬件集合标识，不是第四个产品。
+`standard-{vm,intel,nvidia,amd,basic}.yaml`、`minimal-zh-*.yaml` 和
+`--live --sku/--skus` 不变。`standard` 是底层硬件集合标识，不是另一个产品。
 Standard 的新配置名写入真实计划/manifest/媒体名，但包集合并未因此减小；
 新构建必须重新核验，原锁不能只改 configSha 或绕过签名/包验证。
 入口不会发布、改稳定 alias 或自动执行 QEMU。本次已用同一配方的直接 shell
@@ -482,8 +482,8 @@ TOOLS_ID=$(podman image inspect --format '{{.Id}}' localhost/polly-debian-live-t
 
 bash tools/build.sh --live "$OUT/live-skus" \
   --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" \
-  --tools-image "$TOOLS_ID" --skus vm,intel,nvidia,amd,full
-# 单选可用 --sku amd，不能与 --skus 同时出现；两者均省略默认 full。
+  --tools-image "$TOOLS_ID" --skus vm,intel,nvidia,amd,standard
+# 单选可用 --sku amd，不能与 --skus 同时出现；两者均省略默认 standard。
 # --live --help 无需 runtime/kernel 输入，不创建输出，也不检查 Skia/CMake。
 # 等价直接入口：node desktop/tools/build-live-skus.mjs OUTPUT [上面的参数]
 # 兼容脚本入口：sh desktop/tools/build-live.sh --debian OUTPUT [上面的参数]
@@ -495,16 +495,16 @@ bash tools/build.sh --live "$OUT/live-skus" \
 runtime/tools 的真实 image ID；后续所有重步骤只消费这些固定输入。按所选顺序
 **串行**组装，不并发多套大构建，不重建 native/SDK/tools，不改共享 convenience
 tag 或稳定 ISO alias。包组装仍可能联网获取已声明的 Debian 包；不是离线下载器。
-传入已含固件/kernel/profile 的 full/platform/Live base 会失败，不能靠删除
+传入已含固件/kernel/profile 的 standard/platform/Live base 会失败，不能靠删除
 metadata 把它冒充干净 runtime。
 
-`desktop/release/debian/live-profiles.json` 是唯一 profile manifest。`full` 保留
+`desktop/release/debian/live-profiles.json` 是唯一 profile manifest。`standard` 保留
 当前包组范围，不代表所有型号/所有硬件认证；`nvidia` 仅当前 Nouveau/Mesa
 开源路线，`amd` 是 amdgpu/Mesa + `firmware-amd-graphics`。`intel` 去 NVIDIA/AMD
 graphics firmware，`nvidia` 去 Intel/AMD graphics
 firmware；二者均保留物理网络/音频固件。`vm` 去这两种 graphics、Intel Wi-Fi 和
 SOF（也不带 AMD graphics），保虚拟显示/存储/输入/网络模块和软件渲染。
-`amd` 去 Intel/NVIDIA graphics，同时保留物理网络/音频；`full` 是三家显卡固件的
+`amd` 去 Intel/NVIDIA graphics，同时保留物理网络/音频；`standard` 是三家显卡固件的
 合集。Intel CPU 微码与 GPU 无关，所有 SKU 都保留；**本轮未新增 AMD CPU 微码**，
 不能因为有 AMD 显卡 SKU 就声称 AMD CPU 微码已覆盖。
 
@@ -514,30 +514,30 @@ runtime、Apps、中文 IME/字体**，所以不是“完全无其它厂商驱�
 `.so` 或破坏 dpkg 依赖。深度拆 kernel/Mesa 包及其配对 SDK 是后续工作。
 Early Plymouth、64 MiB bootstrap、RAMroot/READY、账户/PAM与诊断保持不变。
 
-#### Standard/full：P1000、有线网络与常用命令
+#### Standard：P1000、有线网络与常用命令
 
-`full` 当前额外声明常用 CLI 包组 `standardUtilities`，包含 shell/文件和压缩工具、
+`standard` 当前额外声明常用 CLI 包组 `standardUtilities`，包含 shell/文件和压缩工具、
 进程查看、less/nano/vi、curl/wget、SSH 客户端、rsync、Git、ping/tracepath/traceroute、
 dig/nslookup 等。只加客户端，不启用 SSH server 或远程登录。
-Full 将 ICMP 数据报 socket 限于 GID 1000，使 Live 普通用户可直接运行 ping；
+Standard 将 ICMP 数据报 socket 限于 GID 1000，使 Live 普通用户可直接运行 ping；
 不为命令添加 setuid 或额外 raw-socket 权限。通过 systemd-sysctl 在目标系统启动时应用，
 不在容器构建中修改宿主 sysctl。
 curl 命令固定为 `8.14.1-2+deb13u5`，xz-utils 固定为 `5.8.1-1+deb13u1`，
 分别与当前配对 runtime 的 libcurl4t64、liblzma5 同源版本一致；
 不能让新 CLI 安装顺带升级被冻结的原生运行库。换 SDK/runtime 时需要重新核对该约束。
-物理网络固件组加入 `firmware-realtek`；full 明确核验 Intel e1000e/igb/igc、
+物理网络固件组加入 `firmware-realtek`；standard 明确核验 Intel e1000e/igb/igc、
 Realtek r8169/r8152、ASIX/AX88179 USB Ethernet 模块。原有 dhcpcd 有线 DHCP、
 openresolv/DNS 和网卡自动发现保持，静态包校验不代表真实连线和联网通过。
 
-Full 另加 `standardWirelessAudio` 固件组：`firmware-atheros`、
+Standard 另加 `standardWirelessAudio` 固件组：`firmware-atheros`、
 `firmware-brcm80211`、`firmware-mediatek`、`firmware-intel-sound`、
 `firmware-cirrus`，保留已有 Intel Wi-Fi、Realtek 和 Intel SOF 固件。
 同时加入 `alsa-ucm-conf`、`alsa-topology-conf`，让已有 ALSA/PipeWire 枚举路径
 获得声卡用例和拓扑配置，不仅检查内核 `.ko` 是否存在。
-Full 显式核验 Intel、rtw88/rtw89、Atheros ath9k/ath10k/ath11k/ath12k、
+Standard 显式核验 Intel、rtw88/rtw89、Atheros ath9k/ath10k/ath11k/ath12k、
 brcmfmac/brcmsmac、MediaTek PCIe/USB 无线驱动，以及 HDA/Realtek/HDMI/USB、
 Intel SOF、AMD ACP、Cirrus 音频模块；Wi-Fi 服务仍为 iwd。
-NVMe/AHCI、USB 控制器/存储和 HID 键鼠模块也纳入 Full 必需项。
+NVMe/AHCI、USB 控制器/存储和 HID 键鼠模块也纳入 Standard 必需项。
 
 这不是所有芯片和笔记本的兼容承诺：未加入 Broadcom STA 闭源驱动；
 部分设备仍需板级校准/NVRAM、OEM 音频配置或额外 AMD DSP 固件。
@@ -560,12 +560,12 @@ live-skus/
   build-run.json                  # 固定 source/native/tools ID、每 SKU 平台/Live ID及完成状态
   common/source/                  # 一份冻结源码，所有 SKU 共用
   common/runtime/                 # 一份冻结 native bundle，所有 SKU 共用
-  full/inputs/                    # root.tar、实际 origin、frozen-overlays
-  full/media/pollydesktop-<version>-debian13-full-x86_64-uefi-live.iso
-  full/media/pollydesktop-<version>-debian13-full-x86_64-uefi-usb.img
-  full/media/live-manifest.json
-  full/media/candidate-origin.json
-  full/media/SHA256SUMS
+  standard/inputs/                    # root.tar、实际 origin、frozen-overlays
+  standard/media/pollydesktop-<version>-debian13-standard-x86_64-uefi-live.iso
+  standard/media/pollydesktop-<version>-debian13-standard-x86_64-uefi-usb.img
+  standard/media/live-manifest.json
+  standard/media/candidate-origin.json
+  standard/media/SHA256SUMS
   vm/...                          # 所选其它 SKU，各自 inputs/media
   intel/...
   nvidia/...
@@ -583,19 +583,19 @@ manifest 中，source-owned qualifier 与 actual-root/boot-profile/USB 校验绑
 node desktop/tools/release-report.mjs "$OUT/live-skus/vm/media"
 # 校验后只发布独立版本目录，默认不改 PollyOS.iso：
 node desktop/tools/publish-live-iso.mjs "$OUT/live-skus/vm/media" --destination /path/to/releases
-# 只有 full 可显式更新稳定 alias；精简 SKU 即使传此参数也拒绝：
-node desktop/tools/publish-live-iso.mjs "$OUT/live-skus/full/media" \
+# 只有 standard 可显式更新稳定 alias；精简 SKU 即使传此参数也拒绝：
+node desktop/tools/publish-live-iso.mjs "$OUT/live-skus/standard/media" \
   --destination /path/to/releases --update-alias
 ```
 
-新显式 SKU 连 full 的文件名/版本目录也含 SKU，不与旧无 SKU schema 1/2 媒体撞名；
+新显式 SKU 连 standard 的文件名/版本目录也含 SKU，不与旧无 SKU schema 1/2 媒体撞名；
 旧媒体只读解析/校验仍兼容。完整性通过不是 UEFI/Hyper-V/物理资格。
 LiveCD 与 Install 介质独立：每 SKU 另保 locked `template` platform；当前 Install
 文件名/manifest 尚未接 SKU，脚本明确拒绝精简 profile 输入，不悄然生无 SKU 成品。
-`full` 可按本 run 的 `artifacts[].platformImageID` 明确选择：
+`standard` 可按本 run 的 `artifacts[].platformImageID` 明确选择：
 
 ```sh
-POLLY_PLATFORM_IMAGE="$FULL_PLATFORM_ID" sh desktop/tools/build-installed.sh "$OUT/install-full"
+POLLY_PLATFORM_IMAGE="$STANDARD_PLATFORM_ID" sh desktop/tools/build-installed.sh "$OUT/install-standard"
 ```
 
 不能传 Live ID，也不默认选最后完成的 SKU。此轮没有新增物理安装器或多 Install 产物。
@@ -631,7 +631,7 @@ python3 -I -B desktop/release/debian/basic-kernel.py verify "$OUT/basic-kernel-p
 bash tools/build.sh --live "$OUT/live-basic" --sku basic \
   --basic-kernel-pack "$OUT/basic-kernel-pack" \
   --runtime-bundle "$OUT/runtime" --runtime-image "$RUNTIME_ID" --tools-image "$TOOLS_ID"
-# 六类同一入口可用 --skus basic,vm,intel,nvidia,amd,full，仍必须提供 --basic-kernel-pack。
+# 六类同一入口可用 --skus basic,vm,intel,nvidia,amd,standard，仍必须提供 --basic-kernel-pack。
 ```
 
 该独立可选内核构建脚本只从已校验源码/config 执行 olddefconfig → scripts/config
@@ -684,16 +684,16 @@ Windows 请在已有 Linux/WSL 环境运行上面入口；Windows MSVC `tools/bu
 
 同一真实 BUILD 的五个 stock SKU 已生成完整 ISO/USB 并通过实际载荷及 Windows
 全包核验。复用 native `8e6ca02`，media producer `cd7472e3`、stock kernel
-`6.12.113+deb13-amd64`；不是每 SKU 重编 native 或用旧 full Live 层重标。
+`6.12.113+deb13-amd64`；不是每 SKU 重编 native 或用旧 standard Live 层重标。
 下面是压缩 ISO 的实际十进制 MB（1 MB = 1,000,000 字节），并非 Installed-Size：
 
-| SKU | ISO MB | 相对本批 full 缩小 |
+| SKU | ISO MB | 相对本批 Standard 缩小 |
 | --- | ---: | ---: |
 | vm | 577.62 | 20.47% |
 | intel | 651.82 | 10.25% |
 | nvidia | 682.09 | 6.09% |
 | amd | 668.43 | 7.97% |
-| full | 726.30 | 基准 |
+| standard | 882.16 | 当前交付 |
 
 完整 Windows 路径、逐份 ISO/USB 字节和摘要见
 [实际构建交接](POLLYOS-HANDOFF.md)。各目录的 `SHA256SUMS` 包含来源、阶段和实际
@@ -701,7 +701,7 @@ OS 输入档；所有已有 native pins 保持，公共已有包没有升级。
 当前仅构建/内容校验通过，未新增 UEFI/Hyper-V/物理启动资格；`PollyOS.iso`
 固定入口不自动改变。basic 单独记录内核尝试，不把缺依赖/失败阶段当交付成功。
 
-### 旧单 full 调用（兼容入口）
+### 旧单 standard 调用（兼容入口）
 
 下面的一参数调用保持原行为；不因新增 SKU 改写历史产物。新多 SKU 构建优先用上节。
 

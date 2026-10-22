@@ -120,7 +120,7 @@ function fixture(t, fail = '') {
     POLLY_SKU_FIXTURE_ROOT: root, POLLY_SKU_FIXTURE_REAL_GIT: realGit, POLLY_SKU_FIXTURE_FAIL: fail };
   const execute = () => spawnSync('bash', [path.join(source, 'tools/build.sh'), '--live', output,
     '--runtime-bundle', bundle, '--runtime-image', 'fixture-runtime', '--tools-image', 'fixture-tools',
-    '--skus', 'basic,vm,intel,nvidia,amd,full', '--basic-kernel-pack', kernelPack],
+    '--skus', 'basic,vm,intel,nvidia,amd,standard', '--basic-kernel-pack', kernelPack],
   { cwd: root, env, encoding: 'utf8', timeout: 90000, maxBuffer: 8 * 1024 * 1024 });
   return { root, output, source, revision, execute, env };
 }
@@ -145,10 +145,10 @@ test('actual shell/Node entry freezes inputs once and serially executes every SK
     const trace = events(f), state = read(path.join(f.output, 'build-run.json'));
     assert.deepEqual(trace.map(row => row.phase),
       ['git-head', 'git-status', 'inspect-runtime', 'inspect-tools', 'kernel-pack', 'package-modes', 'clean-runtime',
-        ...['basic', 'vm', 'intel', 'nvidia', 'amd', 'full'].flatMap(() => perSku)]);
+        ...['basic', 'vm', 'intel', 'nvidia', 'amd', 'standard'].flatMap(() => perSku)]);
     assert.equal(state.status, 'complete');
     assert.equal(state.sourceRevision, f.revision);
-    assert.deepEqual(state.artifacts.map(item => item.sku), ['basic', 'vm', 'intel', 'nvidia', 'amd', 'full']);
+    assert.deepEqual(state.artifacts.map(item => item.sku), ['basic', 'vm', 'intel', 'nvidia', 'amd', 'standard']);
     assert.equal(new Set(state.artifacts.flatMap(item => Object.values(item.tags))).size, 12);
     assert.ok(state.artifacts.every(item => item.report.nativeRuntime.imageID === state.nativeRuntime.imageID &&
       item.report.imageToolsID === state.imageToolsID));
@@ -191,7 +191,7 @@ test('top BUILD --live help has no native/backend/output side effects and reject
     const entry = path.join(f.source, 'tools/build.sh');
     const help = spawnSync('bash', [entry, '--live', '--help'], { env: f.env, encoding: 'utf8' });
     assert.equal(help.status, 0, help.stderr);
-    assert.match(help.stdout, /basic,vm,intel,nvidia,amd,full/);
+    assert.match(help.stdout, /basic,vm,intel,nvidia,amd,standard/);
     assert.ok(!fs.existsSync(f.output));
     assert.ok(!fs.existsSync(path.join(f.root, 'trace.jsonl')));
     for (const args of [['--clean', '--live', '--help'], ['--live', '--help', '--metal'],

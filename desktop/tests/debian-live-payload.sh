@@ -7,7 +7,7 @@ if [ "$#" -eq 2 ]; then
     hardware_sku=$2
     python3 -I -B /workspace/desktop/release/debian/live-profile.py verify --sku "$hardware_sku"
 else
-    hardware_sku=full
+    hardware_sku=standard
     python3 -I -B /workspace/desktop/release/debian/live-profile.py verify
 fi
 test -f /etc/polly-account-profile
@@ -28,7 +28,7 @@ for module in $modules; do
     modinfo -k "$kernel" -n "$module"
     modprobe --set-version "$kernel" --show-depends --ignore-install "$module" >/dev/null
 done
-if [ "$hardware_sku" = full ]; then
+if [ "$hardware_sku" = standard ]; then
     python3 -I -B /workspace/desktop/release/debian/standard-hardware.py
 fi
 if [ -e /etc/polly-hardware-profile.json ]; then
@@ -38,7 +38,7 @@ if [ -e /etc/polly-hardware-profile.json ]; then
     done
     cmp /workspace/desktop/tools/live-root.py /usr/lib/polly-hardware/live-root.py
 fi
-if [ "$hardware_sku" = full ]; then
+if [ "$hardware_sku" = standard ]; then
     cmp /usr/lib/polly-hardware/network-sysctl.conf /etc/sysctl.d/70-polly-live-network.conf
     test "$(stat -c '%a:%u:%g:%h' /etc/sysctl.d/70-polly-live-network.conf)" = 644:0:0:1
 fi

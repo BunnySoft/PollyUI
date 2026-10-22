@@ -163,12 +163,12 @@ function fixture(t, config = legacyConfig('vm'), failure = '') {
 
 test('all nine YAML configs parse; stock stage selection exactly matches the legacy adapter', async () => {
   for (const sku of hardwareSkus) {
-    const config = await loadConfig(new URL('standard-' + sku + '.yaml', configs));
+    const config = await loadConfig(new URL(sku === 'standard' ? 'standard.yaml' : 'standard-' + sku + '.yaml', configs));
     assert.deepEqual(packageStages(config), packageStages(legacyConfig(sku)));
     assert.equal(resolvePlan(config).native.available, true);
-    assert.equal(resolvePlan(config).stableAliasEligible, sku === 'full');
+    assert.equal(resolvePlan(config).stableAliasEligible, sku === 'standard');
   }
-  for (const sku of ['vm', 'basic', 'full']) {
+  for (const sku of ['vm', 'basic']) {
     const plan = resolvePlan(await loadConfig(new URL('minimal-zh-' + sku + '.yaml', configs)));
     assert.equal(plan.status, 'blocked');
     assert.equal(plan.resolution.packages, null);
@@ -198,8 +198,8 @@ test('safe YAML rejects duplicate/unknown keys, aliases, tags, documents and uns
   assert.throws(() => normalizeConfig(bad));
 });
 test('deterministic hashes separate configuration/native/complete plan domains and never infer descriptions', () => {
-  const vm = legacyConfig('vm'), full = legacyConfig('full');
-  const a = resolvePlan(vm), b = resolvePlan(full);
+  const vm = legacyConfig('vm'), standard = legacyConfig('standard');
+  const a = resolvePlan(vm), b = resolvePlan(standard);
   assert.equal(a.nativeVariantInputSha256, b.nativeVariantInputSha256);
   assert.notEqual(a.planSha256, b.planSha256);
   const textOnly = structuredClone(vm);
@@ -211,7 +211,7 @@ test('deterministic hashes separate configuration/native/complete plan domains a
   assert.deepEqual(validatePlan(a), a);
   const tampered = structuredClone(a); tampered.stages.platform.push('curl');
   assert.throws(() => validatePlan(tampered));
-  const trimmed = structuredClone(full); trimmed.name = 'standard-full';
+  const trimmed = structuredClone(standard); trimmed.name = 'standard';
   trimmed.packageGroups[1].install.push('jq');
   assert.equal(resolvePlan(trimmed).stableAliasEligible, false);
 });
@@ -232,7 +232,7 @@ test('real Node CLI planning has no output/external side effects; help has no YA
   for (const args of [[nonexistent, '--config', 'file'], ['--config', 'file', '--plan', '--build'],
     ['--config', 'file', '--plan', '--sku', 'vm'], ['--plan', '--lock', 'dir'], ['--plan', '--plan']])
     assert.throws(() => parseArguments(args));
-  assert.deepEqual(parseArguments(['--plan']).skus, ['full']);
+  assert.deepEqual(parseArguments(['--plan']).skus, ['standard']);
   assert.equal(fs.readdirSync(root).length, 0);
 });
 test('actual top-level shell forwards configuration plans and rejects mixed native/build options', t => {
@@ -250,7 +250,7 @@ test('actual top-level shell forwards configuration plans and rejects mixed nati
   assert.match(help.stdout, /--config/);
   const defaults = spawnSync(bash, [script, '--live', '--plan'], { encoding: 'utf8', cwd: root });
   assert.equal(defaults.status, 0, defaults.stderr);
-  assert.equal(JSON.parse(defaults.stdout).plans[0].configuration.hardware, 'full');
+  assert.equal(JSON.parse(defaults.stdout).plans[0].configuration.hardware, 'standard');
   for (const args of [['--clean', '--live', '--help'], ['--live', '--help', '--run'],
     ['--live', output, '--config', 'file', '--plan', '--metal']]) {
     const rejected = spawnSync(bash, [script, ...args], { encoding: 'utf8', cwd: root });
@@ -390,9 +390,8 @@ test('input tampering fails before heavy actions; configured root/lock/SBOM tamp
   json(path.join(directory, 'configuration-sbom.spdx.json'), sbom); checksums(directory);
   assert.throws(() => verifyBundle(directory), /SBOM/);
 });
-test('full hardware with any extra selection cannot update the stable alias even when named standard-full', async t => {
-  const config = legacyConfig('full'); config.packageGroups[1].install.push('jq');
-  const f = fixture(t, config); await runCLI(f.args, f.backend);
-  assert.throws(() => publish(path.join(f.output, 'full/media'), path.join(f.root, 'publish'),
-    { updateAlias: true }), /exact standard full/);
+test('configured Standard fails closed on an unpaired fixture runtime before publication', async t => {
+  const config = legacyConfig('standard'); config.packageGroups[1].install.push('jq');
+  const f = fixture(t, config);
+  await assert.rejects(runCLI(f.args, f.backend), /complete paired GLES/);
 });

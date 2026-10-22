@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Standard/full display, network, audio and command payloads, not hardware operation."""
+"""Verify Standard display, network, audio and command payloads, not hardware operation."""
 import argparse
 import fnmatch
 import json
@@ -61,7 +61,7 @@ def verify(root=Path("/"), command=output):
     if "CONFIG_DRM_NOUVEAU=m\n" not in kernel_config and "CONFIG_DRM_NOUVEAU=y\n" not in kernel_config:
         raise ValueError("Target kernel does not include Nouveau")
     module_paths = {}
-    selected = runpy.run_path(str(HERE / "live-profile.py"))["profile"]("full")
+    selected = runpy.run_path(str(HERE / "live-profile.py"))["profile"]("standard")
     for name in selected["requiredModules"]:
         filename = command("modinfo", "-b", str(root), "-k", release, "-F", "filename", name)
         if not filename:
@@ -102,7 +102,7 @@ def verify(root=Path("/"), command=output):
     if (root / "etc/systemd/system/multi-user.target.wants/ssh.service").exists():
         raise ValueError("This command set must not enable a remote SSH server")
     return {
-        "schemaVersion": 1, "kind": "standard-full-hardware-payload", "kernelRelease": release,
+        "schemaVersion": 1, "kind": "standard-hardware-payload", "kernelRelease": release,
         "nvidiaRoute": "nouveau-mesa", "target": "Quadro P1000 / GP107",
         "modules": module_paths, "firmware": firmware, "commands": binaries,
         "wirelessFirmware": wireless_firmware, "audioFirmware": audio_firmware,
@@ -121,7 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     profiles = runpy.run_path(str(HERE / "live-profile.py"))
-    profiles["verify"](Path("/"), "full")
+    profiles["verify"](Path("/"), "standard")
     report = verify()
     text = json.dumps(report, indent=2) + "\n"
     if args.report:

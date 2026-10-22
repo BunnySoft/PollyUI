@@ -67,24 +67,24 @@ test('fresh Live recipe keeps the session-mode overlay executable for strict ass
   assert.ok(normalization?.includes(target), 'Preserve existing CRLF normalization');
 });
 
-test('strict SKU CLI defaults to full and refuses unknown, duplicate, empty or unsafe selections', () => {
-  assert.deepEqual(parseSkus(), ['full']);
+test('strict SKU CLI defaults to standard and refuses unknown, duplicate, empty or unsafe selections', () => {
+  assert.deepEqual(parseSkus(), ['standard']);
   assert.deepEqual(parseSkus(hardwareSkus.join(',')), hardwareSkus);
-  for (const text of ['', ',full', 'full,', 'full,,vm', 'full,full', 'unknown', 'Full', ' vm', '../vm', 'vm;id'])
+  for (const text of ['', ',standard', 'standard,', 'standard,,vm', 'standard,standard', 'unknown', 'Full', ' vm', '../vm', 'vm;id'])
     assert.throws(() => parseSkus(text), /SKU/);
   const args = ['output', '--runtime-bundle', 'runtime', '--runtime-image', 'image', '--tools-image', 'tools'];
-  assert.deepEqual(parseArguments(args).skus, ['full']);
+  assert.deepEqual(parseArguments(args).skus, ['standard']);
   assert.deepEqual(parseArguments([...args, '--skus', 'intel,nvidia']).skus, ['intel', 'nvidia']);
   assert.deepEqual(parseArguments(['--help']), { help: true });
   assert.deepEqual(parseArguments([...args, '--sku', 'amd']).skus, ['amd']);
   assert.deepEqual(parseArguments([...args, '--sku', 'basic', '--basic-kernel-pack', 'kernel']).skus, ['basic']);
   for (const tail of [['--skus', ''], ['--skus', 'vm,vm'], ['--skus'], ['--oops', 'vm'],
-    ['--tools-image', 'duplicate'], ['--sku', 'amd', '--skus', 'full'], ['--sku', 'amd', '--sku', 'full'],
-    ['--sku', 'amd,full'], ['--sku', 'basic'], ['--basic-kernel-pack', 'unrequested'], ['--help']])
+    ['--tools-image', 'duplicate'], ['--sku', 'amd', '--skus', 'standard'], ['--sku', 'amd', '--sku', 'standard'],
+    ['--sku', 'amd,standard'], ['--sku', 'basic'], ['--basic-kernel-pack', 'unrequested'], ['--help']])
     assert.throws(() => parseArguments([...args, ...tail]));
 });
 test('manifest is declarative and strict; GPU choice never removes CPU/network/audio requirements', () => {
-  const full = hardwareProfile('full'), intel = hardwareProfile('intel'), nv = hardwareProfile('nvidia');
+  const standard = hardwareProfile('standard'), intel = hardwareProfile('intel'), nv = hardwareProfile('nvidia');
   const extraFirmware = ['firmware-atheros', 'firmware-brcm80211', 'firmware-mediatek',
     'firmware-intel-sound', 'firmware-cirrus'];
   assert.deepEqual(hardwareProfile('vm').forbiddenPackages.sort(), [
@@ -93,20 +93,20 @@ test('manifest is declarative and strict; GPU choice never removes CPU/network/a
   assert.deepEqual(intel.forbiddenPackages, ['firmware-nvidia-graphics', 'firmware-amd-graphics', ...extraFirmware]);
   assert.deepEqual(nv.forbiddenPackages, ['firmware-intel-graphics', 'firmware-amd-graphics', ...extraFirmware]);
   assert.ok(hardwareProfile('amd').requiredPackages.includes('firmware-amd-graphics'));
-  assert.ok(hardwareProfile('full').requiredModules.includes('amdgpu'));
+  assert.ok(hardwareProfile('standard').requiredModules.includes('amdgpu'));
   for (const sku of hardwareSkus) {
     assert.ok(hardwareProfile(sku).requiredPackages.includes('intel-microcode'));
     assert.ok(hardwareProfile(sku).shared.some(line => line.includes('Complete corrected Mesa')));
     assert.equal(JSON.parse(hardwareMarker(sku)).sku, sku);
   }
-  for (const selected of [full, intel, nv])
+  for (const selected of [standard, intel, nv])
     for (const pkg of ['firmware-iwlwifi', 'firmware-sof-signed'])
       assert.ok(selected.requiredPackages.includes(pkg));
   assert.ok(nv.support.some(line => line.includes('no proprietary')));
   const manifest = JSON.parse(fs.readFileSync(new URL('../release/debian/live-profiles.json', import.meta.url)));
   for (const mutate of [
     value => { value.extra = true; },
-    value => { value.profiles.unknown = value.profiles.full; },
+    value => { value.profiles.unknown = value.profiles.standard; },
     value => { value.profiles.vm.packageGroups.push('unknown'); },
     value => { value.packageGroups.common.push(value.packageGroups.common[0]); },
   ]) {
@@ -115,28 +115,28 @@ test('manifest is declarative and strict; GPU choice never removes CPU/network/a
     assert.throws(() => validateProfileManifest(copy));
   }
 });
-test('full adds multi-vendor Wi-Fi/audio firmware and hardware data without expanding other profiles', () => {
-  const full = hardwareProfile('full');
+test('standard adds multi-vendor Wi-Fi/audio firmware and hardware data without expanding other profiles', () => {
+  const standard = hardwareProfile('standard');
   for (const name of ['firmware-iwlwifi', 'firmware-realtek', 'firmware-atheros', 'firmware-brcm80211',
     'firmware-mediatek', 'firmware-sof-signed', 'firmware-intel-sound', 'firmware-cirrus',
     'alsa-ucm-conf', 'alsa-topology-conf'])
-    assert.ok(full.requiredPackages.includes(name), name);
+    assert.ok(standard.requiredPackages.includes(name), name);
   for (const name of ['iwlwifi', 'rtw89_8852be', 'ath11k_pci', 'brcmfmac', 'mt7921e',
     'snd_hda_codec_realtek', 'snd_usb_audio', 'snd_sof_pci_intel_tgl', 'snd_sof_amd_rembrandt'])
-    assert.ok(full.requiredModules.includes(name), name);
-  for (const sku of hardwareSkus.filter(name => name !== 'full')) {
+    assert.ok(standard.requiredModules.includes(name), name);
+  for (const sku of hardwareSkus.filter(name => name !== 'standard')) {
     assert.ok(!hardwareProfile(sku).requiredPackages.includes('firmware-mediatek'), sku);
     assert.ok(!hardwareProfile(sku).forbiddenPackages.includes('alsa-ucm-conf'), sku);
   }
 });
 
-test('full adds P1000 payload roots, common wired modules and utilities without forbidding base tools elsewhere', () => {
-  const full = hardwareProfile('full');
+test('standard adds P1000 payload roots, common wired modules and utilities without forbidding base tools elsewhere', () => {
+  const standard = hardwareProfile('standard');
   for (const name of ['firmware-nvidia-graphics', 'firmware-realtek', 'openssh-client', 'curl', 'nano', 'iputils-ping'])
-    assert.ok(full.requiredPackages.some(spec => spec.split('=')[0] === name), name);
+    assert.ok(standard.requiredPackages.some(spec => spec.split('=')[0] === name), name);
   for (const name of ['nouveau', 'e1000e', 'igb', 'igc', 'r8169', 'r8152', 'asix', 'ax88179_178a'])
-    assert.ok(full.requiredModules.includes(name), name);
-  assert.ok(!full.requiredPackages.includes('openssh-server'));
+    assert.ok(standard.requiredModules.includes(name), name);
+  assert.ok(!standard.requiredPackages.includes('openssh-server'));
   for (const sku of ['vm', 'basic'])
     for (const name of ['bash', 'coreutils', 'grep', 'tar'])
       assert.ok(!hardwareProfile(sku).forbiddenPackages.includes(name), sku + ': ' + name);
@@ -175,7 +175,7 @@ test('all six media layouts bind source profile, root/boot, runtime, sizes and a
       assert.throws(() => validateLiveLayout(copy), `Invalid ${sku} media accepted`);
     }
     const bad = receipt(manifest);
-    bad.sku = sku === 'vm' ? 'full' : 'vm';
+    bad.sku = sku === 'vm' ? 'standard' : 'vm';
     assert.throws(() => validateLiveRootReceipt(manifest, bad), /receipt/);
   }
 });
@@ -211,13 +211,13 @@ test('new SKU publisher isolates release directories and never changes the stabl
     reports.push(await inspectRelease(directory));
     assert.equal(reports.at(-1).sku, sku);
     assert.deepEqual(reports.at(-1).sizeReport, m.sizeReport);
-    if (sku === 'full') {
+    if (sku === 'standard') {
       const explicit = publish(directory, destination, { updateAlias: true });
       assert.equal(explicit.alias, alias);
       assert.equal(fs.readFileSync(alias, 'utf8'), 'synthetic ISO');
       fs.unlinkSync(alias);
       fs.writeFileSync(alias, 'old stable media');
-    } else assert.throws(() => publish(directory, destination, { updateAlias: true }), /Only the explicit full/);
+    } else assert.throws(() => publish(directory, destination, { updateAlias: true }), /Only the explicit standard/);
   }
   assert.equal(new Set(fs.readdirSync(destination).filter(name => name !== 'PollyOS.iso')).size, 6);
   assert.equal(compareReleases(reports[0], reports[1]).sameSku, false);

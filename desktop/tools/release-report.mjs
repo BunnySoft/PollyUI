@@ -219,10 +219,10 @@ export function compareReleases(previous, candidate) {
     deltaBytes: oldSizes.has(kind) && newSizes.has(kind) ? newSizes.get(kind) - oldSizes.get(kind) : null,
   }));
   return { schemaVersion: 1, previous: { version: previous.version, distribution: previous.distribution,
-    sku: previous.sku ?? 'legacy-full', source: previous.source },
+    sku: previous.sku ?? 'legacy-standard', source: previous.source },
     candidate: { version: candidate.version, distribution: candidate.distribution,
-      sku: candidate.sku ?? 'legacy-full', source: candidate.source },
-    sameSku: (previous.sku ?? 'legacy-full') === (candidate.sku ?? 'legacy-full'),
+      sku: candidate.sku ?? 'legacy-standard', source: candidate.source },
+    sameSku: (previous.sku ?? 'legacy-standard') === (candidate.sku ?? 'legacy-standard'),
     sameDistribution: previous.distribution === candidate.distribution,
     payloadBytesDelta: candidate.payload.bytes - previous.payload.bytes,
     artifacts,

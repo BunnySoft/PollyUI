@@ -12,7 +12,7 @@ MANIFEST = Path(__file__).with_name("live-profiles.json")
 MARKER = "etc/polly-hardware-profile.json"
 PROFILE_COPY = "usr/share/polly-live-profiles.json"
 BASIC_MODPROBE = "etc/modprobe.d/polly-basic.conf"
-SKUS = {"basic", "vm", "intel", "nvidia", "amd", "full"}
+SKUS = {"basic", "vm", "intel", "nvidia", "amd", "standard"}
 
 
 def keys(value, expected):
@@ -33,7 +33,7 @@ def load(path=MANIFEST):
     keys(value, ("schemaVersion", "distribution", "architecture", "defaultSku",
                  "packageGroups", "shared", "displayPolicies", "profiles"))
     if (type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1 or value["distribution"] != "debian13" or
-            value["architecture"] != "x86_64" or value["defaultSku"] != "full"):
+            value["architecture"] != "x86_64" or value["defaultSku"] != "standard"):
         raise ValueError("Unsupported hardware profile manifest")
     keys(value["packageGroups"], ("common", "stockKernel", "intelGraphics", "nvidiaGraphics", "amdGraphics",
                                  "physicalNetworkAudio", "standardWirelessAudio", "standardUtilities"))
@@ -163,7 +163,7 @@ def verify_packages(installed, selected):
 
 def verify(root, sku=None, path=MANIFEST):
     explicit = sku is not None
-    selected = profile(sku if explicit else "full", path)
+    selected = profile(sku if explicit else "standard", path)
     target, copy = root / MARKER, root / PROFILE_COPY
     present = target.exists() or target.is_symlink() or copy.exists() or copy.is_symlink()
     if explicit or present:
@@ -253,7 +253,7 @@ def clean_runtime(root, path=MANIFEST):
                 for name in (MARKER, PROFILE_COPY, BASIC_MODPROBE, "etc/polly-account-profile", "init")) or
             any(name.startswith("linux-image-") for name in installed) or
             any((root / "boot").glob("vmlinuz*"))):
-        raise ValueError("SKU assembly requires a clean common runtime, not a full/platform/Live base")
+        raise ValueError("SKU assembly requires a clean common runtime, not a standard/platform/Live base")
 
 
 def installed_input(root):
@@ -266,10 +266,10 @@ def installed_input(root):
             raise ValueError("Incomplete hardware profile artifacts; refusing legacy Install downgrade")
         regular(target)
         value = json.loads(target.read_bytes())
-        if value.get("sku") != "full":
+        if value.get("sku") != "standard":
             raise ValueError("Install SKU filenames/manifests are not wired: reduced hardware platforms cannot "
-                             "become unlabelled installed media. Use the full locked platform.")
-        verify(root, "full")
+                             "become unlabelled installed media. Use the standard locked platform.")
+        verify(root, "standard")
 
 
 def verify_legacy_export(archive, members):
