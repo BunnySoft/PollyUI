@@ -21,7 +21,7 @@ packageGroups:
     install: [firmware-atheros, firmware-brcm80211, firmware-mediatek, firmware-intel-sound, firmware-cirrus, alsa-ucm-conf, alsa-topology-conf]
   - description: Ordinary command-line tools and network diagnostics, clients only
     stage: platform
-    install: [bash, coreutils, findutils, grep, sed, gawk, procps, psmisc, less, nano, vim-tiny, tar, gzip, bzip2, xz-utils=5.8.1-1+deb13u1, unzip, zip, curl=8.14.1-2+deb13u5, wget, openssh-client, rsync, lsof, iputils-ping, iputils-tracepath, traceroute, bind9-dnsutils, file, git, ca-certificates]
+    install: [bash, coreutils, findutils, grep, sed, gawk, procps, psmisc, less, nano, vim-tiny, tar, gzip, bzip2, xz-utils=5.8.1-1+deb13u2, unzip, zip, curl=8.14.1-2+deb13u7, wget, openssh-client, rsync, lsof, iputils-ping, iputils-tracepath, traceroute, bind9-dnsutils, file, git, ca-certificates]
   - description: Pinned early graphical splash
     stage: boot
     install: [plymouth=24.004.60-5, libplymouth5=24.004.60-5, plymouth-label=24.004.60-5]

@@ -522,7 +522,7 @@ dig/nslookup 等。只加客户端，不启用 SSH server 或远程登录。
 Standard 将 ICMP 数据报 socket 限于 GID 1000，使 Live 普通用户可直接运行 ping；
 不为命令添加 setuid 或额外 raw-socket 权限。通过 systemd-sysctl 在目标系统启动时应用，
 不在容器构建中修改宿主 sysctl。
-curl 命令固定为 `8.14.1-2+deb13u5`，xz-utils 固定为 `5.8.1-1+deb13u1`，
+curl 命令固定为 `8.14.1-2+deb13u7`，xz-utils 固定为 `5.8.1-1+deb13u2`，
 分别与当前配对 runtime 的 libcurl4t64、liblzma5 同源版本一致；
 不能让新 CLI 安装顺带升级被冻结的原生运行库。换 SDK/runtime 时需要重新核对该约束。
 物理网络固件组加入 `firmware-realtek`；standard 明确核验 Intel e1000e/igb/igc、
